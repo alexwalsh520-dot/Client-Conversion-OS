@@ -13,7 +13,7 @@ import { getCurrentPlaybook } from "./playbook";
 import { getMessagingDoc, messagingDocBlock, listGlobalFrameworkDocs, frameworkChannelBlock, frameworkProhibitions, frameworkVoiceSection, frameworkHookRules } from "./messaging-doc";
 import {
   CAROUSELS_PER_DAY, MIN_SLIDES_PER_CAROUSEL, MAX_SLIDES_PER_CAROUSEL,
-  MAX_SENTENCES_PER_SLIDE, MAX_WORDS_PER_SENTENCE,
+  MAX_SENTENCES_PER_SLIDE, MAX_WORDS_PER_SENTENCE, ICP_CAROUSELS_PER_DAY,
 } from "@/lib/content/carousel-config";
 import { extractJson, salvageObjects } from "./json";
 import { marketDirective } from "@/lib/content/market";
@@ -82,7 +82,9 @@ const BASE =
 const MECHANICAL_BASE =
   "You write Instagram text carousels for a fitness creator, in the creator's first-person voice. Follow the AUTHORITATIVE WRITING FRAMEWORK for everything about how to write: voice, hooks, slide structure, angles, and how a carousel ends. The rules below are the output contract and the sentence discipline that makes the copy readable on the canvas.\n" +
   "OUTPUT CONTRACT (non-negotiable):\n" +
-  `- Exactly ${CAROUSELS_PER_DAY} carousels, each dismantling a DIFFERENT objection. Each carousel ${MIN_SLIDES_PER_CAROUSEL} to ${MAX_SLIDES_PER_CAROUSEL} slides.\n` +
+  `- Exactly ${CAROUSELS_PER_DAY} carousels, in a FIXED ORDER that is part of the contract. Each carousel ${MIN_SLIDES_PER_CAROUSEL} to ${MAX_SLIDES_PER_CAROUSEL} slides.\n` +
+  `- Carousel 1 is ICP-TARGETING (top of funnel). Its job is to ATTRACT: call out the ideal client by their identity or their situation, in their own language, so the right stranger stops scrolling because it is unmistakably about them. It is not an objection piece.\n` +
+  `- Carousels ${ICP_CAROUSELS_PER_DAY + 1} to ${CAROUSELS_PER_DAY} are BOTTOM OF FUNNEL. Each dismantles a DIFFERENT specific objection standing between this buyer and paying — never the same objection twice, never the same objection carousel 1 touched.\n` +
   `- At most ${MAX_SENTENCES_PER_SLIDE} sentences per slide.\n` +
   "- Plain text only. No markdown, no ** bold markers, no emojis, no hashtags.\n" +
   "- Never include a specific dollar amount; describe money qualitatively.\n" +
@@ -94,6 +96,17 @@ const MECHANICAL_BASE =
   "Return STRICT JSON and nothing else:\n" +
   '{"carousels":[{"topic":"a few words","objection":"the specific objection this carousel dismantles","source":"where that objection came from","slides":[{"text":"one sentence per line, blank line between them"}]}]}\n' +
   "\nDo not use double-quote characters inside JSON string values.";
+
+// The operator's own hook corrections, written after grading real output. They sit ABOVE the stored
+// framework docs because they are rulings on what the docs produced, not another opinion — and they
+// live in the system prompt for the same reason the framework's rules do: buried in the reference
+// block, a rule does not bind. The banned skeletons are also checked mechanically below.
+const HOUSE_HOOK_RULES =
+  "\n\nHOUSE HOOK RULES — corrections from the operator. These OUTRANK both the general pack and the hook guide wherever they disagree:\n" +
+  `- VARIETY: the ${CAROUSELS_PER_DAY} slide-1 hooks in a day must use ${CAROUSELS_PER_DAY} DIFFERENT hook types from the hook guide's own taxonomy. Never two hooks built on the same skeleton in one day. A second-person callout is ONE type among several, not the default.\n` +
+  "- BANNED SKELETONS, by name. Never write: the shape 'You think the problem is X. It is not.'; any withhold-then-reveal frame that names a wrong cause and hides the real one to buy a swipe; the stock closer 'most people find out too late' or any variant of it; a hook that ends on validation ('I hear that', 'I get it', 'that is fair'). An empathy opening is allowed, but it must END ON THE TURN — the cost, the tension, what this is actually costing them — never on the sympathy.\n" +
+  "- PAYOFF: the last line of a hook must NAME a specific truth, cost or image. Never gesture at one. 'Be honest about what is actually happening' is a gesture — name what is actually happening.\n" +
+  "- PRECISION COMPENSATION: if a hook uses formal or institutional wording (a named test, assessment, standard, or process), that same hook must also carry one concrete sensory or situational detail, so it never reads bureaucratic.";
 
 // The style exemplars are Tyson/Antwan's physique world — useful register cues for a creator without
 // their own doc, but noise for one who has a messaging doc that already defines the register. So they
@@ -116,7 +129,7 @@ function buildSys(hasDoc: boolean, hasPack: boolean, prohibitions: string[] = []
       ? "\n\nABSOLUTE PROHIBITIONS from the framework — these are not stylistic preferences, every one is checked:\n" +
         prohibitions.map((l) => `- ${l}`).join("\n")
       : "";
-    return MECHANICAL_BASE + voice + hooks + absolutes + market + NO_DOLLARS;
+    return MECHANICAL_BASE + voice + hooks + HOUSE_HOOK_RULES + absolutes + market + NO_DOLLARS;
   }
   return BASE + VOICE + BANNED_TELLS + (hasDoc ? "" : STYLE_REFERENCE) + JSON_HYGIENE + market + NO_DOLLARS;
 }
@@ -290,6 +303,27 @@ function styleViolations(carousels: Carousel[], bannedTerms: string[] = []): { c
   return out;
 }
 
+// The house hook bans, checked on SLIDE 1 only (they are hook rules). Same treatment as the
+// framework's bans: named in the prompt, verified after parsing, and a violation buys one targeted
+// retry rather than a silent ship. Patterns are deliberately narrow — a near miss is not a hit.
+const HOOK_BANS: { re: RegExp; issue: string }[] = [
+  { re: /most people (?:find|found|only find)(?: that)? out too late/i, issue: "stock closer 'find out too late'" },
+  { re: /you think (?:the problem is|it(?:'|\u2019)?s you)[\s\S]{0,80}?\bit(?:'|\u2019)?s not\b|you think (?:the problem is|it(?:'|\u2019)?s you)[\s\S]{0,80}?\bit is not\b/i, issue: "banned 'you think the problem is X. It is not.' skeleton" },
+];
+const VALIDATION_CLOSER = /^(?:i hear (?:that|you)|i get it|i understand|that(?:'|\u2019)?s fair|fair enough)[.!]?$/i;
+
+function hookViolations(carousels: Carousel[]): { c: number; issue: string }[] {
+  const out: { c: number; issue: string }[] = [];
+  carousels.forEach((car, ci) => {
+    const text = (car.slides || [])[0]?.text || "";
+    for (const b of HOOK_BANS) if (b.re.test(text)) out.push({ c: ci + 1, issue: b.issue });
+    const lines = text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+    const lastLine = lines[lines.length - 1] || "";
+    if (VALIDATION_CLOSER.test(lastLine)) out.push({ c: ci + 1, issue: `hook ends on validation ("${lastLine}")` });
+  });
+  return out;
+}
+
 // One LLM call: generate the 5 carousels for one creator for one day. Does not touch the DB.
 export async function generateCarouselSet(
   sb: SupabaseClient,
@@ -322,11 +356,16 @@ export async function generateCarouselSet(
 
   // The playbook's ranked tier list is the best evidence we have of what people actually voice, and
   // in what proportion — so the carousels aim at the top of it rather than at whatever reads well.
-  const ranked = (playbookRow?.playbook?.saying || [])
+  // Framework playbooks carry the tier list as buyer_language; pre-merge ones carry it as `saying`.
+  const rankedSource = (playbookRow?.playbook?.buyer_language || []).length
+    ? (playbookRow!.playbook.buyer_language || [])
+    : (playbookRow?.playbook?.saying || []);
+  const ranked = rankedSource
+    .map((x, i) => (typeof x === "string" ? { rank: i + 1, theme: x, quotes: [] as string[] } : x))
     .filter((s) => s && s.theme)
-    .map((s) => {
+    .map((s, i) => {
       const quote = (s.quotes || []).find(Boolean);
-      return `${s.rank}. ${s.theme}${quote ? ` — they say it like: ${quote}` : ""}`;
+      return `${s.rank ?? i + 1}. ${s.theme}${quote ? ` — they say it like: ${quote}` : ""}`;
     })
     .join("\n");
 
@@ -348,7 +387,7 @@ export async function generateCarouselSet(
     briefs ? `REAL BUYER NOTES:\n${briefs}` : "",
     avoid ? `DO NOT REPEAT these recent topics/openers:\n${avoid}` : "",
     packBlock
-      ? `Now write today's carousels as the writing framework above directs, for this specific creator and buyer. Return the JSON: exactly ${CAROUSELS_PER_DAY} carousels, each on a DIFFERENT objection, ${MIN_SLIDES_PER_CAROUSEL} to ${MAX_SLIDES_PER_CAROUSEL} slides each. Every sentence on its own line with a blank line between. Short sentences, most under 12 words, none over ${MAX_WORDS_PER_SENTENCE}. Plain text, no dollar figures.`
+      ? `Now write today's carousels as the writing framework above directs, for this specific creator and buyer. Return the JSON: exactly ${CAROUSELS_PER_DAY} carousels, ${MIN_SLIDES_PER_CAROUSEL} to ${MAX_SLIDES_PER_CAROUSEL} slides each, in the fixed order — carousel 1 ICP-targeting (attract), carousels ${ICP_CAROUSELS_PER_DAY + 1} to ${CAROUSELS_PER_DAY} each dismantling a different objection. The ${CAROUSELS_PER_DAY} slide-1 hooks must use ${CAROUSELS_PER_DAY} different hook types. Every sentence on its own line with a blank line between. Short sentences, most under 12 words, none over ${MAX_WORDS_PER_SENTENCE}. Plain text, no dollar figures.`
       : `Return the carousels JSON: exactly ${CAROUSELS_PER_DAY} carousels, ${MIN_SLIDES_PER_CAROUSEL} to ${MAX_SLIDES_PER_CAROUSEL} slides each, each a different pain of the same ICP. Slide 1 of every carousel must call out the ICP directly. Put every sentence on its own line with a blank line between, and keep sentences under ${MAX_WORDS_PER_SENTENCE} words.`,
   ].filter(Boolean).join("\n\n");
 
@@ -375,12 +414,13 @@ export async function generateCarouselSet(
   // breaks, one targeted retry naming the offenders; keep whichever set has fewer total violations.
   // We never rewrite copy in place — an offender is named and regenerated, and whatever survives is
   // reported rather than silently shipped.
-  const score = (cs: Carousel[]) => overLongSlides(cs).length + styleViolations(cs, bannedTerms).length + longSentences(cs).length;
+  const score = (cs: Carousel[]) => overLongSlides(cs).length + styleViolations(cs, bannedTerms).length + longSentences(cs).length + hookViolations(cs).length;
   let total = score(carousels);
   if (total) {
     const longNamed = overLongSlides(carousels).map((v) => `carousel ${v.c} slide ${v.s} (${v.sentences} sentences)`);
     const styleNamed = styleViolations(carousels, bannedTerms).map((v) => `carousel ${v.c} slide ${v.s} (${v.issue})`);
     const longNamedWords = longSentences(carousels).map((v) => `carousel ${v.c} slide ${v.s} (${v.words}-word sentence)`);
+    const hookNamed = hookViolations(carousels).map((v) => `carousel ${v.c} slide 1 — ${v.issue}`);
     const feedback = [
       longNamed.length
         ? `These slides run longer than ${MAX_SENTENCES} sentences: ${longNamed.join("; ")}. Rewrite them to at most ${MAX_SENTENCES} full sentences each, keeping real sentences with room to breathe (do NOT chop them into fragments). If a slide holds more than that, move the overflow into another slide (a carousel may run up to ${MAX_SLIDES} slides).`
@@ -391,6 +431,9 @@ export async function generateCarouselSet(
       longNamedWords.length
         ? `These slides contain a sentence that is too long: ${longNamedWords.join("; ")}. Break each one into two or more short sentences, each on its own line. Do NOT join them back with a comma or an 'and'.`
         : "",
+      hookNamed.length
+        ? `These slide-1 hooks break the HOUSE HOOK RULES: ${hookNamed.join("; ")}. Rewrite each of those hooks on a DIFFERENT skeleton from the other hooks in this set, ending on a specific truth, cost or image — not on sympathy and not on a withheld reveal.`
+        : "",
       "Keep every other slide as it is. Return the full corrected JSON.",
     ].filter(Boolean).join(" ");
     const retry = await genOnce(feedback);
@@ -400,6 +443,6 @@ export async function generateCarouselSet(
   // Normalize to exactly CAROUSELS_PER_DAY carousels, each clamped to the slide ceiling.
   const set = carousels.slice(0, CAROUSELS_PER_DAY).map((c) => ({ topic: c.topic || "", slides: c.slides.slice(0, MAX_SLIDES) }));
   const sentenceViolations = overLongSlides(set).length;
-  const styleIssues = styleViolations(set, bannedTerms).length + longSentences(set).length;
+  const styleIssues = styleViolations(set, bannedTerms).length + longSentences(set).length + hookViolations(set).length;
   return { ok: true, carousels: set, sentenceViolations, styleViolations: styleIssues };
 }

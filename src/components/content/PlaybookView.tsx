@@ -76,6 +76,41 @@ function moreOnBuyer(icp: IcpView | null, voice: BuyerVoice | null): React.React
   );
 }
 
+// One ranked tier-list section: the theme reads on the closed row, the verbatim quotes and how common
+// it is open underneath. Shared by Buyer language and the legacy "What they're saying" list.
+function RankedSayings({ title, items }: { title: string; items: PlaybookSaying[] }) {
+  return (
+    <Section>
+      <H>{title}</H>
+      <ol style={{ margin: 0, padding: 0, listStyle: "none" }}>
+        {items.map((s, i) => {
+          const quotes = (s.quotes || []).filter(Boolean);
+          const meta = [s.how_common, s.source].filter(Boolean).join(" · ");
+          return (
+            <Row
+              key={i}
+              lead={s.rank ?? i + 1}
+              summary={s.theme}
+              detail={
+                quotes.length || meta ? (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {quotes.map((q, qi) => (
+                      <p key={qi} style={{ fontSize: 14.5, color: BODY, lineHeight: 1.6, margin: 0, paddingLeft: 12, borderLeft: `2px solid ${RULE}`, fontStyle: "italic" }}>
+                        &ldquo;{q}&rdquo;
+                      </p>
+                    ))}
+                    {meta && <div style={{ fontSize: 12.5, color: MUTED }}>{meta}</div>}
+                  </div>
+                ) : undefined
+              }
+            />
+          );
+        })}
+      </ol>
+    </Section>
+  );
+}
+
 export default function PlaybookView({
   shiftBrief,
   playbook,
@@ -111,8 +146,12 @@ export default function PlaybookView({
         .filter((s) => s && s.move)
         .slice(0, 5)
         .map((s) => ({ headline: s.move || "", detail: s.why || "" }));
-  // New external-only sections (rendered only when present).
-  const buyerLanguage = (playbook?.buyer_language || []).filter(Boolean);
+  // Buyer language is the ranked tier list: theme on the row, quotes + frequency + source behind it.
+  // Playbooks written before the merge stored plain strings — those render as theme-only rows.
+  const buyerLanguage: PlaybookSaying[] = (playbook?.buyer_language || [])
+    .filter(Boolean)
+    .map((x, i) => (typeof x === "string" ? { rank: i + 1, theme: x } : { ...x, rank: x.rank ?? i + 1 }))
+    .filter((x) => x.theme);
   const filmingConcepts = (playbook?.filming_concepts || [])
     .map((c) => (typeof c === "string" ? { concept: c } : c))
     .filter((c): c is { concept?: string; why?: string } => !!c && !!(c.concept || c.why));
@@ -120,32 +159,10 @@ export default function PlaybookView({
 
   return (
     <div>
-      {saying.length > 0 && (
-        <Section>
-          <H>What they&rsquo;re saying</H>
-          <ol style={{ margin: 0, padding: 0, listStyle: "none" }}>
-            {saying.map((s, i) => (
-              <Row
-                key={i}
-                lead={s.rank}
-                summary={s.theme}
-                detail={
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {(s.quotes || []).filter(Boolean).map((q, qi) => (
-                      <p key={qi} style={{ fontSize: 14.5, color: BODY, lineHeight: 1.6, margin: 0, paddingLeft: 12, borderLeft: `2px solid ${RULE}`, fontStyle: "italic" }}>
-                        &ldquo;{q}&rdquo;
-                      </p>
-                    ))}
-                    {(s.how_common || s.source) && (
-                      <div style={{ fontSize: 12.5, color: MUTED }}>{[s.how_common, s.source].filter(Boolean).join(" · ")}</div>
-                    )}
-                  </div>
-                }
-              />
-            ))}
-          </ol>
-        </Section>
-      )}
+      {/* The ranked tier list leads the page. Framework playbooks carry it as buyer_language; older
+          ones carry it as `saying`. Only one of the two ever exists on a given playbook. */}
+      {buyerLanguage.length > 0 && <RankedSayings title="What they&rsquo;re saying" items={buyerLanguage} />}
+      {saying.length > 0 && <RankedSayings title="What they&rsquo;re saying" items={saying} />}
 
       {buyerLine && (
         <Section>
@@ -176,17 +193,6 @@ export default function PlaybookView({
           <Empty />
         )}
       </Section>
-
-      {buyerLanguage.length > 0 && (
-        <Section>
-          <H>Buyer language</H>
-          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 6 }}>
-            {buyerLanguage.map((x, i) => (
-              <li key={i} style={{ fontSize: 14.5, color: BODY, lineHeight: 1.6, fontStyle: "italic" }}>&ldquo;{x}&rdquo;</li>
-            ))}
-          </ul>
-        </Section>
-      )}
 
       <Section>
         <H>Hooks</H>

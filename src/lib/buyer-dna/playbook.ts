@@ -42,7 +42,10 @@ export type Playbook = {
   // (always shown in full), the detail is the explanation behind the dropdown. Older playbooks stored
   // plain strings or {move,why}; the view renders those as headline-only rows until the next regen.
   actions?: (string | { move?: string; why?: string; headline?: string; detail?: string })[];
-  buyer_language?: string[];
+  // RULING B: the ranked tier list lives HERE now — one section doing both jobs. Ordered by real
+  // recurrence, each item carrying the verbatim quotes, how common it is, and where it came from.
+  // Older playbooks stored plain strings; the view renders those as theme-only rows.
+  buyer_language?: (string | PlaybookSaying)[];
   filming_concepts?: (string | { concept?: string; why?: string })[];
 };
 
@@ -69,9 +72,11 @@ const MECHANICAL_SYS =
   "- Never include a specific dollar amount; describe money qualitatively.\n" +
   "- Ground everything in the evidence supplied below. Never invent a quote or a buyer phrase.\n" +
   "- Write every section in proper sentence case with correct grammar and punctuation. Not lowercase fragments, not title case.\n" +
-  "- ACTIONS: exactly 5. Each is a headline plus a detail. The HEADLINE is one complete, grammatical statement of the action, roughly 10 words or fewer, that reads on its own without opening anything. The DETAIL is the in-depth explanation: what to do, why it attracts this specific buyer, and how to execute it.\n" +
+  "- BUYER LANGUAGE is a RANKED tier list of what prospects and buyers are ACTUALLY saying, ordered by how often they say it. Up to 10 items, and fewer is correct when the evidence honestly supports fewer — never pad, never invent a theme to reach a number. Each item carries: theme, phrased in THEIR words; 1-2 short verbatim quotes lifted from the evidence below (never invented); how_common as a qualitative frequency (\'the overwhelming majority\', \'about a third\', \'a handful\'); and source naming which evidence it came from (calls, dms, ads, messaging doc).\n" +
+  "- ACTIONS: exactly 5. Each is a headline plus a detail. Each action is ONE DISCRETE DELIVERABLE the creator can complete this week: a production verb, a concrete artifact, and a count. \'Post one video that...\', \'Film one clip that...\', \'Record one narrated...\'. The HEADLINE is that statement, roughly 10 words or fewer, complete and grammatical on its own. The DETAIL is the in-depth explanation: what to do, why it attracts this specific buyer, and how to execute it.\n" +
+  "- A STANDING RULE OR POLICY IS NOT AN ACTION. \'Always name the career path first\', \'end every Reel with a keyword\', \'replace all aesthetic content\' are ongoing style rules, not things that get finished. If that material matters, put it in a filming concept instead, or leave it out.\n" +
   "Return STRICT JSON and nothing else:\n" +
-  '{"hooks":["a phrase or question a buyer actually said"],"buyer_language":["exact phrase from a call or DM"],"actions":[{"headline":"Complete short statement of the action.","detail":"What to do, why it pulls this buyer, and how to execute."}],"filming_concepts":[{"concept":"what to film","why":"which objection it addresses and what it signals"}]}\n' +
+  '{"hooks":["a phrase or question a buyer actually said"],"buyer_language":[{"rank":1,"theme":"what they keep saying, in their words","quotes":["short verbatim quote"],"how_common":"qualitative frequency","source":"calls / dms / ads / messaging doc"}],"actions":[{"headline":"Post one video that does X.","detail":"What to do, why it pulls this buyer, and how to execute."}],"filming_concepts":[{"concept":"what to film","why":"which objection it addresses and what it signals"}]}\n' +
   "\nDo not use double-quote characters inside JSON string values." +
   NO_DOLLARS;
 
@@ -219,6 +224,17 @@ function parseFramework(text: string): Playbook {
   }>(text);
   const strs = (v: unknown[] | undefined): string[] =>
     (Array.isArray(v) ? v : []).map((x) => (typeof x === "string" ? x : String((x as { hook?: string })?.hook ?? ""))).filter(Boolean);
+  // Buyer language arrives as ranked objects; a bare string still lands as a theme-only item so an
+  // older-shaped response is never dropped on the floor.
+  let rawLang: unknown[] = Array.isArray(p?.buyer_language) ? p!.buyer_language! : [];
+  if (!rawLang.length) rawLang = salvageObjects<PlaybookSaying>(text, ["theme"]);
+  const buyerLanguage: PlaybookSaying[] = rawLang
+    .map((x) => {
+      if (typeof x === "string") return { theme: x } as PlaybookSaying;
+      const o = (x || {}) as PlaybookSaying;
+      return { theme: o.theme, quotes: (o.quotes || []).filter(Boolean), how_common: o.how_common, source: o.source };
+    })
+    .filter((x) => x.theme);
   let concepts = Array.isArray(p?.filming_concepts) ? p!.filming_concepts! : [];
   if (!concepts.length) concepts = salvageObjects<{ concept?: string; why?: string }>(text, ["concept"]);
   // Actions arrive as {headline, detail}; tolerate a bare string or the older {move,why} shape.
@@ -233,7 +249,7 @@ function parseFramework(text: string): Playbook {
   return {
     hooks: strs(p?.hooks).map((h) => ({ hook: h })),
     topics: [],
-    buyer_language: strs(p?.buyer_language),
+    buyer_language: buyerLanguage,
     actions,
     filming_concepts: concepts.filter((c) => c && (c.concept || c.why)),
   };
@@ -258,6 +274,19 @@ function parse(text: string): Playbook {
     hooks: hooks.filter((h) => h && h.hook),
     topics: topics.filter((t) => t && t.topic),
   };
+}
+
+// RULING/CHANGE: an action is a thing that gets FINISHED, not a policy that runs forever. A headline
+// has to name a production verb, an artifact and a count. Anything shaped like a standing rule is
+// named back to the model for the one retry rather than shipped as an action.
+const ACTION_VERB = /^(post|film|record|shoot|publish|write|script|make|produce|build|create|launch|send|cut|upload)\b/i;
+const ACTION_COUNT = /\b(one|two|three|four|five|a single|\d+)\b/i;
+const STANDING_RULE = /^(always|never|every|each|start every|end every|stop|replace all|keep|use)\b/i;
+
+function nonCountableActions(actions: { headline?: string }[]): string[] {
+  return actions
+    .map((a) => (a.headline || "").trim())
+    .filter((h) => h && (STANDING_RULE.test(h) || !ACTION_VERB.test(h) || !ACTION_COUNT.test(h)));
 }
 
 // Generate + store a new playbook version for one creator.
@@ -343,13 +372,13 @@ export async function refreshPlaybook(
     .filter(Boolean)
     .join("\n\n");
 
-  const genOnce = async (): Promise<Playbook> => {
+  const genOnce = async (feedback?: string): Promise<Playbook> => {
     try {
       const resp = await anthropic.messages.create({
         model: MODEL,
         max_tokens: 8000,
         system: (packBlock ? MECHANICAL_SYS : SYS) + (hookRules ? `\n\nHOOK RULES — these govern the hooks section and OUTRANK the general pack on anything hook-shaped:\n${hookRules}` : "") + marketDirective(client),
-        messages: [{ role: "user", content: userMsg }],
+        messages: [{ role: "user", content: feedback ? `${userMsg}\n\n${feedback}` : userMsg }],
       });
       logAiUsage({ feature: "buyer-dna-playbook", model: MODEL, usage: resp.usage });
       const tb = resp.content.find((b) => b.type === "text") as { text: string } | undefined;
@@ -374,6 +403,21 @@ export async function refreshPlaybook(
     : result.hooks.length >= 10;
   if (!usable) return { ok: false, reason: "Could not parse a usable playbook from the model." };
 
+  // Actions that read as standing policy rather than a deliverable buy exactly one retry, with the
+  // offenders named. Whatever comes back is kept only if it is actually better.
+  if (packBlock && (opts.canProceed?.() ?? true)) {
+    const offenders = nonCountableActions((result.actions || []) as { headline?: string }[]);
+    if (offenders.length) {
+      const retry = await genOnce(
+        `These actions are standing rules or policies, not deliverables the creator can finish this week: ${offenders.map((h) => `"${h}"`).join("; ")}. ` +
+        "Replace each one with a discrete deliverable — a production verb, a concrete artifact and a count, in the shape 'Post one video that...' or 'Film one clip that...'. " +
+        "If the underlying point is a standing style rule, move it into a filming concept instead of forcing it into actions. Keep the other sections as they are and return the full JSON.",
+      );
+      const better = nonCountableActions((retry.actions || []) as { headline?: string }[]);
+      if ((retry.actions?.length ?? 0) >= 5 && better.length < offenders.length) result = retry;
+    }
+  }
+
   // Rank is authoritative from the model's ordering; renumber so the stored list is always 1..N.
   const saying = (result.saying || []).slice(0, 10).map((s, i) => ({ ...s, rank: i + 1 }));
   const playbook: Playbook = packBlock
@@ -381,7 +425,10 @@ export async function refreshPlaybook(
         origin: "framework",
         hooks: result.hooks.slice(0, 30),
         topics: [],
-        buyer_language: (result.buyer_language || []).slice(0, 40),
+        // Rank is authoritative from the model's ordering; renumber so the stored list is always 1..N.
+        buyer_language: (result.buyer_language || [])
+          .slice(0, 10)
+          .map((x, i) => (typeof x === "string" ? { rank: i + 1, theme: x } : { ...x, rank: i + 1 })),
         actions: (result.actions || []).slice(0, 5),
         filming_concepts: (result.filming_concepts || []).slice(0, 12),
       }
