@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
 import { CONTENT_CREATORS } from "@/lib/instagram-content";
 import { resolveCalendarAccess } from "@/lib/content/calendar-access";
+import { getCadence } from "@/lib/content/calendar-build";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,7 +42,16 @@ export async function GET(req: NextRequest) {
     .eq("client_key", slug)
     .eq("for_date", date)
     .order("slot", { ascending: true });
-  return NextResponse.json({ ok: true, creator: slug, date, carousels: data || [] });
+  // The view says what the creator actually owes today. Generated sets are a resource; the cadence
+  // slot is the obligation, and they are deliberately different numbers.
+  const cadence = await getCadence(sb, slug).catch(() => null);
+  return NextResponse.json({
+    ok: true,
+    creator: slug,
+    date,
+    carousels: data || [],
+    carousels_due: cadence?.carousels_per_day ?? 0,
+  });
 }
 
 // PATCH one carousel's slides (the editor's save). Replaces slides jsonb and marks edited.

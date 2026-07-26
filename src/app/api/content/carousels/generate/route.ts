@@ -7,7 +7,7 @@ import { getCurrentIcp } from "@/lib/buyer-dna/icp";
 import type { Icp } from "@/lib/buyer-dna/icp";
 import { generateCarouselSet } from "@/lib/buyer-dna/carousels";
 import { getCadence } from "@/lib/content/calendar-build";
-import { CAROUSELS_PER_DAY } from "@/lib/content/carousel-config";
+import { CAROUSELS_PER_DAY, intentForSlot } from "@/lib/content/carousel-config";
 
 // An external content worker, when one is configured, owns midnight → 06:00 in the creator's own
 // timezone and CCOS only steps in after 06:00. That handoff exists ONLY for a worker that is
@@ -90,7 +90,9 @@ export async function POST(req: NextRequest) {
     // correctly reclaims it as internal (and clears any external meta). The origin/meta columns
     // arrive with a migration; if they're not there yet we retry without them below.
     origin: "internal",
-    meta: null,
+    // The day's fixed split, stamped from the slot so the tag describes what actually shipped rather
+    // than what the model called it. Cleared of any external meta by the same write.
+    meta: { intent: intentForSlot(i) },
     model: MODEL,
     updated_at: new Date().toISOString(),
   }));

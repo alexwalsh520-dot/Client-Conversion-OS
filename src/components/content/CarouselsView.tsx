@@ -11,9 +11,10 @@ import { Loader2, ChevronLeft, ChevronRight, Pencil, Download, GalleryHorizontal
 import SlideEditor from "./SlideEditor";
 import CarouselExport from "./CarouselExport";
 import { renderSlide, blocksForSlide, loadAvatar, ensureFonts, CANVAS_W, CANVAS_H, type SlideBlock } from "@/lib/content/carousel-render";
+import { intentForSlot, INTENT_LABEL, type CarouselIntent } from "@/lib/content/carousel-config";
 
 type Slide = { text?: string; blocks?: SlideBlock[] };
-type Row = { id: number; client_key: string; for_date: string; slot: number; topic: string | null; slides: Slide[]; edited: boolean; origin?: string | null };
+type Row = { id: number; client_key: string; for_date: string; slot: number; topic: string | null; slides: Slide[]; edited: boolean; origin?: string | null; meta?: { intent?: string } | null };
 
 // Small, unobtrusive marker for a set the external worker wrote (operator-only — this view isn't on
 // the creator's token page). Provenance is stamped on the row's origin column.
@@ -21,6 +22,18 @@ function ExternalTag() {
   return (
     <span style={{ display: "inline-flex", alignItems: "center", fontSize: 9.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--text-muted)", background: "var(--bg-glass)", border: "1px solid var(--border-primary)", borderRadius: 5, padding: "1px 5px" }}>
       external
+    </span>
+  );
+}
+
+// What this set is FOR, in the day's fixed split. Stored on the row; falls back to the slot for sets
+// written before the split existed, so an old day still labels itself correctly.
+function IntentTag({ row }: { row: Row }) {
+  const intent = (row.meta?.intent as CarouselIntent) || intentForSlot(row.slot);
+  const isIcp = intent === "icp";
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", fontSize: 9.5, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", borderRadius: 5, padding: "1px 5px", color: isIcp ? "var(--accent)" : "var(--text-muted)", background: isIcp ? "var(--accent-soft)" : "var(--bg-glass)", border: `1px solid ${isIcp ? "var(--accent)" : "var(--border-primary)"}` }}>
+      {INTENT_LABEL[intent]}
     </span>
   );
 }
@@ -66,6 +79,8 @@ export default function CarouselsView({ creator, mode = "operator", token }: { c
   const [editing, setEditing] = useState<{ carIdx: number; slideIdx: number } | null>(null);
   const [exportCar, setExportCar] = useState<number | null>(null); // carousel index whose Export picker is open
   const [pos, setPos] = useState(0); // flat index across the day's slides
+  const [due, setDue] = useState(0); // what the cadence says the creator must POST today
+  const [zipping, setZipping] = useState(false);
 
   useEffect(() => { ensureFonts(); }, []);
 
@@ -76,6 +91,7 @@ export default function CarouselsView({ creator, mode = "operator", token }: { c
       const res = await fetch(`/api/content/carousels?${qs}`, { cache: "no-store" });
       const j = await res.json();
       setRows((j.carousels || []).sort((a: Row, b: Row) => a.slot - b.slot));
+      setDue(Number(j.carousels_due) || 0);
       setPos(0);
     } finally { setLoading(false); }
   }, [creator, token]);
@@ -120,6 +136,35 @@ export default function CarouselsView({ creator, mode = "operator", token }: { c
   const startAt = (x: number) => { drag.current = x; };
   const endAt = (x: number) => { const s = drag.current; drag.current = null; if (s == null) return; const dx = x - s; if (dx < -45) next(); else if (dx > 45) prev(); };
 
+  // One click, no dialog: every slide of every carousel for the day viewed, as one zip with a folder
+  // per carousel. The per-slide and per-carousel exports are untouched.
+  const exportDay = async () => {
+    if (!rows || !rows.length || zipping) return;
+    setZipping(true);
+    try {
+      await ensureFonts();
+      const avatar = await loadAvatar(creator);
+      const JSZip = (await import("jszip")).default;
+      const zip = new JSZip();
+      for (let ci = 0; ci < rows.length; ci++) {
+        const folder = zip.folder(`c${ci + 1}`);
+        for (let si = 0; si < rows[ci].slides.length; si++) {
+          const canvas = document.createElement("canvas");
+          renderSlide(canvas, blocksForSlide(rows[ci].slides[si]), creator, avatar);
+          const blob: Blob = await new Promise((r) => canvas.toBlob((b) => r(b!), "image/png"));
+          folder?.file(`s${si + 1}.png`, blob);
+        }
+      }
+      const out = await zip.generateAsync({ type: "blob" });
+      const href = URL.createObjectURL(out);
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = `${creator}-${date}.zip`;
+      a.click();
+      URL.revokeObjectURL(href);
+    } finally { setZipping(false); }
+  };
+
   const generate = async () => {
     setGenerating(true);
     try { await fetch(`/api/content/carousels/generate?creator=${creator}&date=${date}`, { method: "POST" }); await load(date); }
@@ -162,12 +207,20 @@ export default function CarouselsView({ creator, mode = "operator", token }: { c
         <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", minWidth: 140, textAlign: "center" }}>{prettyDate(date)}{date === todayET() ? " · Today" : ""}</div>
         <button onClick={() => setDate((d) => shiftDate(d, 1))} disabled={date >= todayET()} style={{ ...navBtn, opacity: date >= todayET() ? 0.4 : 1 }}><ChevronRight size={16} /></button>
         <span style={{ flex: 1 }} />
-        {curRow && cur && (
-          <button onClick={() => setExportCar(cur.carIdx)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 9, border: "none", background: "var(--accent)", color: "#1a1a1a", fontSize: 12.5, fontWeight: 800, cursor: "pointer" }}>
-            <Download size={14} /> Export
+        {rows && rows.length > 0 && (
+          <button onClick={exportDay} disabled={zipping} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 9, border: "none", background: "var(--accent)", color: "#1a1a1a", fontSize: 12.5, fontWeight: 800, cursor: zipping ? "default" : "pointer", opacity: zipping ? 0.6 : 1 }}>
+            {zipping ? <Loader2 size={14} className="spin" /> : <Download size={14} />} {zipping ? "Zipping\u2026" : "Download all"}
           </button>
         )}
       </div>
+
+      {/* RULING C: the generated set is a resource, the cadence slot is the obligation — so the
+          creator sees both numbers and they are allowed to differ. Cadence 0 means no obligation. */}
+      {isCreator && rows && rows.length > 0 && (
+        <p style={{ margin: "-4px 0 0", fontSize: 13, color: "var(--text-muted)", lineHeight: 1.6 }}>
+          {rows.length} made fresh daily.{due > 0 ? ` Post at least ${due} today.` : ""}
+        </p>
+      )}
 
       {loading ? (
         <div style={{ color: "var(--text-muted)", padding: 60, textAlign: "center" }}><Loader2 className="spin" /> Loading…</div>
@@ -208,6 +261,7 @@ export default function CarouselsView({ creator, mode = "operator", token }: { c
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 7, marginTop: 3, fontSize: 11.5, color: "var(--text-muted)" }}>
                       {row.slides.length} slides
                       {row.edited && <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 5, height: 5, borderRadius: 999, background: "var(--accent)" }} /> edited</span>}
+                      {!isCreator && <IntentTag row={row} />}
                       {!isCreator && row.origin === "external" && <ExternalTag />}
                     </span>
                   </span>
@@ -222,6 +276,7 @@ export default function CarouselsView({ creator, mode = "operator", token }: { c
               <span style={{ flexShrink: 0, whiteSpace: "nowrap", fontWeight: 800, color: "var(--text-secondary)" }}>{cur.carIdx + 1} / {rows.length}</span>
               <span style={{ flexShrink: 0 }}>·</span>
               <span style={{ minWidth: 0, fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{curRow.topic || "Carousel"}</span>
+              {!isCreator && <IntentTag row={curRow} />}
               {!isCreator && curRow.origin === "external" && <ExternalTag />}
             </div>
 
