@@ -1,0 +1,195 @@
+/* Factory review deck — full-bleed, dark, one ad at a time. */
+
+.rv-root {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  background: #09090b;
+  color: #e8e8ea;
+  font-family: var(--font-plus-jakarta, "Plus Jakarta Sans", system-ui, sans-serif);
+  overflow: hidden;
+}
+
+/* ---- top bar ---- */
+.rv-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid #1c1c20;
+  background: #0f0f12;
+}
+
+.rv-select {
+  background: #141418;
+  color: #e8e8ea;
+  border: 1px solid #26262c;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+  max-width: 340px;
+}
+
+.rv-counts {
+  display: flex;
+  gap: 14px;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+.rv-ok { color: #6ee7a8; }
+.rv-rev { color: #f0b866; }
+.rv-pend { color: #8a8a93; }
+
+.rv-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #9a9aa3;
+  cursor: pointer;
+}
+
+.rv-pos {
+  margin-left: auto;
+  font-size: 13px;
+  color: #c9a96e;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- stage ---- */
+.rv-stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 12px 64px;
+}
+
+.rv-figure {
+  margin: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-height: 0;
+}
+
+/* The image is the point — give it every available pixel of height. */
+.rv-img {
+  max-height: calc(100% - 30px);
+  max-width: 100%;
+  object-fit: contain;
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+
+.rv-cap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: #9a9aa3;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.rv-label { color: #e8e8ea; font-weight: 600; letter-spacing: 0.04em; }
+.rv-stage-tag {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid #26262c;
+  text-transform: lowercase;
+}
+.rv-completed { color: #6ee7a8; border-color: #1f4433; }
+.rv-revision { color: #f0b866; border-color: #4a3a1c; }
+.rv-image_generated { color: #8a8a93; }
+.rv-oldnote { color: #f0b866; font-style: italic; max-width: 60ch; }
+
+/* ---- nav arrows ---- */
+.rv-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 84px;
+  border: 1px solid #1f1f24;
+  background: rgba(20, 20, 24, 0.7);
+  color: #c9a96e;
+  font-size: 30px;
+  line-height: 1;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 120ms ease, transform 120ms ease;
+}
+.rv-nav:hover { background: rgba(30, 30, 36, 0.95); }
+.rv-nav:active { transform: translateY(-50%) scale(0.96); }
+.rv-prev { left: 10px; }
+.rv-next { right: 10px; }
+
+.rv-empty { color: #6a6a73; font-size: 14px; }
+
+.rv-flash {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(201, 169, 110, 0.14);
+  border: 1px solid rgba(201, 169, 110, 0.5);
+  color: #e7cfa0;
+  padding: 6px 16px;
+  border-radius: 999px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  pointer-events: none;
+}
+
+/* ---- footer / input ---- */
+.rv-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid #1c1c20;
+  background: #0f0f12;
+}
+
+.rv-input {
+  flex: 1;
+  resize: none;
+  background: #141418;
+  border: 1px solid #26262c;
+  border-radius: 10px;
+  color: #e8e8ea;
+  padding: 11px 14px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.35;
+  outline: none;
+}
+.rv-input:focus { border-color: #c9a96e; box-shadow: 0 0 0 3px rgba(201, 169, 110, 0.14); }
+.rv-input::placeholder { color: #5d5d66; }
+
+.rv-act {
+  border: 1px solid #26262c;
+  border-radius: 10px;
+  padding: 11px 18px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 120ms ease;
+}
+.rv-act:active { transform: scale(0.97); }
+.rv-act-ok { background: rgba(110, 231, 168, 0.12); color: #6ee7a8; border-color: #1f4433; }
+.rv-act-send { background: rgba(240, 184, 102, 0.14); color: #f0b866; border-color: #4a3a1c; }
+
+.rv-save { font-size: 11px; color: #5d5d66; white-space: nowrap; }
+.rv-save-error { color: #f08a8a; }
+
+@media (max-width: 720px) {
+  .rv-stage { padding: 10px 48px; }
+  .rv-counts, .rv-toggle { display: none; }
+}

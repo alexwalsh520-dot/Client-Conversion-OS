@@ -63,7 +63,9 @@ const HIGGSFIELD_RESOLUTION = "2k";
 
 const POLL_INTERVAL_MS = 4_000;
 const MAX_POLL_MS = 5 * 60_000;
-const SUBMIT_TIMEOUT_MS = 120_000;
+// Generous headroom: submit includes uploading the reference images, so a slow
+// network should retry-and-succeed rather than fail the item outright.
+const SUBMIT_TIMEOUT_MS = 300_000;
 const POLL_TIMEOUT_MS = 60_000;
 
 // Reference photo per label. Items not listed fall back to image_direction in DB
@@ -122,8 +124,23 @@ const COPY_ONLY_REVISIONS = new Set(["B21", "B25", "B30", "C26", "C40"]);
 const FRAMING_RULE =
   "CRITICAL SAFE-ZONE LAYOUT: keep the TOP 13% of the frame and the BOTTOM 22% of the frame completely EMPTY of text. Instagram overlays the account name at the top and the 'Send Message' button at the bottom. ALL text must sit inside the middle band, between 15% and 76% of the image height. Never place any words in the top 13% or bottom 22%.";
 // Proven look — do NOT let the model invent a generic/blocky font.
+// HARD RULE (Alex, 2026-07-26, repeated correction): the bars behind the text are
+// SOLID 100% OPACITY near-black. They are NOT semi-transparent and NO part of the
+// photo shows through them. Our winning ads are built this way; a see-through bar
+// is an instant tell that the ad was not built to the proven template.
+const BAR_RULE =
+  "TEXT BAR OPACITY (critical): every text block sits on its own SOLID, FULLY OPAQUE near-black rounded rectangle bar at 100% opacity. The bars are completely solid — the photo behind them must NOT show through at all, not even slightly. Do NOT make the bars translucent, semi-transparent, tinted, frosted, glassy, or blurred. Each bar is a flat solid near-black block with generous even padding around the text and rounded corners, exactly like the reference ad.";
+
 const STYLE_RULE =
-  "Text style: the bold Instagram-Story font, each text block sitting on its own semi-transparent near-black rounded rectangle bar, clean line spacing, highly legible. Do NOT use a blocky or all-caps display font. Premium and clean.";
+  `Text style: the bold Instagram-Story font, clean line spacing, highly legible. ${BAR_RULE} Do NOT use a blocky or all-caps display font. Premium and clean.`;
+
+// The American flag has TWO separate failure modes and both must be spelled out.
+// Count alone is not enough: a flag hung at an angle renders its stars as a
+// diagonal lattice, which is the thing that reads as obviously fake even when
+// roughly 50 stars are present. Demand a flat, square-on flag with STRAIGHT
+// horizontal rows. Verified against a real flag photo 2026-07-25.
+const FLAG_RULE =
+  "IF an American flag appears anywhere in the scene it must be REAL-FLAG ACCURATE. Hang it FLAT, STRAIGHT and SQUARE to the camera against the wall, not tilted, not rotated, not skewed in perspective. The blue canton contains EXACTLY 50 white five-pointed stars laid out in EXACTLY 9 STRAIGHT HORIZONTAL ROWS that run parallel to the stripes: rows of 6, 5, 6, 5, 6, 5, 6, 5, 6 stars, where the 5-star rows are horizontally offset and sit centred between the stars of the 6-star rows. Every star in a row sits at the SAME height as the others in that row, and all stars are the SAME size and upright. Do NOT arrange the stars in a diagonal lattice, a slanted grid, or drifting rows. The flag has EXACTLY 13 horizontal stripes, 7 red and 6 white, starting and ending with red.";
 
 // Controlled red emphasis: pick at most TWO exact phrases to color red (the offer
 // token + the CTA). Everything else stays white. Never let the model auto-red.
@@ -182,17 +199,73 @@ async function resolveCredentialsPath() {
 
 const cliBin = path.join(process.cwd(), "node_modules", "@higgsfield", "cli", "bin", "higgsfield.js");
 
+// ---------------------------------------------------------------------------
+// Reference image downscaling (RELIABILITY — do not remove)
+// ---------------------------------------------------------------------------
+// Our reference files are full-resolution PNGs (4-6MB each, raw camera JPGs up
+// to 37MB). A two-reference call therefore uploads ~10MB+, which regularly
+// blows the submit timeout and surfaces as an opaque "Command failed" with the
+// whole prompt echoed back — it looks like a prompt error but it is an upload
+// timeout. gpt_image_2 gains nothing from the extra pixels, so every reference
+// is downscaled to REF_MAX_EDGE px and cached. Cache key = path + mtime + size,
+// so editing a reference regenerates it automatically.
+const REF_MAX_EDGE = 1600;
+const REF_CACHE_DIR = path.join(os.tmpdir(), "factory-refcache");
+
+async function shrinkReference(srcPath) {
+  const st = await fsp.stat(srcPath);
+  // Small files are already fine — skip the copy entirely.
+  if (st.size <= 900_000) return srcPath;
+
+  const key = crypto
+    .createHash("sha1")
+    .update(`${srcPath}:${st.mtimeMs}:${st.size}:${REF_MAX_EDGE}`)
+    .digest("hex")
+    .slice(0, 16);
+  const outPath = path.join(REF_CACHE_DIR, `${key}${path.extname(srcPath) || ".png"}`);
+
+  if (fs.existsSync(outPath) && (await fsp.stat(outPath)).size > 0) return outPath;
+
+  await fsp.mkdir(REF_CACHE_DIR, { recursive: true });
+  await fsp.copyFile(srcPath, outPath);
+  try {
+    // sips ships with macOS; -Z scales the LONGEST edge, preserving aspect.
+    await execFileAsync("sips", ["-Z", String(REF_MAX_EDGE), outPath], { timeout: 60_000 });
+  } catch (e) {
+    // If sips is unavailable, fall back to the original rather than failing the run.
+    console.warn(`  (could not downscale ${path.basename(srcPath)}: ${e.message}; using original)`);
+    return srcPath;
+  }
+  const after = await fsp.stat(outPath);
+  console.log(
+    `  ref ${path.basename(srcPath)}: ${(st.size / 1e6).toFixed(1)}MB -> ${(after.size / 1e6).toFixed(1)}MB`
+  );
+  return outPath;
+}
+
 async function runHF(args, timeoutMs, credPath) {
-  const { stdout } = await execFileAsync(process.execPath, [cliBin, ...args, "--json", "--no-color"], {
-    env: {
-      ...process.env,
-      HIGGSFIELD_CREDENTIALS_PATH: credPath,
-      HIGGSFIELD_DISABLE_TELEMETRY: "1",
-    },
-    timeout: timeoutMs,
-    maxBuffer: 1024 * 1024 * 12,
-  });
-  return parseJson(stdout);
+  try {
+    const { stdout } = await execFileAsync(process.execPath, [cliBin, ...args, "--json", "--no-color"], {
+      env: {
+        ...process.env,
+        HIGGSFIELD_CREDENTIALS_PATH: credPath,
+        HIGGSFIELD_DISABLE_TELEMETRY: "1",
+      },
+      timeout: timeoutMs,
+      maxBuffer: 1024 * 1024 * 12,
+    });
+    return parseJson(stdout);
+  } catch (e) {
+    // execFile stuffs the ENTIRE command (including our multi-paragraph prompt)
+    // into e.message, which buries the real cause in the logs. Surface the
+    // actual failure instead: a kill signal means we hit the timeout.
+    const stderr = String(e.stderr || "").trim().split("\n").filter(Boolean).slice(-3).join(" | ");
+    const subcmd = args.slice(0, 3).join(" ");
+    if (e.killed || e.signal === "SIGTERM") {
+      throw new Error(`Higgsfield "${subcmd}" timed out after ${Math.round(timeoutMs / 1000)}s${stderr ? ` — ${stderr}` : ""}`);
+    }
+    throw new Error(`Higgsfield "${subcmd}" failed${stderr ? `: ${stderr}` : ` (exit ${e.code})`}`);
+  }
 }
 
 function parseJson(stdout) {
@@ -301,7 +374,7 @@ function buildPrompt(item, preserveScreenshot) {
       pickRedPhrases(copy).length
         ? `Color ONLY these exact phrases red, keep EVERY other added word white: ${pickRedPhrases(copy).map((r) => `"${r}"`).join(", ")}. Do not make any other words red.`
         : "Keep all added text white.",
-      "IMPORTANT: IGNORE the colors inside the screenshot (its pink/magenta ring) when styling the text. The text highlight bars must be semi-transparent near-black. NEVER use pink, magenta, or purple for the text or its bars.",
+      "IMPORTANT: IGNORE the colors inside the screenshot (its pink/magenta ring) when styling the text. The text highlight bars must be SOLID, fully opaque near-black at 100% opacity, never see-through. NEVER use pink, magenta, or purple for the text or its bars.",
       FRAMING_RULE,
       "Render this copy WORD FOR WORD, exactly as written, with no changes, no added words, no removed words, and no invented statistics or claims:",
       "",
@@ -334,7 +407,7 @@ function buildMatchPrompt(item, chartNote, refMode) {
     refMode === "photo"
       ? "The reference image is a PHOTO of the man. Use HIM as the subject and keep his real face, physique, skin tone, tattoos, and his ORIGINAL background and setting exactly as in the photo. Do NOT composite, swap, or invent a different background. No before/after comparison."
       : refMode === "two"
-        ? "You are given TWO reference images. Reference image 1 is one of our PROVEN finished ads — copy its EXACT visual style: same bold Instagram-Story font, line spacing, semi-transparent near-black rounded highlight bars, layout, and composition. Reference image 2 is a PHOTO of the man — feature HIM as the subject (his real face, physique, skin tone, tattoos). Put the man from image 2 into the ad style of image 1. Do not distort or beautify him; no before/after comparison."
+        ? "You are given TWO reference images. Reference image 1 is one of our PROVEN finished ads — copy its EXACT visual style: same bold Instagram-Story font, same letterforms and letter spacing, same line spacing, SOLID fully-opaque near-black rounded highlight bars at 100% opacity (never see-through), same layout and composition. Reference image 2 is a PHOTO of the man — feature HIM as the subject (his real face, physique, skin tone, tattoos). Put the man from image 2 into the ad style of image 1. Do not distort or beautify him; no before/after comparison."
         : "The reference image is one of our PROVEN finished ads — copy its EXACT visual style and keep the man in it. No before/after comparison.";
   return [
     "Create a finished 9:16 vertical Instagram Story DM ad.",
@@ -362,8 +435,18 @@ function pickRedsEvergreen(copy) {
   if (/\$0\b/.test(copy)) reds.push("$0");
   else if (/Zero dollars/i.test(copy)) reds.push("Zero dollars");
   else if (/\bFree\b/.test(copy)) reds.push("Free");
+
+  // "I'm looking for 5 future first responders who..." -> red "5 future first
+  // responders". The audience callout is the offer token in this ad structure and
+  // the noun varies per ad, so capture the whole phrase up to the clause that
+  // follows it rather than maintaining a noun whitelist.
+  const callout = copy.match(
+    /looking for\s+(\d+[^\n]*?)(?=\s+(?:who|stuck|with|that)\b|[,\n]|$)/i
+  );
+  if (callout && callout[1] && callout[1].length <= 60) reds.push(callout[1].trim());
+
   for (const m of copy.matchAll(/\b\d+\s+(?:men|women|people|spots?|guys|moms|dads|coaches)\b/gi)) {
-    if (!reds.includes(m[0])) reds.push(m[0]);
+    if (!reds.some((r) => r.toLowerCase() === m[0].toLowerCase())) reds.push(m[0]);
   }
   if (/\bDM me\b/i.test(copy) && !reds.includes("DM me")) reds.push("DM me");
   return reds.slice(0, 4);
@@ -379,11 +462,62 @@ function buildEvergreenPrompt(item) {
 
   if (mode === "screenshot") return buildPrompt(item, true);
 
+  // AD_ON_BACKGROUND: the second half of the background pipeline. Reference 1 is a
+  // PROVEN finished ad supplying TEXT STYLING ONLY; reference 2 is a finished
+  // background photo whose person AND setting must survive untouched. This is the
+  // Antwan two-ref recipe stated explicitly, because the generic two_ref wording
+  // ("feature them as the subject") lets the model reinvent the background.
+  if (mode === "ad_on_background") {
+    return [
+      "Create a finished 9:16 vertical Instagram Story DM ad by adding ad text on top of an existing photo.",
+      "You are given TWO reference images and they play COMPLETELY DIFFERENT roles.",
+      "REFERENCE IMAGE 1 is one of our PROVEN finished ads. Copy its TEXT STYLING EXACTLY and treat it as the template: the SAME typeface, the same heavy font weight, the same letterforms, the same letter spacing and line spacing, the same text size relationship between the headline block and the bullet blocks, the SOLID fully-opaque near-black rounded bars, the generous even padding inside each bar, and the left-aligned stacked block layout. Match the font so closely that the two ads look like they came from the same designer on the same day. Do NOT substitute a similar-looking font, and do NOT use reference image 1's background, its person, its setting, or its wording. It is a styling template only.",
+      "REFERENCE IMAGE 2 is the ACTUAL PHOTO this ad is built on. Keep it at full 100% opacity, completely unchanged: the same man with his real face, beard, build, skin tone, tattoos and clothing, in his ORIGINAL background and setting, with the original lighting and composition. Do NOT swap, blur, restyle, regenerate, or replace the background. Do NOT move or re-pose him. You are only laying text over this photo.",
+      STYLE_RULE,
+      redLine,
+      FRAMING_RULE,
+      "Place the text blocks over the calm, uncluttered part of the photo so they stay readable, and never cover the man's face.",
+      FLAG_RULE,
+      "Render the following ad copy WORD FOR WORD exactly as written (correct spelling, no added or removed words, no invented statistics, keep the line breaks and the bullet lines as separate blocks):",
+      "",
+      copy,
+      "",
+      "Clean and premium.",
+    ].join("\n");
+  }
+
+  // BACKGROUND mode: a clean, no-text 9:16 photo of the person in a gritty, real
+  // setting, built to sit UNDER bold ad text added later. No copy is rendered.
+  if (mode === "background") {
+    const scene = (item.image_direction || "").trim();
+    return [
+      "Create a 9:16 vertical photo to be used as the BACKGROUND of a fitness text ad.",
+      "The reference image is a real PHOTO of the man. Keep HIM as the subject with his real face, beard, build, skin tone, and arm tattoos. Do not beautify, slim, inflate, age, or change his identity.",
+      scene ? `Setting: ${scene}` : "Setting: a normal, real gym or training environment.",
+      "Look and feel: a real, believable fitness photo, the kind a fitness coach posts of his own training. Clean and normal. NOT luxury, NOT a fancy high-end premium gym, NOT heavy modern branding, and NOT dark, gritty, industrial, moody, or scary. Natural everyday gym lighting or clean daytime light. It must clearly read as fitness/training.",
+      "Composition: leave one simple, uncluttered, calmer area (usually the upper portion, like a plain wall, ceiling, or open sky) where bold text can be laid on top later; keep whatever is behind that area not busy. Position the man lower or off to one side.",
+      // Recurring failure #1 (Jake batch, 2026-07-25): sunglasses indoors + studio-hard
+      // light on the man over flat indoor ambient. Both read instantly as fake.
+      "EYEWEAR: if the setting is indoors, he wears NO sunglasses and no tinted eyewear. Sunglasses are only ever acceptable in a genuinely outdoor, sunlit scene.",
+      "LIGHTING CONSISTENCY: the light falling on the man must match the light in the room — same direction, same hardness or softness, same colour temperature, and his shadows must fall the same way as the shadows on the equipment and floor. Never composite a hard, sunlit, or studio-lit subject into a soft, evenly lit indoor space.",
+      // Recurring failure #2: shrunken/short subject and thin legs next to gym gear.
+      "PROPORTION AND SCALE: keep his real height, real leg and quad mass, and real body proportions from the reference photo. He must scale correctly against the equipment around him — a flat bench sits at about knee height, a barbell in a rack sits near mid-chest, a dumbbell rack is around hip height. Never render him short, stumpy, shrunken, or with legs thinner than the reference.",
+      "ABSOLUTELY NO rendered text, NO words, letters, numbers, captions, watermarks, brand logos, or interface overlaid anywhere in the image. Real physical objects that belong in the scene (an American flag on the wall or a pole, gym equipment, plain wall decor) are fine and expected — the ban is only on ad text/graphics laid over the photo.",
+      // Recurring failure #3: the flag. Two distinct defects, both must be named.
+      // (a) wrong star count unless the 9-row 6/5 grid is spelled out; (b) even at
+      // the right count, a flag hung at an ANGLE renders the stars as a diagonal
+      // lattice instead of straight horizontal rows, which is what reads as "wrong"
+      // at a glance. Verified 2026-07-25 against a real flag reference.
+      FLAG_RULE,
+      "Sharp and believable, natural skin and clothing, one person only. No before/after, no split screen, no collage, no frame or border.",
+    ].join("\n");
+  }
+
   const refLine =
     mode === "two_ref"
-      ? "You are given TWO reference images. Reference image 1 is one of our PROVEN finished ads — copy its EXACT visual style: same bold Instagram-Story font, line spacing, semi-transparent near-black rounded highlight bars, layout, and composition. Reference image 2 is a PHOTO of the person — feature THEM as the subject (their real face, physique, skin tone, tattoos). Do not distort or beautify them; no before/after comparison."
+      ? "You are given TWO reference images. Reference image 1 is one of our PROVEN finished ads — copy its EXACT visual style: same bold Instagram-Story font, same letterforms and letter spacing, same line spacing, SOLID fully-opaque near-black rounded highlight bars at 100% opacity (never see-through), same layout and composition. Reference image 2 is a PHOTO of the person — feature THEM as the subject (their real face, physique, skin tone, tattoos). Do not distort or beautify them; no before/after comparison."
       : mode === "finished_ad"
-        ? "The reference image is one of our PROVEN finished ads. Copy its EXACT visual style: same bold Instagram-Story font, line spacing, semi-transparent near-black rounded highlight bars, layout, and composition. Keep the SAME person from the reference exactly as they are — real face, physique, skin tone, tattoos, pose, clothing, and the original background — do not distort, slim, inflate, beautify, or replace them or the setting. No before/after comparison."
+        ? "The reference image is one of our PROVEN finished ads. Copy its EXACT visual style: same bold Instagram-Story font, same letterforms and letter spacing, same line spacing, SOLID fully-opaque near-black rounded highlight bars at 100% opacity (never see-through), same layout and composition. Keep the SAME person from the reference exactly as they are — real face, physique, skin tone, tattoos, pose, clothing, and the original background — do not distort, slim, inflate, beautify, or replace them or the setting. No before/after comparison."
         : "The reference image is a PHOTO of the person. Use THEM as the subject and keep their real face, physique, skin tone, tattoos, and their ORIGINAL background and setting exactly as in the photo. Do NOT composite, swap, or invent a different background. No before/after comparison.";
 
   return [
@@ -484,7 +618,16 @@ async function main() {
   console.log(`Generating ${labels.length} item(s): ${labels.join(", ")}\n`);
 
   const results = [];
-  for (let genIndex = 0; genIndex < labels.length; genIndex++) {
+
+  // Generation is submit-then-poll, so most of each item's ~3 minutes is spent
+  // waiting on Higgsfield, not on us. Running a few in flight at once cuts the
+  // wall-clock of a batch proportionally. Default 4; override with
+  // --concurrency N (use 1 to restore the old strictly-serial behaviour).
+  const concurrency = Math.max(1, Math.min(8, Number(flagValue("--concurrency")) || 4));
+  console.log(`Concurrency: ${concurrency}\n`);
+
+  let cursor = 0;
+  const runOne = async (genIndex) => {
     const label = labels[genIndex];
     console.log(`\n===== ${label} =====`);
     try {
@@ -547,6 +690,9 @@ async function main() {
         refLabel = `${refFile}${preserve ? " (PRESERVE screenshot UI)" : ""}`;
       }
       console.log(`References: ${refLabel}`);
+
+      // Downscale before upload — full-res references blow the submit timeout.
+      refPaths = await Promise.all(refPaths.map((p) => shrinkReference(p)));
 
       // Revisions: fold the user's note into the prompt (except copy-only edits,
       // whose copy_text was already corrected in the DB).
@@ -636,7 +782,19 @@ async function main() {
       console.error(`FAILED ${label}: ${e.message}`);
       results.push({ label, ok: false, error: e.message });
     }
-  }
+  };
+
+  // Simple worker pool: each worker pulls the next index until the list is done,
+  // so a slow item never blocks the others.
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, labels.length) }, async () => {
+      for (;;) {
+        const i = cursor++;
+        if (i >= labels.length) return;
+        await runOne(i);
+      }
+    })
+  );
 
   await cleanup();
 
