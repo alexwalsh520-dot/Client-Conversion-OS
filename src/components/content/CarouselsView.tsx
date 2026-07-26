@@ -212,15 +212,17 @@ export default function CarouselsView({ creator, mode = "operator", token }: { c
           {/* Reader */}
           <div style={{ display: "grid", gap: 12, minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-muted)" }}>
-              <span style={{ fontWeight: 800, color: "var(--text-secondary)" }}>{cur.carIdx + 1} / {rows.length}</span>
-              <span>·</span>
-              <span style={{ fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{curRow.topic || "Carousel"}</span>
+              <span style={{ flexShrink: 0, whiteSpace: "nowrap", fontWeight: 800, color: "var(--text-secondary)" }}>{cur.carIdx + 1} / {rows.length}</span>
+              <span style={{ flexShrink: 0 }}>·</span>
+              <span style={{ minWidth: 0, fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{curRow.topic || "Carousel"}</span>
               {!isCreator && curRow.origin === "external" && <ExternalTag />}
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center" }}>
-              <button onClick={prev} disabled={safePos === 0} style={{ ...chevBtn, opacity: safePos === 0 ? 0.3 : 1 }} title="Previous"><ChevronLeft size={22} /></button>
-              <div style={{ position: "relative", width: "100%", maxWidth: 520, touchAction: "pan-y", userSelect: "none" }} onWheel={onWheel}
+              <button onClick={prev} disabled={safePos === 0} style={{ ...chevBtn, flexShrink: 0, opacity: safePos === 0 ? 0.3 : 1 }} title="Previous"><ChevronLeft size={22} /></button>
+              {/* minWidth:0 is load-bearing: without it the canvas's intrinsic width becomes the flex
+                  item's minimum and the slide overflows the phone viewport instead of scaling down. */}
+              <div style={{ position: "relative", width: "100%", minWidth: 0, maxWidth: 520, touchAction: "pan-y", userSelect: "none" }} onWheel={onWheel}
                 onMouseDown={(e) => startAt(e.clientX)} onMouseUp={(e) => endAt(e.clientX)}
                 onTouchStart={(e) => startAt(e.touches[0].clientX)} onTouchEnd={(e) => endAt(e.changedTouches[0].clientX)}>
                 <BigSlide blocks={blocksForSlide(curSlide)} creator={creator} />
@@ -231,7 +233,7 @@ export default function CarouselsView({ creator, mode = "operator", token }: { c
                   <button onClick={() => setExportCar(cur.carIdx)} style={overlayBtn} title="Export"><Download size={15} /></button>
                 </div>
               </div>
-              <button onClick={next} disabled={safePos === last} style={{ ...chevBtn, opacity: safePos === last ? 0.3 : 1 }} title="Next"><ChevronRight size={22} /></button>
+              <button onClick={next} disabled={safePos === last} style={{ ...chevBtn, flexShrink: 0, opacity: safePos === last ? 0.3 : 1 }} title="Next"><ChevronRight size={22} /></button>
             </div>
 
             {/* Slide dots for the current carousel */}
