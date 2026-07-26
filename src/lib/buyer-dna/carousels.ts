@@ -312,15 +312,24 @@ const HOOK_BANS: { re: RegExp; issue: string }[] = [
 ];
 const VALIDATION_CLOSER = /^(?:i hear (?:that|you)|i get it|i understand|that(?:'|\u2019)?s fair|fair enough)[.!]?$/i;
 
+// The variety rule, machine-checked for the family that actually recurs: opening by denying the
+// cause ("You're not lazy", "Your schedule is not the problem"). One of these in a day is a
+// legitimate angle. Two is the same skeleton twice, which is exactly what the rule forbids.
+const DENIAL_OPENER = /^(?:you(?:'|\u2019)?re not\b|it(?:'|\u2019)?s not\b|(?:your|the|his|that)\s+[\w\s]{0,24}?\b(?:is|was|are|were)\s+not\s+(?:the\s+)?(?:problem|issue|reason|thing)\b)/i;
+
 function hookViolations(carousels: Carousel[]): { c: number; issue: string }[] {
   const out: { c: number; issue: string }[] = [];
+  const denials: number[] = [];
   carousels.forEach((car, ci) => {
     const text = (car.slides || [])[0]?.text || "";
     for (const b of HOOK_BANS) if (b.re.test(text)) out.push({ c: ci + 1, issue: b.issue });
     const lines = text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
     const lastLine = lines[lines.length - 1] || "";
     if (VALIDATION_CLOSER.test(lastLine)) out.push({ c: ci + 1, issue: `hook ends on validation ("${lastLine}")` });
+    if (DENIAL_OPENER.test(lines[0] || "")) denials.push(ci + 1);
   });
+  // Every one past the first is the repeat, so the retry is told which hooks to re-angle.
+  for (const c of denials.slice(1)) out.push({ c, issue: "second hook of the day opening on the same deny-the-cause skeleton (variety rule)" });
   return out;
 }
 
@@ -432,7 +441,7 @@ export async function generateCarouselSet(
         ? `These slides contain a sentence that is too long: ${longNamedWords.join("; ")}. Break each one into two or more short sentences, each on its own line. Do NOT join them back with a comma or an 'and'.`
         : "",
       hookNamed.length
-        ? `These slide-1 hooks break the HOUSE HOOK RULES: ${hookNamed.join("; ")}. Rewrite each of those hooks on a DIFFERENT skeleton from the other hooks in this set, ending on a specific truth, cost or image — not on sympathy and not on a withheld reveal.`
+        ? `These slide-1 hooks break the HOUSE HOOK RULES: ${hookNamed.join("; ")}. Rewrite each of those hooks on a DIFFERENT hook type from every other hook in this set, ending on a specific truth, cost or image — not on sympathy, not on a withheld reveal, and not by denying a cause the hook never replaces.`
         : "",
       "Keep every other slide as it is. Return the full corrected JSON.",
     ].filter(Boolean).join(" ");
