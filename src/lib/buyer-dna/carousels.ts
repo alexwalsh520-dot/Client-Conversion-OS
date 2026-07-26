@@ -315,7 +315,9 @@ const VALIDATION_CLOSER = /^(?:i hear (?:that|you)|i get it|i understand|that(?:
 // The variety rule, machine-checked for the family that actually recurs: opening by denying the
 // cause ("You're not lazy", "Your schedule is not the problem"). One of these in a day is a
 // legitimate angle. Two is the same skeleton twice, which is exactly what the rule forbids.
-const DENIAL_OPENER = /^(?:you(?:'|\u2019)?re not\b|it(?:'|\u2019)?s not\b|(?:your|the|his|that)\s+[\w\s]{0,24}?\b(?:is|was|are|were)\s+not\s+(?:the\s+)?(?:problem|issue|reason|thing)\b)/i;
+// Matched anywhere in the hook, not just the opening line: the first pass only checked line 1 and
+// the model simply moved the same move to the closing line ("That's not a discipline problem").
+const DENIAL_MOVE = /\b(?:you(?:'|\u2019)?re|that(?:'|\u2019)?s|it(?:'|\u2019)?s|this is|is|was|are|were)\s+not\s+(?:a|an|the)?\s*(?:problem|issue|reason|thing|discipline|character|motivation|willpower|effort|lazy|laziness|flaw)\b/i;
 
 function hookViolations(carousels: Carousel[]): { c: number; issue: string }[] {
   const out: { c: number; issue: string }[] = [];
@@ -326,10 +328,10 @@ function hookViolations(carousels: Carousel[]): { c: number; issue: string }[] {
     const lines = text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
     const lastLine = lines[lines.length - 1] || "";
     if (VALIDATION_CLOSER.test(lastLine)) out.push({ c: ci + 1, issue: `hook ends on validation ("${lastLine}")` });
-    if (DENIAL_OPENER.test(lines[0] || "")) denials.push(ci + 1);
+    if (DENIAL_MOVE.test(text)) denials.push(ci + 1);
   });
   // Every one past the first is the repeat, so the retry is told which hooks to re-angle.
-  for (const c of denials.slice(1)) out.push({ c, issue: "second hook of the day opening on the same deny-the-cause skeleton (variety rule)" });
+  for (const c of denials.slice(1)) out.push({ c, issue: "repeats the deny-the-cause move another hook in this set already uses (variety rule)" });
   return out;
 }
 
