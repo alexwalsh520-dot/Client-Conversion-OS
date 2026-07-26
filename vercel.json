@@ -44,6 +44,10 @@
       "schedule": "45 7 * * *"
     },
     {
+      "path": "/api/cron/accuracy",
+      "schedule": "45 8 * * *"
+    },
+    {
       "path": "/api/cron/followup-drain",
       "schedule": "*/2 * * * *"
     },
