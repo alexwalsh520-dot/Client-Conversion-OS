@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
 import { CONTENT_CREATORS } from "@/lib/instagram-content";
+import { resolveCalendarAccess } from "@/lib/content/calendar-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,11 +14,22 @@ async function authorized(req: NextRequest) {
   return !!s?.user;
 }
 
-// GET the day's carousels for one creator.
+// GET the day's carousels for one creator. READ-ONLY, so it also accepts a creator's share token —
+// exactly like every other token surface, the creator comes FROM THE TOKEN and any client-supplied
+// `creator` is ignored, so one creator's token can never read another's sets. Writes (PATCH below)
+// stay session-only: the creator's view is read + use, never manage.
 export async function GET(req: NextRequest) {
-  if (!(await authorized(req))) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const url = new URL(req.url);
-  const slug = (url.searchParams.get("creator") || "").toLowerCase();
+  const token = url.searchParams.get("token");
+  let slug: string;
+  if (token) {
+    const access = await resolveCalendarAccess(req, token, null, false);
+    if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
+    slug = access.creator;
+  } else {
+    if (!(await authorized(req))) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    slug = (url.searchParams.get("creator") || "").toLowerCase();
+  }
   if (!(CONTENT_CREATORS as readonly string[]).includes(slug)) return NextResponse.json({ error: "Unknown creator" }, { status: 400 });
   const date = url.searchParams.get("date") || "";
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return NextResponse.json({ error: "Bad date" }, { status: 400 });

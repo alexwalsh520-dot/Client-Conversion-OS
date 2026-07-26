@@ -95,13 +95,22 @@ export default function PlaybookView({
   // Playbooks generated before the tier list existed simply have no `saying` — hide the section
   // entirely until the next weekly regen rather than showing an empty shell.
   const saying: PlaybookSaying[] = (playbook?.saying || []).filter((s) => s && s.theme);
-  // Actions: prefer an external playbook's own actions (strings or {move,why}); else the shift brief's.
-  const externalActions = (playbook?.actions || [])
-    .map((a) => (typeof a === "string" ? { move: a } : a))
-    .filter((a) => a && a.move);
-  const moves = externalActions.length
-    ? externalActions.slice(0, 8)
-    : (Array.isArray(shiftBrief?.shifts) ? shiftBrief!.shifts : []).filter((s) => s && s.move).slice(0, 3);
+  // Actions: the playbook's own 5 headline+detail pairs when present. Older playbooks stored plain
+  // strings or {move,why} — those normalize to a headline with whatever detail they had, so an
+  // un-regenerated creator still renders (headline-only) instead of breaking.
+  const playbookActions = (playbook?.actions || [])
+    .map((a) => {
+      if (typeof a === "string") return { headline: a, detail: "" };
+      const o = a as { headline?: string; detail?: string; move?: string; why?: string };
+      return { headline: o.headline || o.move || "", detail: o.detail || o.why || "" };
+    })
+    .filter((a) => a.headline);
+  const moves = playbookActions.length
+    ? playbookActions.slice(0, 5)
+    : (Array.isArray(shiftBrief?.shifts) ? shiftBrief!.shifts : [])
+        .filter((s) => s && s.move)
+        .slice(0, 5)
+        .map((s) => ({ headline: s.move || "", detail: s.why || "" }));
   // New external-only sections (rendered only when present).
   const buyerLanguage = (playbook?.buyer_language || []).filter(Boolean);
   const filmingConcepts = (playbook?.filming_concepts || [])
@@ -157,9 +166,9 @@ export default function PlaybookView({
             {moves.map((m, i) => (
               <Row
                 key={i}
-                summary={m.move}
-                truncate
-                detail={m.why ? <p style={{ fontSize: 14.5, color: BODY, lineHeight: 1.65, margin: 0 }}>{m.why}</p> : undefined}
+                lead={i + 1}
+                summary={m.headline}
+                detail={m.detail ? <p style={{ fontSize: 14.5, color: BODY, lineHeight: 1.65, margin: 0 }}>{m.detail}</p> : undefined}
               />
             ))}
           </ol>
@@ -188,7 +197,6 @@ export default function PlaybookView({
                 key={i}
                 lead={i + 1}
                 summary={h.hook}
-                truncate
                 detail={
                   <div>
                     {h.present && <p style={{ fontSize: 14.5, color: BODY, lineHeight: 1.65, margin: "0 0 8px" }}>{h.present}</p>}
@@ -212,7 +220,6 @@ export default function PlaybookView({
                 key={i}
                 lead={i + 1}
                 summary={c.concept || ""}
-                truncate
                 detail={c.why ? <p style={{ fontSize: 14.5, color: BODY, lineHeight: 1.65, margin: 0 }}>{c.why}</p> : undefined}
               />
             ))}

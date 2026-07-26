@@ -46,7 +46,12 @@ const LAYOUT_CSS = `
 @media (min-width:860px){.car-list{flex-direction:column;overflow:visible;padding-bottom:0;position:sticky;top:12px}}
 `;
 
-export default function CarouselsView({ creator }: { creator: string }) {
+// mode="creator" is the token page: the same swipe-through viewer and the same downloads, but no
+// editor, no generate, no provenance tags — the creator reads and uses their carousels, they don't
+// manage them. Reads go through the token (server derives the creator from it), so the component
+// never needs to be trusted with scoping.
+export default function CarouselsView({ creator, mode = "operator", token }: { creator: string; mode?: "operator" | "creator"; token?: string }) {
+  const isCreator = mode === "creator";
   const [date, setDate] = useState<string>(todayET);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -60,12 +65,13 @@ export default function CarouselsView({ creator }: { creator: string }) {
   const load = useCallback(async (d: string) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/content/carousels?creator=${creator}&date=${d}`, { cache: "no-store" });
+      const qs = token ? `token=${encodeURIComponent(token)}&date=${d}` : `creator=${creator}&date=${d}`;
+      const res = await fetch(`/api/content/carousels?${qs}`, { cache: "no-store" });
       const j = await res.json();
       setRows((j.carousels || []).sort((a: Row, b: Row) => a.slot - b.slot));
       setPos(0);
     } finally { setLoading(false); }
-  }, [creator]);
+  }, [creator, token]);
   useEffect(() => { load(date); }, [date, load]);
 
   // Flat list of every slide across the carousels → one continuous swipe through the whole day.
@@ -161,11 +167,15 @@ export default function CarouselsView({ creator }: { creator: string }) {
       ) : !rows || rows.length === 0 ? (
         <div style={{ background: "var(--bg-card)", border: "1px solid var(--border-primary)", borderRadius: 14, padding: 44, textAlign: "center" }}>
           <GalleryHorizontal size={26} style={{ color: "var(--text-muted)", marginBottom: 10 }} />
-          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", marginBottom: 6 }}>No carousels for {prettyDate(date)} yet</div>
-          <p style={{ fontSize: 13.5, color: "var(--text-muted)", lineHeight: 1.6, margin: "0 0 16px" }}>Text carousels aimed at the buyer who pays — generated once, then read, edited, and exported here.</p>
-          <button onClick={generate} disabled={generating} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "10px 18px", borderRadius: 10, border: "none", background: "var(--accent)", color: "#1a1a1a", fontSize: 13.5, fontWeight: 800, cursor: "pointer", opacity: generating ? 0.6 : 1 }}>
-            {generating ? <Loader2 size={15} className="spin" /> : <Sparkles size={15} />} {generating ? "Generating…" : "Generate today's carousels"}
-          </button>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", marginBottom: 6 }}>{isCreator ? "Today\u2019s carousels are on the way." : `No carousels for ${prettyDate(date)} yet`}</div>
+          {!isCreator && (
+            <>
+              <p style={{ fontSize: 13.5, color: "var(--text-muted)", lineHeight: 1.6, margin: "0 0 16px" }}>Text carousels aimed at the buyer who pays — generated once, then read, edited, and exported here.</p>
+              <button onClick={generate} disabled={generating} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "10px 18px", borderRadius: 10, border: "none", background: "var(--accent)", color: "#1a1a1a", fontSize: 13.5, fontWeight: 800, cursor: "pointer", opacity: generating ? 0.6 : 1 }}>
+                {generating ? <Loader2 size={15} className="spin" /> : <Sparkles size={15} />} {generating ? "Generating…" : "Generate today's carousels"}
+              </button>
+            </>
+          )}
         </div>
       ) : curRow && curSlide && cur ? (
         <div className="car-shell">
@@ -191,7 +201,7 @@ export default function CarouselsView({ creator }: { creator: string }) {
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 7, marginTop: 3, fontSize: 11.5, color: "var(--text-muted)" }}>
                       {row.slides.length} slides
                       {row.edited && <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 5, height: 5, borderRadius: 999, background: "var(--accent)" }} /> edited</span>}
-                      {row.origin === "external" && <ExternalTag />}
+                      {!isCreator && row.origin === "external" && <ExternalTag />}
                     </span>
                   </span>
                 </button>
@@ -205,7 +215,7 @@ export default function CarouselsView({ creator }: { creator: string }) {
               <span style={{ fontWeight: 800, color: "var(--text-secondary)" }}>{cur.carIdx + 1} / {rows.length}</span>
               <span>·</span>
               <span style={{ fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{curRow.topic || "Carousel"}</span>
-              {curRow.origin === "external" && <ExternalTag />}
+              {!isCreator && curRow.origin === "external" && <ExternalTag />}
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center" }}>
@@ -215,7 +225,9 @@ export default function CarouselsView({ creator }: { creator: string }) {
                 onTouchStart={(e) => startAt(e.touches[0].clientX)} onTouchEnd={(e) => endAt(e.changedTouches[0].clientX)}>
                 <BigSlide blocks={blocksForSlide(curSlide)} creator={creator} />
                 <div style={{ position: "absolute", top: 12, right: 12, display: "flex", gap: 8 }}>
-                  <button onClick={() => setEditing({ carIdx: cur.carIdx, slideIdx: cur.slideIdx })} style={overlayBtn} title="Edit slide"><Pencil size={15} /></button>
+                  {!isCreator && (
+                    <button onClick={() => setEditing({ carIdx: cur.carIdx, slideIdx: cur.slideIdx })} style={overlayBtn} title="Edit slide"><Pencil size={15} /></button>
+                  )}
                   <button onClick={() => setExportCar(cur.carIdx)} style={overlayBtn} title="Export"><Download size={15} /></button>
                 </div>
               </div>
