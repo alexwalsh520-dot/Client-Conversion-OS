@@ -36,6 +36,7 @@ import {
   Factory,
   Film,
   Timer,
+  ShieldCheck,
 } from "lucide-react";
 
 const navItems = [
@@ -60,6 +61,7 @@ const marketingNavItems = [
   { href: "/cmo", label: "CMO", icon: UserRound },
   { href: "/ads", label: "Ads", icon: Megaphone },
   { href: "/ads-v2", label: "Ads v2", icon: Megaphone },
+  { href: "/accuracy", label: "Accuracy", icon: ShieldCheck },
   { href: "/manager-ads", label: "Manager Ads View", icon: BarChart3 },
   { href: "/dms", label: "DMs", icon: MessageCircle },
   { href: "/content", label: "Content", icon: Film },
