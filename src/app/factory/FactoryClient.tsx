@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Factory,
   LayoutGrid,
@@ -9,6 +10,7 @@ import {
   Check,
   RotateCcw,
   ChevronLeft,
+  ChevronRight,
   Image as ImageIcon,
   History,
   ChevronDown,
@@ -98,7 +100,10 @@ export default function FactoryClient() {
   const [bucketFilter, setBucketFilter] = useState<string>("all");
   const [styleFilter, setStyleFilter] = useState<string>("all");
   const [groupByBucket, setGroupByBucket] = useState(false);
-  const [lightbox, setLightbox] = useState<string | null>(null);
+  // Lightbox holds an item id when opened from a card (so it can offer approve /
+  // note / arrow-nav inline), or a bare url when opened from version history,
+  // where those actions do not apply.
+  const [lightbox, setLightbox] = useState<{ url: string; itemId?: string } | null>(null);
   const [historyItem, setHistoryItem] = useState<Item | null>(null);
   const [projMenuOpen, setProjMenuOpen] = useState(false);
   const [filesFolder, setFilesFolder] = useState<string>("all"); // bucket folder in Files view
@@ -430,15 +435,180 @@ export default function FactoryClient() {
       )}
 
       {lightbox && (
-        <div className="fc-lightbox" onClick={() => setLightbox(null)}>
-          <button className="fc-lightbox-close" aria-label="Close">
-            <X size={22} />
-          </button>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={lightbox} alt="" onClick={(e) => e.stopPropagation()} />
-        </div>
+        <ImageViewer
+          url={lightbox.url}
+          itemId={lightbox.itemId}
+          items={filteredItems}
+          onNavigate={(it) => setLightbox({ url: it.image_url!, itemId: it.id })}
+          onApprove={approve}
+          onRevision={sendRevision}
+          onClose={() => setLightbox(null)}
+        />
       )}
     </div>
+  );
+}
+
+// =========================================================================
+// Image viewer — the normal "click an image" view, with review controls built in
+// =========================================================================
+// Rendered through a PORTAL to document.body on purpose: .main-content sets
+// position:relative + z-index:1, which creates a stacking context that traps any
+// child's z-index, so an in-tree overlay renders UNDER the sidebar no matter how
+// high its z-index is.
+//
+// Keys: ArrowLeft/Right move between images, Enter approves when the note box is
+// empty and sends the note when it is not, Esc closes.
+function ImageViewer({
+  url,
+  itemId,
+  items,
+  onNavigate,
+  onApprove,
+  onRevision,
+  onClose,
+}: {
+  url: string;
+  itemId?: string;
+  items: Item[];
+  onNavigate: (item: Item) => void;
+  onApprove: (id: string) => void;
+  onRevision: (id: string, note: string) => void;
+  onClose: () => void;
+}) {
+  const [note, setNote] = useState("");
+  const [flash, setFlash] = useState("");
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  // Only items that actually have an image take part in arrow navigation.
+  const deck = useMemo(() => items.filter((i) => i.image_url), [items]);
+  const index = useMemo(() => deck.findIndex((i) => i.id === itemId), [deck, itemId]);
+  const item = index >= 0 ? deck[index] : null;
+
+  // Note box owns focus so you can just start typing on any image.
+  useEffect(() => {
+    setNote("");
+    inputRef.current?.focus();
+  }, [itemId]);
+
+  const say = useCallback((msg: string) => {
+    setFlash(msg);
+    window.setTimeout(() => setFlash(""), 1200);
+  }, []);
+
+  const go = useCallback(
+    (delta: number) => {
+      if (index < 0) return;
+      const next = deck[index + delta];
+      if (next) onNavigate(next);
+    },
+    [deck, index, onNavigate]
+  );
+
+  const act = useCallback(() => {
+    if (!item) return;
+    const text = note.trim();
+    if (text) {
+      onRevision(item.id, text);
+      say("Note sent");
+    } else {
+      onApprove(item.id);
+      say("Approved");
+    }
+    // Advance if there is a next image, otherwise close out of the deck.
+    const next = deck[index + 1];
+    if (next) onNavigate(next);
+    else onClose();
+  }, [item, note, onRevision, onApprove, deck, index, onNavigate, onClose, say]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        go(1);
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        go(-1);
+      } else if (e.key === "Enter" && item) {
+        e.preventDefault();
+        act();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [go, act, item, onClose]);
+
+  if (!mounted) return null;
+
+  return createPortal(
+    <div className="fc-lightbox" onClick={onClose}>
+      <button className="fc-lightbox-close" aria-label="Close" onClick={onClose}>
+        <X size={22} />
+      </button>
+
+      {item && index > 0 && (
+        <button
+          className="fc-lb-nav fc-lb-prev"
+          aria-label="Previous"
+          onClick={(e) => {
+            e.stopPropagation();
+            go(-1);
+          }}
+        >
+          <ChevronLeft size={20} />
+        </button>
+      )}
+
+      <div className="fc-lb-stage" onClick={(e) => e.stopPropagation()}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img className="fc-lb-img" src={url} alt={item?.label ?? ""} />
+
+        {item && (
+          <div className="fc-lb-tools">
+            <div className="fc-lb-meta">
+              <span className="fc-lb-label">{item.label}</span>
+              <span className={`fc-lb-stagetag fc-lb-${item.stage}`}>{item.stage.replace("_", " ")}</span>
+              <span className="fc-lb-pos">
+                {index + 1} / {deck.length}
+              </span>
+            </div>
+            <div className="fc-lb-row">
+              <input
+                ref={inputRef}
+                className="fc-lb-input"
+                value={note}
+                placeholder="Note to fix… (Enter sends · empty Enter approves)"
+                onChange={(e) => setNote(e.target.value)}
+              />
+              <button className={`fc-lb-act ${note.trim() ? "fc-lb-send" : "fc-lb-ok"}`} onClick={act}>
+                {note.trim() ? "Send" : "Approve"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {item && index < deck.length - 1 && (
+        <button
+          className="fc-lb-nav fc-lb-next"
+          aria-label="Next"
+          onClick={(e) => {
+            e.stopPropagation();
+            go(1);
+          }}
+        >
+          <ChevronRight size={20} />
+        </button>
+      )}
+
+      {flash && <div className="fc-lb-flash">{flash}</div>}
+    </div>,
+    document.body
   );
 }
 
@@ -460,7 +630,7 @@ function BoardView({
   onApprove: (id: string) => void;
   onRevision: (id: string, note: string) => void;
   onExport: () => void;
-  onLightbox: (url: string) => void;
+  onLightbox: (payload: { url: string; itemId?: string }) => void;
   onHistory: (item: Item) => void;
   completedCount: number;
 }) {
@@ -534,7 +704,7 @@ function VersionHistory({
 }: {
   item: Item;
   onClose: () => void;
-  onLightbox: (url: string) => void;
+  onLightbox: (payload: { url: string; itemId?: string }) => void;
 }) {
   const versions = (item.versions ?? []).slice().sort((a, b) => b.version - a.version);
   return (
@@ -558,7 +728,7 @@ function VersionHistory({
                     className="fc-history-thumb"
                     src={v.image_url}
                     alt={`v${v.version}`}
-                    onClick={() => onLightbox(v.image_url)}
+                    onClick={() => onLightbox({ url: v.image_url })}
                   />
                 ) : (
                   <div className="fc-history-noimg">no image</div>
@@ -591,7 +761,7 @@ function Card({
   item: Item;
   onApprove: (id: string) => void;
   onRevision: (id: string, note: string) => void;
-  onLightbox: (url: string) => void;
+  onLightbox: (payload: { url: string; itemId?: string }) => void;
   onHistory: (item: Item) => void;
 }) {
   const [note, setNote] = useState("");
@@ -627,7 +797,7 @@ function Card({
           className="fc-card-thumb"
           src={item.image_url}
           alt={item.label}
-          onClick={() => onLightbox(item.image_url!)}
+          onClick={() => onLightbox({ url: item.image_url!, itemId: item.id })}
         />
       ) : (
         <div className="fc-card-noimg">
@@ -793,7 +963,7 @@ function FilesView({
   items: Item[];
   folder: string;
   setFolder: (f: string) => void;
-  onLightbox: (url: string) => void;
+  onLightbox: (payload: { url: string; itemId?: string }) => void;
 }) {
   const withImages = items.filter((i) => i.image_url);
   const buckets = Array.from(new Set(items.map((i) => i.bucket)));
@@ -831,7 +1001,7 @@ function FilesView({
         ) : (
           <div className="fc-finder-grid">
             {shown.map((it) => (
-              <button key={it.id} className="fc-file" onClick={() => onLightbox(it.image_url!)}>
+              <button key={it.id} className="fc-file" onClick={() => onLightbox({ url: it.image_url!, itemId: it.id })}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={it.image_url!} alt={it.label} />
                 <span className="fc-file-name">{it.label}</span>

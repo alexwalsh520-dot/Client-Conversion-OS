@@ -734,21 +734,17 @@
 }
 
 /* ---- Lightbox ---- */
+/* Portalled to document.body, so this genuinely covers the sidebar instead of
+   being trapped inside .main-content's z-index:1 stacking context. */
 .fc-lightbox {
   position: fixed;
   inset: 0;
   z-index: 3000;
-  background: rgba(0, 0, 0, 0.82);
+  background: rgba(0, 0, 0, 0.88);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 40px;
-}
-.fc-lightbox img {
-  max-width: 90vw;
-  max-height: 90vh;
-  border-radius: 10px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  padding: 32px 76px;
 }
 .fc-lightbox-close {
   position: absolute;
@@ -758,6 +754,124 @@
   border: none;
   color: #fff;
   cursor: pointer;
+  z-index: 2;
+}
+
+/* Image + its tools share one column so the box tracks the image width. */
+.fc-lb-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-height: 100%;
+  min-height: 0;
+}
+.fc-lb-img {
+  max-width: 100%;
+  /* leave room for the tools strip so nothing is ever clipped */
+  max-height: calc(100vh - 150px);
+  object-fit: contain;
+  border-radius: 10px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+/* Deliberately narrow + quiet: it sits under the image, not competing with it. */
+.fc-lb-tools {
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fc-lb-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+}
+.fc-lb-label { color: rgba(255, 255, 255, 0.82); font-weight: 600; letter-spacing: 0.03em; }
+.fc-lb-stagetag { text-transform: lowercase; }
+.fc-lb-completed { color: #6ee7a8; }
+.fc-lb-revision { color: #f0b866; }
+.fc-lb-pos { margin-left: auto; font-variant-numeric: tabular-nums; }
+
+.fc-lb-row { display: flex; gap: 6px; }
+.fc-lb-input {
+  flex: 1;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #f2f2f4;
+  font: inherit;
+  font-size: 12.5px;
+  padding: 7px 11px;
+  outline: none;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.fc-lb-input::placeholder { color: rgba(255, 255, 255, 0.3); }
+.fc-lb-input:focus {
+  border-color: var(--accent, #c9a96e);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.fc-lb-act {
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.8);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 110ms ease, background 110ms ease;
+}
+.fc-lb-act:active { transform: scale(0.97); }
+.fc-lb-ok:hover { background: rgba(110, 231, 168, 0.16); color: #6ee7a8; border-color: rgba(110, 231, 168, 0.4); }
+.fc-lb-send { background: rgba(240, 184, 102, 0.16); color: #f0b866; border-color: rgba(240, 184, 102, 0.4); }
+
+/* Arrows sit in the padding gutters so they never overlap the image. */
+.fc-lb-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.75);
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+.fc-lb-nav:hover { background: rgba(255, 255, 255, 0.12); }
+.fc-lb-prev { left: 18px; }
+.fc-lb-next { right: 18px; }
+
+.fc-lb-flash {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  padding: 5px 14px;
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+@media (max-width: 640px) {
+  .fc-lightbox { padding: 20px 12px; }
+  .fc-lb-nav { display: none; }
+  .fc-lb-img { max-height: calc(100vh - 170px); }
 }
 
 /* ---- Version history (subtle vN pill + read-only modal) ---- */
