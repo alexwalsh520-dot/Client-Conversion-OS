@@ -93,12 +93,29 @@ test("spend vs Meta: exact match is green", () => {
   assert.equal(v.status, "green");
 });
 
-test("spend vs Meta: AMBER inside 1 percent (Meta still settling)", () => {
+test("spend vs Meta: GREEN on the real penny-rounding gap (10 cents on $2,989)", () => {
+  const v = classifySpendVsMeta([
+    { client: "tyson", window: "trailing 7 days", ourCents: 298926, metaCents: 298936, configured: true },
+  ]);
+  assert.equal(v.status, "green");
+});
+
+test("spend vs Meta: AMBER inside 1 percent but past penny rounding (Meta still settling)", () => {
   const v = classifySpendVsMeta([
     { client: "tyson", window: "yesterday", ourCents: 40541, metaCents: 40700, configured: true },
   ]);
   assert.equal(v.status, "amber");
   assert.ok(pct(40541, 40700) < 1);
+});
+
+test("spend vs Meta: the penny allowance never waves through a TINY account", () => {
+  // 70 cents is under the dollar allowance, but it is 12 percent of a $5.70 day,
+  // so the percentage rule still calls it red. The allowance can only ever
+  // forgive a gap that is BOTH under a dollar and under 0.1 percent.
+  const v = classifySpendVsMeta([
+    { client: "jake", window: "yesterday", ourCents: 500, metaCents: 570, configured: true },
+  ]);
+  assert.equal(v.status, "red");
 });
 
 test("spend vs Meta: RED past 1 percent", () => {

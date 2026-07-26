@@ -99,8 +99,16 @@ export interface SpendComparison {
   configured: boolean;
 }
 
+/** A gap this small cannot change any decision, and is explained below. */
+export const SPEND_PENNY_ALLOWANCE_CENTS = 100;
+
 export const SPEND_META_TOLERANCE_NOTE =
-  "Our stored copy of Meta spend must equal a fresh read from Meta exactly. Within 1 percent is " +
+  "Our stored copy of Meta spend is compared against a fresh read from Meta. Green needs the two " +
+  "within ONE DOLLAR and within 0.1 percent, both. That dollar is not a fudge, it is penny " +
+  "rounding: we store each ad's spend hour by hour rounded to the nearest cent and add those up, " +
+  "while Meta totals the whole account in full precision, so thousands of roundings leave a few " +
+  "cents behind (measured: 1 to 10 cents on 3,000 dollars). A gap under a dollar cannot change any " +
+  "decision, and anything that could would be far larger. Beyond that and within 1 percent is " +
   "amber, because Meta restates the most recent days for hours after they end. More than 1 percent " +
   "is red. A creator with no Meta key configured is amber, never red, because that is a missing " +
   "connection, not a wrong number.";
@@ -118,20 +126,25 @@ export function classifySpendVsMeta(rows: SpendComparison[]): Verdict {
       reason: `Our spend disagrees with Meta by more than 1 percent: ${worst.join(", ")}. Check the creator's Meta key, then re-run the ads sync for those days.`,
     };
   }
-  const near = live.filter((r) => r.ourCents !== r.metaCents);
+  // Beyond penny rounding, but still inside 1 percent: Meta settling.
+  const settling = live.filter(
+    (r) =>
+      Math.abs(r.ourCents - r.metaCents) > SPEND_PENNY_ALLOWANCE_CENTS ||
+      pct(r.ourCents, r.metaCents) > 0.1,
+  );
   if (unconfigured.length > 0) {
     return {
       status: "amber",
       reason: `No Meta key configured for: ${[...new Set(unconfigured.map((r) => r.client))].join(", ")}. Connect it so spend can be double-checked.`,
     };
   }
-  if (near.length > 0) {
+  if (settling.length > 0) {
     return {
       status: "amber",
-      reason: "Within 1 percent of Meta. That is Meta still settling the most recent days; nothing to do.",
+      reason: "Within 1 percent of Meta but more than penny rounding. That is Meta still settling the most recent days; nothing to do.",
     };
   }
-  return { status: "green", reason: "Our spend equals Meta exactly." };
+  return { status: "green", reason: "Our spend matches Meta down to penny rounding." };
 }
 
 // ── 3. Our cash vs the sales sheet ────────────────────────────────────────
