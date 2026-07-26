@@ -50,7 +50,7 @@ const LAYOUT_CSS = `
 .car-reader{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
 /* On a phone the two arrows would eat a third of the slide. Swipe and the dots both still work. */
 .car-chev{display:none;flex-shrink:0}
-@media (min-width:560px){.car-chev{display:inline-flex}}
+@media (min-width:560px){.car-chev{display:grid}}
 `;
 
 // mode="creator" is the token page: the same swipe-through viewer and the same downloads, but no
@@ -280,5 +280,7 @@ export default function CarouselsView({ creator, mode = "operator", token }: { c
 }
 
 const navBtn: React.CSSProperties = { width: 32, height: 32, borderRadius: 8, border: "1px solid var(--border-primary)", background: "var(--bg-glass)", color: "var(--text-secondary)", cursor: "pointer", display: "grid", placeItems: "center" };
-const chevBtn: React.CSSProperties = { flexShrink: 0, width: 40, height: 40, borderRadius: 999, border: "1px solid var(--border-primary)", background: "var(--bg-glass)", color: "var(--text-secondary)", cursor: "pointer", display: "grid", placeItems: "center" };
+// No `display` here on purpose — .car-chev owns it, so the media query can hide these on a phone
+// without an inline style outranking it.
+const chevBtn: React.CSSProperties = { flexShrink: 0, width: 40, height: 40, borderRadius: 999, border: "1px solid var(--border-primary)", background: "var(--bg-glass)", color: "var(--text-secondary)", cursor: "pointer", placeItems: "center" };
 const overlayBtn: React.CSSProperties = { display: "inline-flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, borderRadius: 8, border: "1px solid rgba(255,255,255,.18)", background: "rgba(0,0,0,.55)", color: "#fff", cursor: "pointer", backdropFilter: "blur(4px)" };
