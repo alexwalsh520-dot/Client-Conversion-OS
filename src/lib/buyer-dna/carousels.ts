@@ -10,7 +10,7 @@ import type { Icp } from "./icp";
 import type { Research } from "./dossier";
 import { getCurrentVoice, type BuyerVoice } from "./voice";
 import { getCurrentPlaybook } from "./playbook";
-import { getMessagingDoc, messagingDocBlock, getGlobalFrameworkDoc, frameworkBlock, frameworkProhibitions, frameworkVoiceSection } from "./messaging-doc";
+import { getMessagingDoc, messagingDocBlock, listGlobalFrameworkDocs, frameworkChannelBlock, frameworkProhibitions, frameworkVoiceSection, frameworkHookRules } from "./messaging-doc";
 import {
   CAROUSELS_PER_DAY, MIN_SLIDES_PER_CAROUSEL, MAX_SLIDES_PER_CAROUSEL,
   MAX_SENTENCES_PER_SLIDE, MAX_WORDS_PER_SENTENCE,
@@ -101,17 +101,22 @@ const MECHANICAL_BASE =
 //
 // hasPack: the house framework is installed. Without it, this returns exactly the pre-framework
 // prompt, so a missing framework doc degrades to the old behaviour rather than to nothing.
-function buildSys(hasDoc: boolean, hasPack: boolean, prohibitions: string[] = [], voiceRules = "", market = ""): string {
+function buildSys(hasDoc: boolean, hasPack: boolean, prohibitions: string[] = [], voiceRules = "", market = "", hookRules = ""): string {
   if (hasPack) {
     // The framework's own voice rules are hoisted here from the stored document. They live in the
     // system prompt because that is where a rule actually changes the output — the same words buried
     // in the reference block below did not hold.
     const voice = voiceRules ? `\n\nTHE FRAMEWORK'S VOICE RULES (authoritative):\n${voiceRules}` : "";
+    // The hook guide is the MORE SPECIFIC authority for every first slide; it wins over the general
+    // pack wherever they differ on hooks. Hoisted here for the same reason the voice rules are.
+    const hooks = hookRules
+      ? `\n\nHOOK RULES — these govern SLIDE 1 of every carousel and OUTRANK the general pack on anything hook-shaped:\n${hookRules}`
+      : "";
     const absolutes = prohibitions.length
       ? "\n\nABSOLUTE PROHIBITIONS from the framework — these are not stylistic preferences, every one is checked:\n" +
         prohibitions.map((l) => `- ${l}`).join("\n")
       : "";
-    return MECHANICAL_BASE + voice + absolutes + market + NO_DOLLARS;
+    return MECHANICAL_BASE + voice + hooks + absolutes + market + NO_DOLLARS;
   }
   return BASE + VOICE + BANNED_TELLS + (hasDoc ? "" : STYLE_REFERENCE) + JSON_HYGIENE + market + NO_DOLLARS;
 }
@@ -299,16 +304,21 @@ export async function generateCarouselSet(
     recentToAvoid(sb, client, forDate),
     getCurrentPlaybook(sb, client),
     getMessagingDoc(sb, client),
-    getGlobalFrameworkDoc(sb),
+    listGlobalFrameworkDocs(sb),
   ]);
   const hasDoc = !!doc;
   const docBlock = messagingDocBlock(doc); // "" for creators without a doc (e.g. Tyson) — no prompt change.
-  const packBlock = frameworkBlock(pack); // "" when no framework installed — generator runs as before.
+  // The whole framework channel: general pack + hook guide (+ anything added later), in order.
+  const packDocs = pack;
+  const basePack = packDocs.find((d) => (d.title || "").toLowerCase().includes("resource pack")) || packDocs[0] || null;
+  const hooksDoc = packDocs.find((d) => (d.title || "").toLowerCase().includes("hook")) || null;
+  const packBlock = frameworkChannelBlock(packDocs); // "" when nothing installed — generator runs as before.
   // The framework's own absolute bans, read out of the stored doc: restated in the system prompt and
   // checked after parsing. Nothing framework-specific is hardcoded here.
-  const { lines: packRules, terms: bannedTerms } = frameworkProhibitions(pack);
-  const packVoice = frameworkVoiceSection(pack);
-  const sys = buildSys(hasDoc, !!pack, packRules, packVoice, marketDirective(client)); // doc creators drop the Tyson/Antwan style exemplars entirely.
+  const { lines: packRules, terms: bannedTerms } = frameworkProhibitions(basePack);
+  const packVoice = frameworkVoiceSection(basePack);
+  const hookRules = frameworkHookRules(hooksDoc);
+  const sys = buildSys(hasDoc, !!packBlock, packRules, packVoice, marketDirective(client), hookRules); // doc creators drop the Tyson/Antwan style exemplars entirely.
 
   // The playbook's ranked tier list is the best evidence we have of what people actually voice, and
   // in what proportion — so the carousels aim at the top of it rather than at whatever reads well.

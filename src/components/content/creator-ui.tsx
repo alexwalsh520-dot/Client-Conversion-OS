@@ -48,16 +48,18 @@ export function Column({ children }: { children: React.ReactNode }) {
 
 // One collapsed row — the whole Playbook is built from these. Collapsed it shows a single line and
 // nothing else (no muted metadata bleeding through); the detail only exists once you open it.
+// A collapsed row: the summary is ALWAYS fully readable — it wraps to as many lines as it needs.
+// Truncation was removed deliberately: an ellipsised headline that you have to open to finish
+// reading defeats the point of a headline, and a row with no detail had no way to reveal the rest
+// at all.
 export function Row({
   lead,
   summary,
   detail,
-  truncate,
 }: {
   lead?: React.ReactNode;
   summary: React.ReactNode;
   detail?: React.ReactNode;
-  truncate?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const expandable = Boolean(detail);
@@ -70,7 +72,7 @@ export function Row({
           alignItems: "center",
           gap: 12,
           minHeight: 48,
-          padding: "4px 0",
+          padding: "10px 0",
           cursor: expandable ? "pointer" : "default",
         }}
       >
@@ -84,7 +86,6 @@ export function Row({
             fontSize: 15.5,
             color: INK,
             lineHeight: 1.45,
-            ...(truncate && !open ? { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } : null),
           }}
         >
           {summary}

@@ -32,10 +32,59 @@ export async function getMessagingDoc(sb: SupabaseClient, client: string): Promi
 // reserved client_key in the same table. It is the authoritative style/structure reference for the
 // carousel + playbook generators; per-creator docs sit alongside it, not above it. Newest version
 // wins, so updating the framework is just inserting a new row.
+// The framework CHANNEL. Any document whose client_key starts with this prefix is house guidance
+// that applies to EVERY creator — the general resource pack, the hook-writing guide, and whatever
+// comes next. Adding a new one is inserting a row; no code change. Newest version of each wins.
+//
+// Order is stable and meaningful: the general pack first (it governs overall voice and structure),
+// then the more specific guides (which win on the narrow thing they cover). Alphabetical after the
+// base pack gives us that for free — "__global__" sorts before "__global_hooks__".
+export const GLOBAL_DOC_PREFIX = "__global";
 export const GLOBAL_DOC_KEY = "__global__";
+export const GLOBAL_HOOKS_KEY = "__global_hooks__";
 
+export async function listGlobalFrameworkDocs(sb: SupabaseClient): Promise<MessagingDoc[]> {
+  try {
+    const { data } = await sb
+      .from("content_messaging_docs")
+      .select("client_key, version, title, doc_text")
+      .like("client_key", `${GLOBAL_DOC_PREFIX}%`)
+      .order("client_key", { ascending: true })
+      .order("version", { ascending: false });
+    const newest = new Map<string, MessagingDoc & { client_key: string }>();
+    for (const r of (data || []) as (MessagingDoc & { client_key: string })[]) {
+      if (!newest.has(r.client_key) && r.doc_text) newest.set(r.client_key, r); // version-desc => first wins
+    }
+    return [...newest.values()];
+  } catch {
+    // Table missing (pre-migration) — generators fall back to running without the framework.
+    return [];
+  }
+}
+
+// Back-compat single-doc accessor for callers that only want the base pack.
 export function getGlobalFrameworkDoc(sb: SupabaseClient): Promise<MessagingDoc | null> {
   return getMessagingDoc(sb, GLOBAL_DOC_KEY);
+}
+
+// Pull one named section out of a framework doc ("PART 8: ..." up to the next "PART n:").
+function docSection(text: string, part: number): string {
+  const start = text.search(new RegExp(`^PART\\s*${part}\\s*:`, "im"));
+  if (start < 0) return "";
+  const rest = text.slice(start);
+  const end = rest.slice(1).search(/^PART\s*\d+\s*:/im);
+  return (end > 0 ? rest.slice(0, end + 1) : rest).trim();
+}
+
+// The hook guide's HARD rules, hoisted into the system prompt. The guide is the more specific
+// authority for anything hook-shaped, and its rules only bind if they sit where rules land — the
+// same lesson the em-dash ban taught. Read from the stored doc; nothing quoted into this repo.
+export function frameworkHookRules(doc: MessagingDoc | null, maxChars = 5000): string {
+  if (!doc) return "";
+  // Parts 8 (rules), 9 (structures to rotate) and 11 (anti-AI checklist) are the binding ones;
+  // the rest of the guide still ships in full in the reference block below.
+  const picked = [8, 9, 11].map((n) => docSection(doc.doc_text, n)).filter(Boolean).join("\n\n");
+  return picked.slice(0, maxChars);
 }
 
 // The framework's voice rules, lifted out of the stored document and hoisted into the SYSTEM prompt.
@@ -94,6 +143,27 @@ export function frameworkBlock(doc: MessagingDoc | null, maxChars = 24000): stri
     "bracketed [INSERT ...] placeholders inside it are illustrative — the real material follows " +
     "below this block:\n" +
     doc.doc_text.slice(0, maxChars)
+  );
+}
+
+// The full framework reference block for the whole channel: every __global* doc, in stable order,
+// each labelled. Precedence is stated explicitly so a more specific guide wins on its own subject
+// without the model having to guess.
+export function frameworkChannelBlock(docs: MessagingDoc[], maxCharsPerDoc = 24000): string {
+  if (!docs.length) return "";
+  const parts = docs.map((d) =>
+    `--- ${(d.title || "FRAMEWORK DOCUMENT").toUpperCase()} (v${d.version}) ---\n${d.doc_text.slice(0, maxCharsPerDoc)}`,
+  );
+  return (
+    "THE AUTHORITATIVE WRITING FRAMEWORK — the house standard for how this content is written. It " +
+    "OUTRANKS every other stylistic instruction here; only the mechanical output contract (JSON " +
+    "shape, counts, sentence cap, no dollar figures) is non-negotiable.\n" +
+    "PRECEDENCE where these documents disagree: a document dedicated to a narrower subject wins on " +
+    "that subject (the hook guide governs anything hook-shaped, including every first slide), the " +
+    "general pack governs overall voice and structure everywhere else, and the MARKET directive in " +
+    "this system prompt governs terminology and spelling regardless of either. Bracketed " +
+    "[INSERT ...] placeholders inside are illustrative; the real material follows below.\n\n" +
+    parts.join("\n\n")
   );
 }
 

@@ -15,7 +15,7 @@ import { marketDirective } from "@/lib/content/market";
 import { compactTrendBrief, getCurrentTrendBrief } from "./trends";
 import { getCurrentShiftBrief } from "./shift";
 import { getCurrentVoice } from "./voice";
-import { getMessagingDoc, messagingDocBlock, getGlobalFrameworkDoc, frameworkBlock } from "./messaging-doc";
+import { getMessagingDoc, messagingDocBlock, listGlobalFrameworkDocs, frameworkChannelBlock, frameworkHookRules } from "./messaging-doc";
 import type { Research } from "./dossier";
 
 const MODEL = "claude-sonnet-4-6";
@@ -38,7 +38,10 @@ export type Playbook = {
   // Fields an EXTERNAL playbook (the content worker) may add. Internally-generated playbooks never set
   // these, so the view renders them only when present — old-shape versions are unaffected.
   origin?: string;
-  actions?: (string | { move?: string; why?: string })[];
+  // Actions are 5 headline+detail pairs: the headline is a complete, self-sufficient statement
+  // (always shown in full), the detail is the explanation behind the dropdown. Older playbooks stored
+  // plain strings or {move,why}; the view renders those as headline-only rows until the next regen.
+  actions?: (string | { move?: string; why?: string; headline?: string; detail?: string })[];
   buyer_language?: string[];
   filming_concepts?: (string | { concept?: string; why?: string })[];
 };
@@ -65,8 +68,10 @@ const MECHANICAL_SYS =
   "- Plain text only. No markdown, no ** bold markers, no emojis.\n" +
   "- Never include a specific dollar amount; describe money qualitatively.\n" +
   "- Ground everything in the evidence supplied below. Never invent a quote or a buyer phrase.\n" +
+  "- Write every section in proper sentence case with correct grammar and punctuation. Not lowercase fragments, not title case.\n" +
+  "- ACTIONS: exactly 5. Each is a headline plus a detail. The HEADLINE is one complete, grammatical statement of the action, roughly 10 words or fewer, that reads on its own without opening anything. The DETAIL is the in-depth explanation: what to do, why it attracts this specific buyer, and how to execute it.\n" +
   "Return STRICT JSON and nothing else:\n" +
-  '{"hooks":["a phrase or question a buyer actually said"],"buyer_language":["exact phrase from a call or DM"],"actions":["a specific action the creator should take"],"filming_concepts":[{"concept":"what to film","why":"which objection it addresses and what it signals"}]}\n' +
+  '{"hooks":["a phrase or question a buyer actually said"],"buyer_language":["exact phrase from a call or DM"],"actions":[{"headline":"Complete short statement of the action.","detail":"What to do, why it pulls this buyer, and how to execute."}],"filming_concepts":[{"concept":"what to film","why":"which objection it addresses and what it signals"}]}\n' +
   "\nDo not use double-quote characters inside JSON string values." +
   NO_DOLLARS;
 
@@ -216,11 +221,20 @@ function parseFramework(text: string): Playbook {
     (Array.isArray(v) ? v : []).map((x) => (typeof x === "string" ? x : String((x as { hook?: string })?.hook ?? ""))).filter(Boolean);
   let concepts = Array.isArray(p?.filming_concepts) ? p!.filming_concepts! : [];
   if (!concepts.length) concepts = salvageObjects<{ concept?: string; why?: string }>(text, ["concept"]);
+  // Actions arrive as {headline, detail}; tolerate a bare string or the older {move,why} shape.
+  const rawActions = Array.isArray(p?.actions) ? p!.actions! : [];
+  const actions = rawActions
+    .map((a) => {
+      if (typeof a === "string") return { headline: a, detail: "" };
+      const o = a as { headline?: string; detail?: string; move?: string; why?: string };
+      return { headline: o.headline || o.move || "", detail: o.detail || o.why || "" };
+    })
+    .filter((a) => a.headline);
   return {
     hooks: strs(p?.hooks).map((h) => ({ hook: h })),
     topics: [],
     buyer_language: strs(p?.buyer_language),
-    actions: strs(p?.actions),
+    actions,
     filming_concepts: concepts.filter((c) => c && (c.concept || c.why)),
   };
 }
@@ -263,9 +277,11 @@ export async function refreshPlaybook(
     getCurrentVoice(sb, client),
     adResponse(sb, client),
     getMessagingDoc(sb, client),
-    getGlobalFrameworkDoc(sb),
+    listGlobalFrameworkDocs(sb),
   ]);
-  const packBlock = frameworkBlock(pack); // "" when no framework — the generator runs as before.
+  const packBlock = frameworkChannelBlock(pack); // "" when no framework — the generator runs as before.
+  // The hook guide governs the playbook's hooks section too; hoisted into the system prompt.
+  const hookRules = frameworkHookRules(pack.find((d) => (d.title || "").toLowerCase().includes("hook")) || null);
   const docBlock = messagingDocBlock(doc); // "" for creators without a doc (e.g. Tyson) — no prompt change.
 
   const shiftAim = shift
@@ -332,7 +348,7 @@ export async function refreshPlaybook(
       const resp = await anthropic.messages.create({
         model: MODEL,
         max_tokens: 8000,
-        system: (packBlock ? MECHANICAL_SYS : SYS) + marketDirective(client),
+        system: (packBlock ? MECHANICAL_SYS : SYS) + (hookRules ? `\n\nHOOK RULES — these govern the hooks section and OUTRANK the general pack on anything hook-shaped:\n${hookRules}` : "") + marketDirective(client),
         messages: [{ role: "user", content: userMsg }],
       });
       logAiUsage({ feature: "buyer-dna-playbook", model: MODEL, usage: resp.usage });
@@ -366,7 +382,7 @@ export async function refreshPlaybook(
         hooks: result.hooks.slice(0, 30),
         topics: [],
         buyer_language: (result.buyer_language || []).slice(0, 40),
-        actions: (result.actions || []).slice(0, 12),
+        actions: (result.actions || []).slice(0, 5),
         filming_concepts: (result.filming_concepts || []).slice(0, 12),
       }
     : { saying, hooks: result.hooks.slice(0, 20), topics: result.topics.slice(0, 14) };
