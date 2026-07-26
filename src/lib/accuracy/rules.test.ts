@@ -146,15 +146,51 @@ test("cash vs sheet: RED on a one cent difference", () => {
   assert.equal(v.status, "red");
 });
 
-test("cash vs sheet: RED when the money matches but a row went missing", () => {
+test("cash vs sheet: AMBER when a moneyless call was typed in after the last rebuild", () => {
   const v = classifyCashVsSheet({
     factsCents: 6602400,
     trackerCents: 6602400,
-    factsRows: 223,
+    factsRows: 224,
+    trackerRows: 225,
+    sheetSyncedAfterRebuild: true,
+  });
+  assert.equal(v.status, "amber");
+  assert.match(v.reason, /1 call\(s\) were typed into the sheet/);
+});
+
+test("cash vs sheet: RED when the sheet has an extra row but nothing synced since the rebuild", () => {
+  const v = classifyCashVsSheet({
+    factsCents: 6602400,
+    trackerCents: 6602400,
+    factsRows: 224,
+    trackerRows: 225,
+    sheetSyncedAfterRebuild: false,
+  });
+  assert.equal(v.status, "red");
+});
+
+test("cash vs sheet: RED when WE hold more rows than the sheet, lag or not", () => {
+  const v = classifyCashVsSheet({
+    factsCents: 6602400,
+    trackerCents: 6602400,
+    factsRows: 225,
     trackerRows: 224,
+    sheetSyncedAfterRebuild: true,
   });
   assert.equal(v.status, "red");
   assert.match(v.reason, /row count/);
+});
+
+test("cash vs sheet: RED when the money differs, even during a sync lag", () => {
+  const v = classifyCashVsSheet({
+    factsCents: 6602400,
+    trackerCents: 6612400,
+    factsRows: 224,
+    trackerRows: 225,
+    sheetSyncedAfterRebuild: true,
+  });
+  assert.equal(v.status, "red");
+  assert.match(v.reason, /cash differs/);
 });
 
 // ── 4. Freshness ──────────────────────────────────────────────────────────

@@ -138,7 +138,12 @@ export function classifySpendVsMeta(rows: SpendComparison[]): Verdict {
 
 export const CASH_SHEET_TOLERANCE_NOTE =
   "The sale rows are built from the sales tracker sheet, so the totals must be identical to the " +
-  "penny and the row counts must match. Any difference at all is red. Note this is cash on calls " +
+  "penny and the row counts must match. Any difference in the MONEY is red, always. One exception " +
+  "on the row COUNT, and it is evidence-based, not a fudge: the sheet syncs every 10 minutes while " +
+  "the sale rows rebuild hourly, so a call typed in between the two shows up as an extra sheet row " +
+  "with no money attached. When the money matches exactly, the sheet has MORE rows than we do, and " +
+  "the sheet synced after our last rebuild (proven by the two timestamps), the row is amber. " +
+  "Anything else, including us holding more rows than the sheet, is red. Note this is cash on calls " +
   "by CALL date; payments landing this month is a different question.";
 
 export function classifyCashVsSheet(input: {
@@ -146,11 +151,22 @@ export function classifyCashVsSheet(input: {
   trackerCents: number;
   factsRows: number;
   trackerRows: number;
+  /** The sheet synced after our sale rows were last rebuilt. */
+  sheetSyncedAfterRebuild?: boolean;
 }): Verdict {
   const sameMoney = input.factsCents === input.trackerCents;
   const sameRows = input.factsRows === input.trackerRows;
   if (sameMoney && sameRows) {
     return { status: "green", reason: "Our cash equals the sales sheet to the penny." };
+  }
+  const behindByRowsOnly =
+    sameMoney && input.trackerRows > input.factsRows && input.sheetSyncedAfterRebuild === true;
+  if (behindByRowsOnly) {
+    const behind = input.trackerRows - input.factsRows;
+    return {
+      status: "amber",
+      reason: `The cash matches to the penny. ${behind} call(s) were typed into the sheet after our last rebuild and carry no money yet. Nothing to do; the next hourly rebuild picks them up.`,
+    };
   }
   const bits: string[] = [];
   if (!sameMoney) bits.push(`cash differs by ${usd(input.factsCents - input.trackerCents)}`);

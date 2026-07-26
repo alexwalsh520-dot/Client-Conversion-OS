@@ -278,13 +278,25 @@ const cashVsSheet: AccuracyCheck = {
       tracker_cents: number;
       facts_rows: number;
       tracker_rows: number;
-    }>)[0] || { facts_cents: 0, tracker_cents: 0, facts_rows: 0, tracker_rows: 0 };
+      facts_last_computed: string | null;
+      tracker_last_synced: string | null;
+    }>)[0] || {
+      facts_cents: 0,
+      tracker_cents: 0,
+      facts_rows: 0,
+      tracker_rows: 0,
+      facts_last_computed: null,
+      tracker_last_synced: null,
+    };
 
+    const rebuiltAt = row.facts_last_computed ? new Date(row.facts_last_computed).getTime() : 0;
+    const sheetSyncedAt = row.tracker_last_synced ? new Date(row.tracker_last_synced).getTime() : 0;
     const input = {
       factsCents: Number(row.facts_cents),
       trackerCents: Number(row.tracker_cents),
       factsRows: Number(row.facts_rows),
       trackerRows: Number(row.tracker_rows),
+      sheetSyncedAfterRebuild: sheetSyncedAt > rebuiltAt,
     };
     const verdict = classifyCashVsSheet(input);
     return {
