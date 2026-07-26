@@ -44,6 +44,13 @@ const LAYOUT_CSS = `
 @media (min-width:860px){.car-shell{grid-template-columns:236px 1fr;gap:28px}}
 .car-list{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}
 @media (min-width:860px){.car-list{flex-direction:column;overflow:visible;padding-bottom:0;position:sticky;top:12px}}
+/* minmax(0,1fr) rather than the default auto track: an auto track floors at the content's
+   min-content width, and a canvas contributes its intrinsic pixel width there, which pushed the
+   slide off the right of a phone screen. */
+.car-reader{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
+/* On a phone the two arrows would eat a third of the slide. Swipe and the dots both still work. */
+.car-chev{display:none;flex-shrink:0}
+@media (min-width:560px){.car-chev{display:inline-flex}}
 `;
 
 // mode="creator" is the token page: the same swipe-through viewer and the same downloads, but no
@@ -210,7 +217,7 @@ export default function CarouselsView({ creator, mode = "operator", token }: { c
           </nav>
 
           {/* Reader */}
-          <div style={{ display: "grid", gap: 12, minWidth: 0 }}>
+          <div className="car-reader" style={{ minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-muted)" }}>
               <span style={{ flexShrink: 0, whiteSpace: "nowrap", fontWeight: 800, color: "var(--text-secondary)" }}>{cur.carIdx + 1} / {rows.length}</span>
               <span style={{ flexShrink: 0 }}>·</span>
@@ -219,7 +226,7 @@ export default function CarouselsView({ creator, mode = "operator", token }: { c
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center" }}>
-              <button onClick={prev} disabled={safePos === 0} style={{ ...chevBtn, flexShrink: 0, opacity: safePos === 0 ? 0.3 : 1 }} title="Previous"><ChevronLeft size={22} /></button>
+              <button className="car-chev" onClick={prev} disabled={safePos === 0} style={{ ...chevBtn, opacity: safePos === 0 ? 0.3 : 1 }} title="Previous"><ChevronLeft size={22} /></button>
               {/* minWidth:0 is load-bearing: without it the canvas's intrinsic width becomes the flex
                   item's minimum and the slide overflows the phone viewport instead of scaling down. */}
               <div style={{ position: "relative", width: "100%", minWidth: 0, maxWidth: 520, touchAction: "pan-y", userSelect: "none" }} onWheel={onWheel}
@@ -233,7 +240,7 @@ export default function CarouselsView({ creator, mode = "operator", token }: { c
                   <button onClick={() => setExportCar(cur.carIdx)} style={overlayBtn} title="Export"><Download size={15} /></button>
                 </div>
               </div>
-              <button onClick={next} disabled={safePos === last} style={{ ...chevBtn, flexShrink: 0, opacity: safePos === last ? 0.3 : 1 }} title="Next"><ChevronRight size={22} /></button>
+              <button className="car-chev" onClick={next} disabled={safePos === last} style={{ ...chevBtn, opacity: safePos === last ? 0.3 : 1 }} title="Next"><ChevronRight size={22} /></button>
             </div>
 
             {/* Slide dots for the current carousel */}
