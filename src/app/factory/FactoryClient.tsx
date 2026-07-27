@@ -36,6 +36,10 @@ interface Item {
   stage: Stage;
   image_url: string | null;
   revision_note: string | null;
+  // Client (share-link reviewer) feedback. Separate from OUR pipeline: it never
+  // moves stage — it is input to Alex's decision, not the decision.
+  client_verdict?: "approved" | "change" | null;
+  client_note?: string | null;
   sort_order: number;
   versions?: Version[];
 }
@@ -577,6 +581,13 @@ function ImageViewer({
                 {index + 1} / {deck.length}
               </span>
             </div>
+            {item.client_verdict && (
+              <div className={`fc-lb-client fc-lb-client-${item.client_verdict}`}>
+                {item.client_verdict === "approved"
+                  ? "Client: looks good"
+                  : `Client asked for: ${item.client_note ?? "a change"}`}
+              </div>
+            )}
             <div className="fc-lb-row">
               <input
                 ref={inputRef}
@@ -790,6 +801,15 @@ function Card({
           </button>
         )}
       </div>
+
+      {item.client_verdict && (
+        <div className={`fc-client fc-client-${item.client_verdict}`}>
+          <span className="fc-client-tag">
+            {item.client_verdict === "approved" ? "Client: looks good" : "Client asked for a change"}
+          </span>
+          {item.client_note && <span className="fc-client-note">{item.client_note}</span>}
+        </div>
+      )}
 
       {item.image_url ? (
         // eslint-disable-next-line @next/next/no-img-element

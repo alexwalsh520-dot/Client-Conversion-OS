@@ -28,7 +28,7 @@ const STAGES = ["copy_written", "image_generated", "revision", "completed"] as c
 type Stage = (typeof STAGES)[number];
 
 const ITEM_COLS =
-  "id, project_id, group_id, kind, label, bucket, style, copy_text, image_direction, stage, status, image_url, asset_url, raw_url, edit_url, body_md, comments, checklist, revision_note, sort_order, created_at, updated_at, tags";
+  "id, project_id, group_id, kind, label, bucket, style, copy_text, image_direction, stage, status, image_url, asset_url, raw_url, edit_url, body_md, comments, checklist, revision_note, client_verdict, client_note, client_at, sort_order, created_at, updated_at, tags";
 
 interface FactoryItem {
   id: string;

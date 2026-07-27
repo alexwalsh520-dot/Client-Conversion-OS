@@ -1,18 +1,23 @@
 "use client";
 
-// Public reviewer view for ONE Factory project. Grid of the ads, click to open
-// full size, arrow keys to move, and (if the link allows it) a note box that
-// sends feedback straight back into the Factory.
+// Public reviewer view for ONE Factory project.
+//
+// This is the CLIENT layer. Marking an ad good or asking for a change records
+// the reviewer's verdict only — it never approves anything in the Factory and
+// never moves an item's stage. Alex sees the verdict and still decides. The
+// reviewer likewise never sees Alex's internal approvals, only his own marks.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+// Deliberately no `stage` / `revision_note`: this page shows the reviewer's OWN
+// verdict only. Alex's approvals are internal and must not leak here.
 type Item = {
   id: string;
   label: string;
   copy_text: string | null;
   image_url: string | null;
-  stage: string;
-  revision_note: string | null;
+  client_verdict: "approved" | "change" | null;
+  client_note: string | null;
 };
 
 export default function ShareClient({ token }: { token: string }) {
@@ -24,7 +29,6 @@ export default function ShareClient({ token }: { token: string }) {
   const [open, setOpen] = useState<number | null>(null);
   const [note, setNote] = useState("");
   const [flash, setFlash] = useState("");
-  const [sent, setSent] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     try {
@@ -78,18 +82,16 @@ export default function ShareClient({ token }: { token: string }) {
       setItems((list) =>
         list.map((it) =>
           it.id === id
-            ? { ...it, stage: approving ? "completed" : "revision", revision_note: approving ? null : text }
+            ? {
+                ...it,
+                client_verdict: approving ? "approved" : "change",
+                client_note: approving ? null : text,
+              }
             : it
         )
       );
-      setSent((s) => {
-        const next = { ...s };
-        if (approving) delete next[id];
-        else next[id] = text;
-        return next;
-      });
       setNote("");
-      say(approving ? "Approved" : "Sent to Alex");
+      say(approving ? "Marked good" : "Sent to Alex");
       setOpen((i) => (i !== null && i < items.length - 1 ? i + 1 : i));
     } catch {
       say("Could not save");
@@ -111,11 +113,8 @@ export default function ShareClient({ token }: { token: string }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, items.length, act, canComment]);
 
-  const noted = useMemo(
-    () => items.filter((i) => sent[i.id] || (i.stage === "revision" && i.revision_note)).length,
-    [items, sent]
-  );
-  const approved = useMemo(() => items.filter((i) => i.stage === "completed").length, [items]);
+  const noted = useMemo(() => items.filter((i) => i.client_verdict === "change").length, [items]);
+  const approved = useMemo(() => items.filter((i) => i.client_verdict === "approved").length, [items]);
 
   if (loading) return <div className="pf-msg">Loading…</div>;
   if (dead)
@@ -133,9 +132,9 @@ export default function ShareClient({ token }: { token: string }) {
           <h1 className="pf-title">{name}</h1>
           <p className="pf-sub">
             {items.length} ad{items.length === 1 ? "" : "s"}
-            {canComment ? " · click one, then Enter to approve or type a change" : " · view only"}
-            {approved ? ` · ${approved} approved` : ""}
-            {noted ? ` · ${noted} with notes` : ""}
+            {canComment ? " · click one, then Enter if it looks good, or type a change" : " · view only"}
+            {approved ? ` · ${approved} marked good` : ""}
+            {noted ? ` · ${noted} with changes` : ""}
           </p>
         </div>
       </header>
@@ -146,10 +145,10 @@ export default function ShareClient({ token }: { token: string }) {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={it.image_url ?? ""} alt={it.label} loading="lazy" />
             <span className="pf-card-label">{it.label}</span>
-            {sent[it.id] || (it.stage === "revision" && it.revision_note) ? (
-              <span className="pf-card-flag">note</span>
-            ) : it.stage === "completed" ? (
-              <span className="pf-card-ok">approved</span>
+            {it.client_verdict === "change" ? (
+              <span className="pf-card-flag">change</span>
+            ) : it.client_verdict === "approved" ? (
+              <span className="pf-card-ok">good</span>
             ) : null}
           </button>
         ))}
@@ -196,15 +195,15 @@ export default function ShareClient({ token }: { token: string }) {
                     <button
                       className={note.trim() ? "pf-send" : "pf-approve"}
                       onClick={act}
-                      title={note.trim() ? "Send this note" : "Approve this ad as-is"}
+                      title={note.trim() ? "Send this change request" : "Mark this ad as good"}
                     >
-                      {note.trim() ? "Send" : "Approve"}
+                      {note.trim() ? "Send" : "Looks good"}
                     </button>
                   </div>
-                  {sent[current.id] ? (
-                    <p className="pf-sent">Your note: {sent[current.id]}</p>
-                  ) : current.stage === "completed" ? (
-                    <p className="pf-okline">Approved</p>
+                  {current.client_verdict === "change" && current.client_note ? (
+                    <p className="pf-sent">You asked for: {current.client_note}</p>
+                  ) : current.client_verdict === "approved" ? (
+                    <p className="pf-okline">You marked this good</p>
                   ) : null}
                 </>
               ) : null}

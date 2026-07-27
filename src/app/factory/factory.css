@@ -734,6 +734,52 @@
 }
 
 /* ---- Lightbox ---- */
+/* ---- Client (share-link reviewer) feedback ----
+   Visually distinct from our own stage tags so it never reads as an approval
+   that already happened. It is the client's opinion; Alex still decides. */
+.fc-client {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0 0 8px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  border-left: 3px solid;
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+.fc-client-approved {
+  background: rgba(110, 231, 168, 0.09);
+  border-color: #6ee7a8;
+}
+.fc-client-change {
+  background: rgba(240, 184, 102, 0.1);
+  border-color: #f0b866;
+}
+.fc-client-tag { font-weight: 700; letter-spacing: 0.02em; }
+.fc-client-approved .fc-client-tag { color: #6ee7a8; }
+.fc-client-change .fc-client-tag { color: #f0b866; }
+.fc-client-note { color: var(--text-secondary); }
+
+/* Same thing inside the image viewer, so it is in front of you while deciding. */
+.fc-lb-client {
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 7px 11px;
+  border-radius: 8px;
+  border-left: 3px solid;
+}
+.fc-lb-client-approved {
+  background: rgba(110, 231, 168, 0.12);
+  border-color: #6ee7a8;
+  color: #a9e9c6;
+}
+.fc-lb-client-change {
+  background: rgba(240, 184, 102, 0.13);
+  border-color: #f0b866;
+  color: #f2d4a4;
+}
+
 /* Portalled to document.body, so this genuinely covers the sidebar instead of
    being trapped inside .main-content's z-index:1 stacking context. */
 .fc-lightbox {

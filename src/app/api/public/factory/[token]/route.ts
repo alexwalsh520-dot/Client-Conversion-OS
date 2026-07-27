@@ -42,11 +42,12 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ token: str
     .maybeSingle();
   if (!project) return NextResponse.json({ error: "Not available" }, { status: 404 });
 
-  // Only fields a reviewer needs. No internal prompt/reference paths, no other
-  // projects, no client or money data.
+  // Only fields a reviewer needs, and deliberately NOT `stage` or
+  // `revision_note`: those are Alex's internal pipeline. The reviewer sees his
+  // OWN verdict and nothing about whether Alex has approved something.
   const { data: items } = await sb
     .from("factory_items")
-    .select("id, label, copy_text, image_url, stage, revision_note, sort_order")
+    .select("id, label, copy_text, image_url, client_verdict, client_note, sort_order")
     .eq("project_id", link.project_id)
     .not("image_url", "is", null)
     .order("sort_order", { ascending: true });
@@ -85,14 +86,16 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ token: str
     .maybeSingle();
   if (!item) return NextResponse.json({ error: "Not available" }, { status: 404 });
 
-  // Approving clears any previous note so the item does not sit in "completed"
-  // still carrying stale feedback.
+  // CLIENT LAYER ONLY. This writes the reviewer's verdict into client_* and
+  // MUST NOT touch stage or revision_note — Alex owns the pipeline and still
+  // approves/revises himself. The reviewer's "approved" is an opinion, not a
+  // state change.
   const update = approve
-    ? { stage: "completed", revision_note: null, updated_at: new Date().toISOString() }
-    : { stage: "revision", revision_note: note, updated_at: new Date().toISOString() };
+    ? { client_verdict: "approved", client_note: null, client_at: new Date().toISOString() }
+    : { client_verdict: "change", client_note: note, client_at: new Date().toISOString() };
 
   const { error } = await sb.from("factory_items").update(update).eq("id", itemId);
   if (error) return NextResponse.json({ error: "Could not save" }, { status: 500 });
 
-  return NextResponse.json({ ok: true, stage: update.stage });
+  return NextResponse.json({ ok: true, verdict: update.client_verdict });
 }
