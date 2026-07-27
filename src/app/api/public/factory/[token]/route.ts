@@ -66,9 +66,11 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ token: str
 
   const body = await req.json().catch(() => ({}));
   const itemId = typeof body.itemId === "string" ? body.itemId : "";
+  const approve = body.approve === true;
   const note = typeof body.note === "string" ? body.note.trim() : "";
   if (!itemId) return NextResponse.json({ error: "itemId required" }, { status: 400 });
-  if (!note) return NextResponse.json({ error: "note required" }, { status: 400 });
+  // Either approve the ad as-is, or send a note back. Never both.
+  if (!approve && !note) return NextResponse.json({ error: "note or approve required" }, { status: 400 });
   if (note.length > 2000) return NextResponse.json({ error: "note too long" }, { status: 400 });
 
   const sb = getServiceSupabase();
@@ -83,11 +85,14 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ token: str
     .maybeSingle();
   if (!item) return NextResponse.json({ error: "Not available" }, { status: 404 });
 
-  const { error } = await sb
-    .from("factory_items")
-    .update({ revision_note: note, stage: "revision", updated_at: new Date().toISOString() })
-    .eq("id", itemId);
+  // Approving clears any previous note so the item does not sit in "completed"
+  // still carrying stale feedback.
+  const update = approve
+    ? { stage: "completed", revision_note: null, updated_at: new Date().toISOString() }
+    : { stage: "revision", revision_note: note, updated_at: new Date().toISOString() };
+
+  const { error } = await sb.from("factory_items").update(update).eq("id", itemId);
   if (error) return NextResponse.json({ error: "Could not save" }, { status: 500 });
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, stage: update.stage });
 }

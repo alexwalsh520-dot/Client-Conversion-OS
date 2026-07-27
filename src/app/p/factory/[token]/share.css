@@ -152,6 +152,38 @@
 .pf-send:disabled { opacity: 0.4; cursor: default; }
 .pf-sent { margin: 0; font-size: 11.5px; color: #f0b866; }
 
+/* Approve is the default action when the box is empty, so it reads as the
+   primary, positive move rather than the note-sending one. */
+.pf-approve {
+  border-radius: 8px;
+  border: 1px solid rgba(110, 231, 168, 0.42);
+  background: rgba(110, 231, 168, 0.16);
+  color: #6ee7a8;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 8px 16px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pf-approve:hover { background: rgba(110, 231, 168, 0.24); }
+.pf-okline { margin: 0; font-size: 11.5px; color: #6ee7a8; }
+
+.pf-card-ok {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6ee7a8;
+  background: rgba(110, 231, 168, 0.16);
+  border: 1px solid rgba(110, 231, 168, 0.42);
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
 .pf-close {
   position: absolute;
   top: 18px;

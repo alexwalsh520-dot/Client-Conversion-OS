@@ -59,23 +59,40 @@ export default function ShareClient({ token }: { token: string }) {
     window.setTimeout(() => setFlash(""), 1600);
   }, []);
 
-  const send = useCallback(async () => {
+  // One action, same as the internal review flow: an empty box approves the ad
+  // as-is, text sends it back as a note. Either way we advance.
+  const act = useCallback(async () => {
     if (!current) return;
     const text = note.trim();
-    if (!text) return;
+    const approving = !text;
     try {
       const res = await fetch(`/api/public/factory/${token}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itemId: current.id, note: text }),
+        body: JSON.stringify(
+          approving ? { itemId: current.id, approve: true } : { itemId: current.id, note: text }
+        ),
       });
       if (!res.ok) throw new Error();
-      setSent((s) => ({ ...s, [current.id]: text }));
+      const id = current.id;
+      setItems((list) =>
+        list.map((it) =>
+          it.id === id
+            ? { ...it, stage: approving ? "completed" : "revision", revision_note: approving ? null : text }
+            : it
+        )
+      );
+      setSent((s) => {
+        const next = { ...s };
+        if (approving) delete next[id];
+        else next[id] = text;
+        return next;
+      });
       setNote("");
-      say("Sent to Alex");
+      say(approving ? "Approved" : "Sent to Alex");
       setOpen((i) => (i !== null && i < items.length - 1 ? i + 1 : i));
     } catch {
-      say("Could not send");
+      say("Could not save");
     }
   }, [current, note, token, items.length, say]);
 
@@ -85,19 +102,20 @@ export default function ShareClient({ token }: { token: string }) {
       if (e.key === "Escape") setOpen(null);
       else if (e.key === "ArrowRight") setOpen((i) => (i !== null && i < items.length - 1 ? i + 1 : i));
       else if (e.key === "ArrowLeft") setOpen((i) => (i !== null && i > 0 ? i - 1 : i));
-      else if (e.key === "Enter" && note.trim()) {
+      else if (e.key === "Enter" && canComment) {
         e.preventDefault();
-        void send();
+        void act();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, items.length, note, send]);
+  }, [open, items.length, act, canComment]);
 
   const noted = useMemo(
     () => items.filter((i) => sent[i.id] || (i.stage === "revision" && i.revision_note)).length,
     [items, sent]
   );
+  const approved = useMemo(() => items.filter((i) => i.stage === "completed").length, [items]);
 
   if (loading) return <div className="pf-msg">Loading…</div>;
   if (dead)
@@ -115,7 +133,8 @@ export default function ShareClient({ token }: { token: string }) {
           <h1 className="pf-title">{name}</h1>
           <p className="pf-sub">
             {items.length} ad{items.length === 1 ? "" : "s"}
-            {canComment ? " · click any ad to leave a note" : " · view only"}
+            {canComment ? " · click one, then Enter to approve or type a change" : " · view only"}
+            {approved ? ` · ${approved} approved` : ""}
             {noted ? ` · ${noted} with notes` : ""}
           </p>
         </div>
@@ -127,9 +146,11 @@ export default function ShareClient({ token }: { token: string }) {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={it.image_url ?? ""} alt={it.label} loading="lazy" />
             <span className="pf-card-label">{it.label}</span>
-            {(sent[it.id] || (it.stage === "revision" && it.revision_note)) && (
+            {sent[it.id] || (it.stage === "revision" && it.revision_note) ? (
               <span className="pf-card-flag">note</span>
-            )}
+            ) : it.stage === "completed" ? (
+              <span className="pf-card-ok">approved</span>
+            ) : null}
           </button>
         ))}
       </div>
@@ -169,14 +190,22 @@ export default function ShareClient({ token }: { token: string }) {
                       className="pf-input"
                       value={note}
                       autoFocus
-                      placeholder="What should change? Press Enter to send."
+                      placeholder="Looks good? Just hit Enter. Or type what should change."
                       onChange={(e) => setNote(e.target.value)}
                     />
-                    <button className="pf-send" onClick={send} disabled={!note.trim()}>
-                      Send
+                    <button
+                      className={note.trim() ? "pf-send" : "pf-approve"}
+                      onClick={act}
+                      title={note.trim() ? "Send this note" : "Approve this ad as-is"}
+                    >
+                      {note.trim() ? "Send" : "Approve"}
                     </button>
                   </div>
-                  {sent[current.id] && <p className="pf-sent">Your note: {sent[current.id]}</p>}
+                  {sent[current.id] ? (
+                    <p className="pf-sent">Your note: {sent[current.id]}</p>
+                  ) : current.stage === "completed" ? (
+                    <p className="pf-okline">Approved</p>
+                  ) : null}
                 </>
               ) : null}
             </div>
