@@ -21,3 +21,13 @@ export type CarouselIntent = "icp" | "objection";
 export const ICP_CAROUSELS_PER_DAY = 1;
 export const intentForSlot = (slot: number): CarouselIntent => (slot < ICP_CAROUSELS_PER_DAY ? "icp" : "objection");
 export const INTENT_LABEL: Record<CarouselIntent, string> = { icp: "attract", objection: "objection" };
+
+// QUARANTINE. When the audience audit fails twice the set is stored but held back: visible to the
+// operator, invisible to everything else. It rides in the existing `meta` jsonb rather than a new
+// column, so no migration is needed and old rows (meta null) are simply not quarantined.
+//
+// Everything that asks "does this day have its content?" must ask about LIVE rows only, or a
+// quarantined day looks finished and never regenerates.
+export type CarouselMeta = { intent?: string; quarantined?: boolean; audit_reason?: string } | null;
+export const isQuarantined = (row: { meta?: CarouselMeta }): boolean => row?.meta?.quarantined === true;
+export const isLive = (row: { meta?: CarouselMeta }): boolean => !isQuarantined(row);

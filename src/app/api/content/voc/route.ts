@@ -5,13 +5,13 @@ import { getServiceSupabase } from "@/lib/supabase";
 import { logAiUsage } from "@/lib/ai-usage";
 import { CONTENT_CREATORS } from "@/lib/instagram-content";
 import { isBuyerCall } from "@/lib/content/call-source";
+import { clientAliases } from "@/lib/content/client-aliases";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 const MODEL = "claude-sonnet-4-6";
-const ALIASES: Record<string, string[]> = { tyson: ["tyson", "tyson_sonnek"], antwan: ["antwan", "antwan_rarcus"] };
 const BUCKETS = ["avatar", "pain", "objection", "desire", "lead_quality"];
 
 export async function POST(req: NextRequest) {
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     }).filter((x) => x.length > 12);
   }
 
-  const { data: dms } = await sb.from("dm_transcripts").select("transcript").in("client", ALIASES[slug] || [slug]).order("submitted_at", { ascending: false }).limit(50);
+  const { data: dms } = await sb.from("dm_transcripts").select("transcript").in("client", clientAliases(slug)).order("submitted_at", { ascending: false }).limit(50);
   const dmText = (dms || []).map((d) => (d.transcript || "").slice(0, 1500)).filter((x) => x.trim());
 
   const { data: fathAll } = await sb.from("fathom_calls").select("transcript, prospect_name, title").eq("client_key", slug).order("recorded_at", { ascending: false }).limit(20);

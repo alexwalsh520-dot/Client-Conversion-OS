@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
 import { logAiUsage } from "@/lib/ai-usage";
 import { CONTENT_CREATORS } from "@/lib/instagram-content";
+import { clientAliases } from "@/lib/content/client-aliases";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,10 +13,6 @@ export const maxDuration = 120;
 const MODEL = "claude-sonnet-4-6";
 const NAMES: Record<string, string> = { tyson: "Tyson", antwan: "Antwan" };
 // dm_transcripts / connection rows use long keys; ads use short. Accept both.
-const CLIENT_ALIASES: Record<string, string[]> = {
-  tyson: ["tyson", "tyson_sonnek"],
-  antwan: ["antwan", "antwan_rarcus"],
-};
 
 interface GenIdea { title: string; angle?: string; hook?: string; evidence?: string; source?: string }
 
@@ -60,7 +57,7 @@ export async function POST(req: NextRequest) {
   const { data: dms } = await sb
     .from("dm_transcripts")
     .select("transcript, client")
-    .in("client", CLIENT_ALIASES[slug] || [slug])
+    .in("client", clientAliases(slug))
     .order("submitted_at", { ascending: false })
     .limit(40);
   const dmText = (dms || [])

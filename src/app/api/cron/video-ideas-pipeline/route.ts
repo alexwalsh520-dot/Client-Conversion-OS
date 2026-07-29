@@ -3,6 +3,7 @@ import { getServiceSupabase } from "@/lib/supabase";
 import { cronBaseUrl } from "@/lib/cron-base-url";
 import { ACTIVE_CREATORS } from "@/lib/creators";
 import { CAROUSELS_PER_DAY } from "@/lib/content/carousel-config";
+import { isLive, type CarouselMeta } from "@/lib/content/carousel-config";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -57,7 +58,7 @@ export async function GET(req: NextRequest) {
     sb.from("content_playbooks").select("client_key, icp_version, generated_at").in("client_key", CREATORS).order("version", { ascending: false }),
     sb.from("content_shift_briefs").select("client_key, icp_version, generated_at").in("client_key", CREATORS).order("version", { ascending: false }),
     sb.from("content_buyer_voice").select("client_key, icp_version, generated_at").in("client_key", CREATORS).order("version", { ascending: false }),
-    sb.from("content_carousels").select("client_key").in("client_key", CREATORS).eq("for_date", todayET),
+    sb.from("content_carousels").select("client_key, meta").in("client_key", CREATORS).eq("for_date", todayET),
   ]);
   const trendMap = newestByCreator(trendRes.data as ({ client_key: string; searched_at: string | null })[] | null);
   const icpMap = newestByCreator(icpRes.data as ({ client_key: string; version: number })[] | null);
@@ -65,7 +66,9 @@ export async function GET(req: NextRequest) {
   const shiftMap = newestByCreator(shiftRes.data as ({ client_key: string; icp_version: number | null; generated_at: string | null })[] | null);
   const voiceMap = newestByCreator(voiceRes.data as ({ client_key: string; icp_version: number | null; generated_at: string | null })[] | null);
   const carCounts = new Map<string, number>();
-  for (const r of (carRes.data || []) as { client_key: string }[]) carCounts.set(r.client_key, (carCounts.get(r.client_key) || 0) + 1);
+  // Quarantined sets do not count as the day being done — otherwise a rejected set would block
+  // that creator from ever getting carousels for that date.
+  for (const r of ((carRes.data || []) as { client_key: string; meta?: CarouselMeta }[]).filter(isLive)) carCounts.set(r.client_key, (carCounts.get(r.client_key) || 0) + 1);
 
   const steps: unknown[] = [];
   for (const creator of CREATORS) {
