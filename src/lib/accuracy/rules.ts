@@ -395,3 +395,55 @@ export function describeLeak(input: { last7: number; prior7: number }): Verdict 
     reason: `${count(input.last7)} keywordless booking(s) in the last 7 days, ${direction} on the 7 before. Fix at the booking link, not here.`,
   };
 }
+
+// ── 13. One front door (Build 4) ──────────────────────────────────────────
+
+export interface DoorMismatch {
+  client: string;
+  window: string;
+  metric: string;
+  /** What the question door answered. */
+  door: number | null;
+  /** What the tab's saved payload holds. */
+  saved: number | null;
+}
+
+export const ONE_DOOR_TOLERANCE_NOTE =
+  "The question door and the Ads v2 tab must return the identical number, because they read the " +
+  "identical saved row. There is NO tolerance here and there is no honest lag to allow: both sides " +
+  "read the same snapshot at the same data version, so a difference cannot be timing and can only " +
+  "be a fault in the door. Any difference at all is red. A window the door refuses to serve is also " +
+  "red, because the tab would have served it.";
+
+export function classifyOneDoor(input: {
+  windowsChecked: number;
+  comparisons: number;
+  mismatches: DoorMismatch[];
+  refusedWindows: string[];
+}): Verdict {
+  if (input.windowsChecked === 0) {
+    return {
+      status: "red",
+      reason:
+        "The door was asked nothing, because no saved window was found at the current data version. " +
+        "That means either the sync has not warmed the windows yet or the door cannot see them. Check the Ads v2 tab opens.",
+    };
+  }
+  if (input.refusedWindows.length) {
+    return {
+      status: "red",
+      reason: `The door refused ${input.refusedWindows.length} window(s) the tab can serve, starting with ${input.refusedWindows[0]}. An AI would get no answer where the screen shows a number.`,
+    };
+  }
+  if (input.mismatches.length) {
+    const m = input.mismatches[0];
+    return {
+      status: "red",
+      reason: `The door and the tab disagree on ${input.mismatches.length} number(s). First one: ${m.client} ${m.window} ${m.metric}, the door says ${m.door} and the saved answer says ${m.saved}. Stop trusting AI answers about the money until this is explained.`,
+    };
+  }
+  return {
+    status: "green",
+    reason: `${count(input.comparisons)} numbers checked across ${count(input.windowsChecked)} saved windows; the door and the tab agree exactly.`,
+  };
+}

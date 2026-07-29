@@ -3,9 +3,10 @@
 // Deploys with the app at https://<domain>/api/mcp/utari. Auth: Authorization: Bearer $UTARI_MCP_TOKEN.
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
-import { readLatestAdSnapshot } from "@/lib/ads-tracker/snapshot";
-import type { AdsTrackerAccount } from "@/lib/ads-tracker/server";
 import { dedupeSalesRows, type DedupableSaleRow } from "@/lib/ads-tracker/dedupe-sales";
+import { ADSV2_SERVED_CLIENTS } from "@/lib/ads-v2/config";
+import { askQuestion, describeDoor } from "@/lib/question-door/service";
+import { canonicalAdsFromDoor, UTARI_DOOR_NOTE } from "@/lib/question-door/utari-adapter";
 
 // Attribution certainty from the stamp method. HARD keys only are machine_attributed; a prospect-name
 // match is its own explicitly-at-risk status (name_matched), never machine certainty; no fact = unresolved.
@@ -32,6 +33,14 @@ export const maxDuration = 120;
 
 const TOKEN = process.env.UTARI_MCP_TOKEN;
 
+// The creators this endpoint serves, read from the engine's own active roster and
+// never hardcoded. BUILD 4 CHANGE, and the one thing Jeremy needs telling about:
+// the `client` enum used to be a fixed ["tyson", "antwan"]. Antwan left the roster
+// on 21 July 2026, so asking for him now returns an honest refusal rather than a
+// silently empty answer, and Jake is available. Every other tool name, field name
+// and unit is unchanged.
+const SERVED: string[] = [...ADSV2_SERVED_CLIENTS];
+
 // Tools that get the standard response envelope (data_freshness + coverage). Excludes the
 // static describe_schema and the factory proxy tools (drafts, not business reads).
 const ENVELOPE_TOOLS = new Set([
@@ -39,38 +48,25 @@ const ENVELOPE_TOOLS = new Set([
   "freshness", "business_snapshot", "get_ad_full", "get_call_transcripts", "get_organic_content",
 ]);
 
-// The CANONICAL per-ad funnel — the exact numbers on the Ads Dashboard. We read the freshest stored
-// AD-LEVEL snapshot (computed by getAdsTrackerDashboard, kept warm by the snapshot cron) instead of
-// re-deriving anything, so DMs/booked/shown/closes/collected/ROAS are the reconciled dashboard figures.
-// Snapshot-only on purpose: the live recompute of a wide window blows the DB statement timeout, and the
-// dashboard itself is fast for the same reason (it serves these bounded snapshots). We merge in the
-// live ad_state extras (status/CPM/impressions/targeting/on-image copy) by keyword.
+// The CANONICAL per-ad funnel — the exact numbers on the Ads v2 tab.
+//
+// BUILD 4 REPOINT. This used to read the older ads-tracker snapshot. It now goes
+// through the LOCKED QUESTION DOOR to warehouse.answers: the very row the Ads v2
+// tab paints from, so Utari and the screen cannot disagree. Field names and units
+// are deliberately unchanged (money in DOLLARS); the one honest gap, gross profit,
+// is returned as null with a written reason rather than estimated. See
+// src/lib/question-door/utari-adapter.ts.
+//
+// We still merge in the live ad_state extras (status / CPM / impressions /
+// targeting / on-image copy) by keyword. That is a read Utari already had; this
+// build widens nothing.
 async function canonicalAds(client: string) {
   const sb = getServiceSupabase();
-  const snap = await readLatestAdSnapshot(client as AdsTrackerAccount);
-  const adRoas = (snap?.payload?.adRoas as Record<string, unknown>[] | undefined) || [];
   const { data: state } = await sb.from("ad_state").select("keyword,status,impressions,cpm,last_status_day,audience_type,is_advantage,age_min,age_max,has_lookalike,on_image_text").eq("client_key", client);
   const byKw: Record<string, Record<string, unknown>> = {};
   for (const s of state || []) byKw[String((s as { keyword: string }).keyword)] = s;
-  const ads = adRoas.map((r) => {
-    const st = byKw[String(r.label).toLowerCase()] || {};
-    const booked = (r.bookedCalls as number) || 0;
-    const calls = (r.callsTaken as number) || 0;
-    return {
-      keyword: r.label, status: st.status ?? null,
-      ad_id: r.adId ?? null, campaign_name: r.campaignName ?? null, adset_name: r.adsetName ?? null,
-      spend: r.adSpend, dms: r.messages, booked_calls: r.bookedCalls, calls_taken: r.callsTaken,
-      show_rate: booked > 0 ? Math.round(((calls / booked) as number) * 1000) / 1000 : null,
-      closes: r.newClients, close_rate: calls > 0 ? Math.round(((((r.newClients as number) || 0) / calls) as number) * 1000) / 1000 : null,
-      cash_collected: r.collectedRevenue, gross_profit: r.grossProfit,
-      roas: r.collectedRoi, gross_profit_roas: r.grossProfitRoi,
-      cost_per_dm: r.costPerMessage, cost_per_booked_call: r.costPerBookedCall,
-      impressions: st.impressions ?? null, cpm: st.cpm ?? null, last_status_day: st.last_status_day ?? null,
-      audience_type: st.audience_type ?? null, is_advantage: st.is_advantage ?? null,
-      age: st.age_min ? `${st.age_min}-${st.age_max}` : null, on_image_text: st.on_image_text ?? null,
-    };
-  });
-  return { ads, window: snap ? { dateFrom: snap.dateFrom, dateTo: snap.dateTo, computedAt: snap.computedAt } : null };
+  const out = await canonicalAdsFromDoor(sb, client, byKw);
+  return { ads: out.ads, window: out.window, refused: out.refused, as_of: out.as_of };
 }
 
 // Factory (the /factory tab) is a copy/content workspace: projects -> groups -> items
@@ -103,28 +99,40 @@ function authed(req: NextRequest): boolean {
 
 const TOOLS = [
   { name: "list_ads", description: "Complete per-ad state for a creator: status, spend, 7-day spend, impressions, clicks, CPM, DMs, leads, closes, cash, ROAS, targeting (audience type, Advantage on/off, age, lookalike), and on-image copy. One row per ad. The trustworthy per-ad read.",
-    inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] } }, required: ["client"] } },
+    inputSchema: { type: "object", properties: { client: { type: "string", enum: SERVED } }, required: ["client"] } },
   { name: "get_ad", description: "One ad by its KEYWORD (the keyword is the ad's identity). Returns a keyword-level canonical funnel aggregate (money + funnel are keyword-level truths), a placements[] array of every ad_id/campaign/adset/status/spend that ran that keyword (spend is placement-level), and a sample of the DM conversations the keyword started. When a keyword ran as more than one placement this never silently returns just the first; it aggregates and lists all. Pass ad_id to scope the spend fields to one placement.",
-    inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] }, keyword: { type: "string" }, ad_id: { type: "string", description: "optional: scope the placement/spend fields to one ad_id" }, dm_limit: { type: "number" } }, required: ["client", "keyword"] } },
+    inputSchema: { type: "object", properties: { client: { type: "string", enum: SERVED }, keyword: { type: "string" }, ad_id: { type: "string", description: "optional: scope the placement/spend fields to one ad_id" }, dm_limit: { type: "number" } }, required: ["client", "keyword"] } },
   { name: "get_dms_for_ad", description: "Every DM conversation a keyword started, full verbatim thread. Threads are derived live from the keyword's ManyChat subscribers bridged to their Instagram threads (instagram_lead_links), so the count tracks the funnel's unique-DM count for the window, not a stale prebuilt table. Includes a coverage block (keyword_subscribers vs threads_resolved). Optional since (ISO date) windows the subscribers.",
-    inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] }, keyword: { type: "string" }, since: { type: "string", description: "ISO date; only subscribers whose first keyword DM is on/after this" }, limit: { type: "number" } }, required: ["client", "keyword"] } },
+    inputSchema: { type: "object", properties: { client: { type: "string", enum: SERVED }, keyword: { type: "string" }, since: { type: "string", description: "ISO date; only subscribers whose first keyword DM is on/after this" }, limit: { type: "number" } }, required: ["client", "keyword"] } },
   { name: "get_ad_day", description: "Per-day metrics for ads: spend, impressions, clicks, CPM, status. One row per ad per day.",
-    inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] }, keyword: { type: "string" }, since: { type: "string" } }, required: ["client"] } },
+    inputSchema: { type: "object", properties: { client: { type: "string", enum: SERVED }, keyword: { type: "string" }, since: { type: "string" } }, required: ["client"] } },
   { name: "list_sales", description: "The sales ledger: date, prospect, collected, closer, setter, objection, call notes.",
-    inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] }, wins_only: { type: "boolean" } }, required: ["client"] } },
+    inputSchema: { type: "object", properties: { client: { type: "string", enum: SERVED }, wins_only: { type: "boolean" } }, required: ["client"] } },
   { name: "get_sales_with_ad", description: "The DEDUPED sales ledger, each win annotated with its canonical ad attribution and an honest certainty: attribution_status machine_attributed (hard key: link_dm DM thread or link_booking), name_matched (prospect-name match, at risk, NOT a hard key), or unresolved (no ad keyword). Returns `counts`, a `reconciliation` block (itemized vs the canonical all-time attributed figure), and `coverage`. Close counts match the dashboard. Optional `since` (ISO date).",
-    inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] }, since: { type: "string" } }, required: ["client"] } },
+    inputSchema: { type: "object", properties: { client: { type: "string", enum: SERVED }, since: { type: "string" } }, required: ["client"] } },
   { name: "freshness", description: "Minutes since each data source last synced.", inputSchema: { type: "object", properties: {} } },
   { name: "business_snapshot", description: "Per creator (Tyson, Antwan) + combined: current-week and prior-week canonical funnel (spend, dms, cost_per_dm, booked_calls, cost_per_booked_call, calls_taken, show_rate, closes, close_rate, cash_collected, roas), top 3 and bottom 3 funded ads, and the count of funded zero-DM ads. Sourced from the Ads Dashboard snapshot; matches the Ads tab to the dollar for the same stored window.",
     inputSchema: { type: "object", properties: {} } },
   { name: "get_ad_full", description: "Everything about ONE ad in a single call: canonical funnel row, placement lineage (every ad_id/campaign/adset/spend/status), on-image + primary copy, per-day spend/DM series, and thread digests (subscriber, first DM, message count, became_sale, 2-line excerpt). Full verbatim threads: use get_dms_for_ad.",
-    inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] }, keyword: { type: "string" }, since: { type: "string", description: "ISO date; filters the per-day series + thread digests (default = snapshot window start)" } }, required: ["client", "keyword"] } },
+    inputSchema: { type: "object", properties: { client: { type: "string", enum: SERVED }, keyword: { type: "string" }, since: { type: "string", description: "ISO date; filters the per-day series + thread digests (default = snapshot window start)" } }, required: ["client", "keyword"] } },
   { name: "get_call_transcripts", description: "Fathom call transcripts. List mode (no id) = summaries + fathom ids for a creator; single-id mode = the full transcript. Calls carry no hard key to an ad or DM thread, so linkage_status is always 'unlinked' (correlate on prospect_name only, non-authoritative).",
-    inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] }, id: { type: "string", description: "fathom_id for the full transcript" }, since: { type: "string" }, limit: { type: "number" } }, required: ["client"] } },
+    inputSchema: { type: "object", properties: { client: { type: "string", enum: SERVED }, id: { type: "string", description: "fathom_id for the full transcript" }, since: { type: "string" }, limit: { type: "number" } }, required: ["client"] } },
   { name: "get_organic_content", description: "RAW organic Instagram posts for a creator (no AI grading by default). List mode per post: taken_at, media_type, caption excerpt, transcript_available + transcript_words, engagement (views/plays/likes/comments; not_tracked when IG omits them), permalink. Single-post mode (pass id = ig_media_id) = full caption + full transcript. Pass include_grades:true to append the internal AI grade (opt-in, advisory). Also returns follower_history. Optional since/until/band/limit.",
-    inputSchema: { type: "object", properties: { client: { type: "string", enum: ["tyson", "antwan"] }, id: { type: "string" }, since: { type: "string" }, until: { type: "string" }, band: { type: "string", description: "grade band filter (only applies with include_grades)" }, limit: { type: "number" }, include_grades: { type: "boolean", description: "opt in to the internal AI grade (advisory)" } }, required: ["client"] } },
+    inputSchema: { type: "object", properties: { client: { type: "string", enum: SERVED }, id: { type: "string" }, since: { type: "string" }, until: { type: "string" }, band: { type: "string", description: "grade band filter (only applies with include_grades)" }, limit: { type: "number" }, include_grades: { type: "boolean", description: "opt in to the internal AI grade (advisory)" } }, required: ["client"] } },
   { name: "describe_schema", description: "Static, versioned documentation of every tool, field semantics, the three attribution_status meanings, the DM-count definition, and the known accuracy ceilings. No DB call. Read this first to understand what every number means.",
     inputSchema: { type: "object", properties: {} } },
+  // ---- The locked question door (Build 4). The full front door, same one the app uses. ----
+  { name: "ask_question", description:
+      "THE FRONT DOOR. Ask one of a fixed, locked list of questions about the money system and get back the saved answer, the stored meaning of every number it names, and how fresh the underlying data is. " +
+      "This is the trustworthy path: every question is answered by one fixed, tested query that reads numbers computed and saved BEFORE you asked, so asking twice gives the same answer and the Ads v2 tab shows the identical figure. " +
+      "No query is composed on your behalf and there is no free-form SQL. A question that is not on the list comes back refused in writing, naming the nearest allowed question. " +
+      "Call it with no question_key to get the whole list with each question's parameters. " +
+      "The twelve questions: metric_value (any defined metric for a saved window, total or per ad), yesterday_summary (yesterday's numbers plus every ad change made yesterday), change_history (what changed on an ad, ad set or campaign, with exact times and who), why_unattributed (the written reason a booking or sale carries no ad), ad_setup (how one ad is configured), person_lookup (a person by an exact id; a name returns a candidate list only), sales_cycle (days from first keyword to close), attribution_share (where a window's cash sits), leak_map (where attribution leaks), kill_scale_inputs (the facts behind a kill-or-scale call, inputs only, never a verdict), data_health (the latest daily accuracy run), define (any number's stored meaning). " +
+      "MONEY IS IN CENTS in these answers, unlike the older per-ad tools which report dollars; each metric's quoted definition names its format.",
+    inputSchema: { type: "object", properties: {
+      question_key: { type: "string", description: "one of the twelve allowed questions. Leave it out to list them all." },
+      params: { type: "object", description: "the named parameters that question takes, exactly as its entry describes them" },
+    }, required: [] } },
   // ---- Factory (the /factory content workspace): full read + write ----
   { name: "factory_list_projects", description: "List every Factory project (id, name, client). Factory = the copy/content workspace where ad copy, image directions, and docs are drafted, organized into groups, and snapshotted as batches.",
     inputSchema: { type: "object", properties: {} } },
@@ -143,7 +151,7 @@ function aggregateKeywordFunnel(rows: Array<Record<string, unknown>>) {
   const sum = (k: string) => rows.reduce((s, r) => s + n(r[k]), 0);
   const spend = Math.round(sum("spend") * 100) / 100;
   const dms = sum("dms"), booked = sum("booked_calls"), calls = sum("calls_taken"), closes = sum("closes");
-  const cash = sum("cash_collected"), gp = sum("gross_profit");
+  const cash = sum("cash_collected");
   const ratio = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 1000) / 1000 : null);
   return {
     placements_count: rows.length,
@@ -152,7 +160,11 @@ function aggregateKeywordFunnel(rows: Array<Record<string, unknown>>) {
     calls_taken: calls, show_rate: ratio(calls, booked),
     closes, close_rate: ratio(closes, calls),
     cash_collected: cash, roas: spend > 0 ? Math.round((cash / spend) * 100) / 100 : null,
-    gross_profit: gp, gross_profit_roas: spend > 0 ? Math.round((gp / spend) * 100) / 100 : null,
+    // Null, not zero. Gross profit came from the v1 unit-economics model, which the
+    // saved answers do not carry. A zero here would read as "made no profit", which
+    // is a different and wrong statement from "we are not reporting this".
+    gross_profit: null, gross_profit_roas: null,
+    gross_profit_note: "not carried by the saved answers; see the note on list_ads",
   };
 }
 
@@ -177,10 +189,25 @@ async function callTool(name: string, a: Record<string, unknown>, origin: string
       return factoryProxy(origin, "POST", { body: a });
     case "factory_update":
       return factoryProxy(origin, "PATCH", { body: a });
+    case "ask_question": {
+      // The whole locked list, when no question is named. Not an error: a caller
+      // that does not know what it may ask should be told, not refused.
+      if (!a.question_key) {
+        return {
+          note: "These are the only questions this door answers. Anything else comes back refused in writing, with the nearest allowed question named. Money in these answers is in CENTS.",
+          questions: describeDoor(),
+        };
+      }
+      return askQuestion({
+        question_key: a.question_key,
+        params: (a.params as Record<string, unknown>) || {},
+      });
+    }
     case "list_ads": {
-      const { ads, window } = await canonicalAds(client);
+      const { ads, window, refused, as_of } = await canonicalAds(client);
+      if (refused) return { note: "The saved answers could not serve this window, so no numbers are being returned rather than estimated ones.", refused, window: null, ads: [] };
       ads.sort((x, y) => ((y.spend as number) || 0) - ((x.spend as number) || 0));
-      return { note: "CANONICAL Ads Dashboard attribution per ad (v2 field names): spend, dms, booked_calls, calls_taken, closes, cash_collected, roas, funnel ad->DM->booked->taken->closed. The exact reconciled dashboard numbers. Merged with live status/CPM/impressions/targeting/copy. `window` is the period these funnel numbers cover; spend uses the ad account's day (Pacific).", window, ads };
+      return { note: "CANONICAL Ads v2 attribution per ad: spend, dms, booked_calls, calls_taken, closes, cash_collected, roas, funnel ad->DM->booked->taken->closed. Merged with live status/CPM/impressions/targeting/copy. `window` is the period these funnel numbers cover. " + UTARI_DOOR_NOTE, window, as_of, ads };
     }
     case "get_ad": {
       const kw = (a.keyword as string).toLowerCase();
@@ -192,7 +219,9 @@ async function callTool(name: string, a: Record<string, unknown>, origin: string
       const placements = ads.filter((x) => String(x.keyword).toLowerCase() === kw);
       if (!placements.length) return { found: false, keyword: kw, window, note: "keyword not present in the latest snapshot" };
       const scoped = adId ? placements.filter((p) => String(p.ad_id ?? "") === adId) : placements;
-      const funnel = aggregateKeywordFunnel(scoped.length ? scoped : placements);
+      const funnel = aggregateKeywordFunnel(
+        (scoped.length ? scoped : placements) as unknown as Array<Record<string, unknown>>,
+      );
       const dms = await dmsForAd(client, kw, (a.dm_limit as number) || 5, a.since as string | undefined);
       return {
         found: true, keyword: kw, window,
@@ -319,7 +348,7 @@ async function withEnvelope(name: string, args: Record<string, unknown>, result:
   const sb = getServiceSupabase();
   const client = args.client as string | undefined;
   const envelope: Record<string, unknown> = { data_freshness: await dataFreshness(sb) };
-  if (client === "tyson" || client === "antwan") envelope.coverage = await coverageFor(sb, client);
+  if (client && SERVED.includes(client)) envelope.coverage = await coverageFor(sb, client);
   return { ...(result as Record<string, unknown>), ...envelope };
 }
 

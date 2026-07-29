@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  ONE_DOOR_TOLERANCE_NOTE,
+  classifyOneDoor,
   classifyAskTwice,
   classifyBooksBalance,
   classifyBudgetPhotos,
@@ -354,4 +356,45 @@ test("leak watch is informational and never red, even when the leak grows", () =
 test("money is formatted for a human, including negatives", () => {
   assert.equal(usd(6602400), "$66,024.00");
   assert.equal(usd(-1130), "-$11.30");
+});
+
+// ── 13. One front door ────────────────────────────────────────────────────
+// Every red path is forced here with constructed numbers, exactly as the other
+// twelve do, so the check can never quietly pass when it should not.
+
+test("one front door: agreement is green", () => {
+  const v = classifyOneDoor({ windowsChecked: 72, comparisons: 576, mismatches: [], refusedWindows: [] });
+  assert.equal(v.status, "green");
+  assert.match(v.reason, /agree exactly/);
+});
+
+test("one front door: a single differing number is red, with no tolerance", () => {
+  const v = classifyOneDoor({
+    windowsChecked: 72,
+    comparisons: 576,
+    mismatches: [{ client: "tyson", window: "2026-07-28..2026-07-28 all", metric: "collected", door: 199900, saved: 199901 }],
+    refusedWindows: [],
+  });
+  assert.equal(v.status, "red");
+  assert.match(v.reason, /the door says 199900 and the saved answer says 199901/);
+});
+
+test("one front door: a window the door refuses but the tab can serve is red", () => {
+  const v = classifyOneDoor({
+    windowsChecked: 71, comparisons: 568, mismatches: [],
+    refusedWindows: ["tyson 2026-07-28..2026-07-28 all"],
+  });
+  assert.equal(v.status, "red");
+  assert.match(v.reason, /refused 1 window/);
+});
+
+test("one front door: nothing to check at all is red, never green", () => {
+  const v = classifyOneDoor({ windowsChecked: 0, comparisons: 0, mismatches: [], refusedWindows: [] });
+  assert.equal(v.status, "red");
+  assert.match(v.reason, /asked nothing/);
+});
+
+test("one front door: its tolerance note states plainly that there is no tolerance", () => {
+  assert.match(ONE_DOOR_TOLERANCE_NOTE, /NO tolerance/);
+  assert.match(ONE_DOOR_TOLERANCE_NOTE, /Any difference at all is red/);
 });

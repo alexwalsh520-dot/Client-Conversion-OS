@@ -14,8 +14,13 @@ import {
 } from "@/lib/creators";
 import { creatorCurrency } from "@/lib/fx/rates";
 import { rangeForPreset, shiftDay, type PresetId } from "@/lib/ads-v2/time";
+import { askQuestion } from "@/lib/question-door/service";
+import { isRefusal, type DoorAnswer } from "@/lib/question-door/types";
 import type { AccuracyCheck, CheckContext, CheckOutcome } from "./types";
 import {
+  ONE_DOOR_TOLERANCE_NOTE,
+  classifyOneDoor,
+  type DoorMismatch,
   ASK_TWICE_TOLERANCE_NOTE,
   BOOKS_TOLERANCE_NOTE,
   BUDGET_PHOTO_TOLERANCE_NOTE,
@@ -685,7 +690,119 @@ const leakWatch: AccuracyCheck = {
   },
 };
 
-/** The twelve checks, in the order they read on the page. */
+// ─────────────────────────────────────────────────────────────────────────
+// 13. One front door (Build 4)
+//
+// The question door is the only way an AI is allowed to ask about the money.
+// This check proves, every day, that what it answers is what the screen shows.
+// It asks the door the core metric questions for every window the tab can
+// serve right now and compares each number with the saved payload, read back
+// separately. Both sides read the same snapshot at the same data version, so
+// there is no honest lag to allow: any difference is a fault in the door.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** The metrics compared, mapped to their names in the saved payload's total. */
+const DOOR_METRICS: Array<{ door: string; saved: string }> = [
+  { door: "spend", saved: "spendCents" },
+  { door: "impressions", saved: "impressions" },
+  { door: "clicks", saved: "clicks" },
+  { door: "messages", saved: "messages" },
+  { door: "booked", saved: "booked" },
+  { door: "taken", saved: "taken" },
+  { door: "newClients", saved: "newClients" },
+  { door: "collected", saved: "collectedCents" },
+];
+
+const oneFrontDoor: AccuracyCheck = {
+  key: "one_front_door",
+  name: "The AI's answer equals the screen's",
+  toleranceNote: ONE_DOOR_TOLERANCE_NOTE,
+  budgetMs: 90_000,
+  async run(ctx: CheckContext): Promise<CheckOutcome> {
+    const { data: metaRow } = await ctx.db
+      .from("adsv2_meta").select("value").eq("key", "data_version").maybeSingle();
+    const version = Number((metaRow as { value: unknown } | null)?.value);
+
+    const { data, error } = await ctx.db
+      .from("adsv2_window_snapshots")
+      .select("account, date_from, date_to, status, payload")
+      .eq("level", "tree")
+      .eq("data_version", version);
+    if (error) throw new Error(`could not read the saved windows: ${error.message}`);
+    const saved = (data || []) as Array<{
+      account: string; date_from: string; date_to: string; status: string;
+      payload: { total: Record<string, number> };
+    }>;
+
+    const mismatches: DoorMismatch[] = [];
+    const refusedWindows: string[] = [];
+    let comparisons = 0;
+
+    // Every saved window is checked, none sampled away. They are asked a few at
+    // a time rather than one after another: seventy-two questions end to end took
+    // seventy-six seconds, which is uncomfortably close to this check's own limit,
+    // and a check that runs to its limit is the fault Build 3 exists to prevent.
+    // Six at a time is gentle on the database the tab serves from and finishes
+    // with plenty of room to spare.
+    const BATCH = 6;
+    for (let i = 0; i < saved.length; i += BATCH) {
+      const batch = saved.slice(i, i + BATCH);
+      const results = await Promise.all(
+        batch.map((s) =>
+          askQuestion(
+            {
+              question_key: "metric_value",
+              params: {
+                client: s.account, date_from: s.date_from, date_to: s.date_to,
+                status: s.status, metrics: DOOR_METRICS.map((m) => m.door),
+              },
+            },
+            { db: ctx.db, clients: ctx.clients },
+          ),
+        ),
+      );
+      results.forEach((result, n) => {
+        const s = batch[n];
+        const window = `${s.date_from}..${s.date_to} ${s.status}`;
+        if (isRefusal(result)) { refusedWindows.push(`${s.account} ${window}`); return; }
+        const total = ((result as DoorAnswer).answers as { total: Record<string, number | null> }).total;
+        for (const m of DOOR_METRICS) {
+          comparisons++;
+          const door = total[m.door] ?? null;
+          const savedValue = s.payload.total[m.saved] ?? null;
+          if (!Object.is(door, savedValue)) {
+            mismatches.push({ client: s.account, window, metric: m.door, door, saved: savedValue });
+          }
+        }
+      });
+    }
+
+    const verdict = classifyOneDoor({
+      windowsChecked: saved.length - refusedWindows.length,
+      comparisons,
+      mismatches,
+      refusedWindows,
+    });
+    return {
+      status: verdict.status,
+      leftLabel: "numbers the AI door returned",
+      leftValue: count(comparisons),
+      rightLabel: "of those, equal to the screen's saved answer",
+      rightValue: count(comparisons - mismatches.length),
+      diffValue: mismatches.length ? count(mismatches.length) : "",
+      whatToDo: verdict.status === "green" ? undefined : verdict.reason,
+      detail: {
+        dataVersion: version,
+        savedWindows: saved.length,
+        refusedWindows,
+        // Bounded so one bad day cannot write an enormous row.
+        mismatches: mismatches.slice(0, 25),
+      },
+    };
+  },
+};
+
+/** The thirteen checks, in the order they read on the page. */
 export const ACCURACY_CHECKS: readonly AccuracyCheck[] = [
   booksBalance,
   spendVsMeta,
@@ -699,4 +816,5 @@ export const ACCURACY_CHECKS: readonly AccuracyCheck[] = [
   twoThermometers,
   askTwice,
   leakWatch,
+  oneFrontDoor,
 ];
