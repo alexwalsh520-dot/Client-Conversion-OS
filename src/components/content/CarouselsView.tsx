@@ -7,14 +7,14 @@
 // picker (this slide / all / custom), so the studio editor + PNG rendering stay identical everywhere.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, ChevronLeft, ChevronRight, Pencil, Download, GalleryHorizontal, Sparkles } from "lucide-react";
+import { Loader2, ChevronLeft, ChevronRight, Pencil, Download, GalleryHorizontal, Sparkles, ShieldAlert } from "lucide-react";
 import SlideEditor from "./SlideEditor";
 import CarouselExport from "./CarouselExport";
 import { renderSlide, blocksForSlide, loadAvatar, ensureFonts, CANVAS_W, CANVAS_H, type SlideBlock } from "@/lib/content/carousel-render";
 import { intentForSlot, INTENT_LABEL, type CarouselIntent } from "@/lib/content/carousel-config";
 
 type Slide = { text?: string; blocks?: SlideBlock[] };
-type Row = { id: number; client_key: string; for_date: string; slot: number; topic: string | null; slides: Slide[]; edited: boolean; origin?: string | null; meta?: { intent?: string } | null };
+type Row = { id: number; client_key: string; for_date: string; slot: number; topic: string | null; slides: Slide[]; edited: boolean; origin?: string | null; meta?: { intent?: string; quarantined?: boolean; audit_reason?: string } | null };
 
 // Small, unobtrusive marker for a set the external worker wrote (operator-only — this view isn't on
 // the creator's token page). Provenance is stamped on the row's origin column.
@@ -81,6 +81,8 @@ export default function CarouselsView({ creator, mode = "operator", token }: { c
   const [pos, setPos] = useState(0); // flat index across the day's slides
   const [due, setDue] = useState(0); // what the cadence says the creator must POST today
   const [zipping, setZipping] = useState(false);
+  const [quarantined, setQuarantined] = useState<Row[]>([]); // operator-only; never populated on the token page
+  const [verdicting, setVerdicting] = useState(false);
 
   useEffect(() => { ensureFonts(); }, []);
 
@@ -91,6 +93,7 @@ export default function CarouselsView({ creator, mode = "operator", token }: { c
       const res = await fetch(`/api/content/carousels?${qs}`, { cache: "no-store" });
       const j = await res.json();
       setRows((j.carousels || []).sort((a: Row, b: Row) => a.slot - b.slot));
+      setQuarantined(((j.quarantined || []) as Row[]).sort((a, b) => a.slot - b.slot));
       setDue(Number(j.carousels_due) || 0);
       setPos(0);
     } finally { setLoading(false); }
@@ -165,6 +168,16 @@ export default function CarouselsView({ creator, mode = "operator", token }: { c
     } finally { setZipping(false); }
   };
 
+  // The operator's verdict on a rejected set. Approve makes it the day's content; discard removes it.
+  const verdict = async (action: "approve" | "discard") => {
+    if (verdicting) return;
+    setVerdicting(true);
+    try {
+      await fetch("/api/content/carousels", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ creator, date, action }) });
+      await load(date);
+    } finally { setVerdicting(false); }
+  };
+
   const generate = async () => {
     setGenerating(true);
     try { await fetch(`/api/content/carousels/generate?creator=${creator}&date=${date}`, { method: "POST" }); await load(date); }
@@ -220,6 +233,34 @@ export default function CarouselsView({ creator, mode = "operator", token }: { c
         <p style={{ margin: "-4px 0 0", fontSize: 13, color: "var(--text-muted)", lineHeight: 1.6 }}>
           {rows.length} made fresh daily.{due > 0 ? ` Post at least ${due} today.` : ""}
         </p>
+      )}
+
+      {/* QUARANTINE — operator eyes only. The API never sends these to a token request, so this block
+          cannot render on the creator page even if it were reached. */}
+      {!isCreator && quarantined.length > 0 && (
+        <div style={{ border: "1px solid #b45309", background: "rgba(180,83,9,.08)", borderRadius: 12, padding: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <ShieldAlert size={16} style={{ color: "#b45309" }} />
+            <span style={{ fontSize: 13.5, fontWeight: 800, color: "var(--text-primary)" }}>
+              {quarantined.length} carousel{quarantined.length === 1 ? "" : "s"} quarantined — failed the audience audit twice
+            </span>
+          </div>
+          <p style={{ fontSize: 12.5, color: "var(--text-muted)", lineHeight: 1.6, margin: "0 0 10px" }}>
+            Not published, not downloadable, and not visible to {creator}. {quarantined[0]?.meta?.audit_reason || ""}
+          </p>
+          <ol style={{ margin: "0 0 12px", padding: 0, listStyle: "none", display: "grid", gap: 6 }}>
+            {quarantined.map((q) => (
+              <li key={q.id} style={{ fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                {q.slot + 1}. {cleanTopic(q.topic)}
+                <div style={{ color: "var(--text-muted)", marginTop: 2 }}>{(q.slides[0]?.text || "").split("\n").filter(Boolean)[0]}</div>
+              </li>
+            ))}
+          </ol>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => verdict("approve")} disabled={verdicting} style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: "var(--accent)", color: "#1a1a1a", fontSize: 12.5, fontWeight: 800, cursor: "pointer", opacity: verdicting ? 0.6 : 1 }}>Approve — publish this set</button>
+            <button onClick={() => verdict("discard")} disabled={verdicting} style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid var(--border-primary)", background: "transparent", color: "var(--text-secondary)", fontSize: 12.5, fontWeight: 700, cursor: "pointer", opacity: verdicting ? 0.6 : 1 }}>Discard</button>
+          </div>
+        </div>
       )}
 
       {loading ? (

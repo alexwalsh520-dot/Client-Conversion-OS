@@ -5,13 +5,13 @@ import { getServiceSupabase } from "@/lib/supabase";
 import { logAiUsage } from "@/lib/ai-usage";
 import { CONTENT_CREATORS } from "@/lib/instagram-content";
 import { partitionBuyerCalls } from "@/lib/content/call-source";
+import { clientAliases } from "@/lib/content/client-aliases";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const MODEL = "claude-sonnet-4-6";
-const ALIASES: Record<string, string[]> = { tyson: ["tyson", "tyson_sonnek"], antwan: ["antwan", "antwan_rarcus"] };
 const BUCKETS = ["pain", "objection", "desire", "avatar", "hook", "topic", "transformation", "vocabulary"];
 
 const EXTRACT_SYS =
@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
   // Our own calls WITH the creator are attached to the creator too. Mining them puts the creator's
   // own voice into the buyer pool, which is how Jake ended up quoted as his own buyer.
   const { buyer: calls, internal: skippedInternal } = partitionBuyerCalls(allCalls || [], slug);
-  const { data: dms } = await sb.from("dm_transcripts").select("id, transcript").in("client", ALIASES[slug] || [slug]).order("submitted_at", { ascending: false }).limit(150);
+  const { data: dms } = await sb.from("dm_transcripts").select("id, transcript").in("client", clientAliases(slug)).order("submitted_at", { ascending: false }).limit(150);
 
   const work: Array<{ source: string; id: string; label: string; text: string }> = [];
   for (const c of calls) if (!mined.has(`call:${c.fathom_id}`) && (c.transcript || "").length > 400) work.push({ source: "call", id: c.fathom_id as string, label: `Sales call: ${c.title}`, text: c.transcript as string });

@@ -345,7 +345,7 @@ export async function generateCarouselSet(
   forDate: string,
   icp: Icp | null,
   anthropic: Anthropic,
-): Promise<{ ok: true; carousels: Carousel[]; sentenceViolations: number; styleViolations: number; dashesFixed: number; audit: AuditVerdict } | { ok: false; reason: string; audit?: AuditVerdict }> {
+): Promise<{ ok: true; carousels: Carousel[]; sentenceViolations: number; styleViolations: number; dashesFixed: number; audit: AuditVerdict } | { ok: false; reason: string; audit?: AuditVerdict; carousels?: Carousel[] }> {
   const [voiceRow, briefs, avoid, playbookRow, doc, pack] = await Promise.all([
     getCurrentVoice(sb, client),
     dossierBriefs(sb, client),
@@ -470,7 +470,10 @@ export async function generateCarouselSet(
       if (retryAudit.ok) { set = retrySet; audit = retryAudit; } else { audit = retryAudit; }
     }
     if (!audit.ok) {
-      return { ok: false, reason: `Audience audit failed: ${audit.offAudience.map((o) => `${o.label} — ${o.why}`).join("; ")}`, audit };
+      // The set is handed back with the failure so the caller can quarantine it. An empty page
+      // plus an alert plus reviewable material beats both silent-wrong and silent-nothing.
+      normalizeDashesInSlides(set);
+      return { ok: false, reason: `Audience audit failed: ${audit.offAudience.map((o) => `${o.label} — ${o.why}`).join("; ")}`, audit, carousels: set };
     }
   }
 

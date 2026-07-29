@@ -10,6 +10,7 @@ import { getCadence } from "@/lib/content/calendar-build";
 import { CAROUSELS_PER_DAY, intentForSlot } from "@/lib/content/carousel-config";
 import { postToSlack, getSalesManagerChannel } from "@/lib/slack";
 import { auditAudience } from "@/lib/buyer-dna/audience-audit";
+import { isLive, type CarouselMeta } from "@/lib/content/carousel-config";
 
 // An external content worker, when one is configured, owns midnight → 06:00 in the creator's own
 // timezone and CCOS only steps in after 06:00. That handoff exists ONLY for a worker that is
@@ -96,8 +97,11 @@ export async function POST(req: NextRequest) {
     .eq("client_key", slug)
     .eq("for_date", forDate)
     .order("slot", { ascending: true });
-  if (!force && existing && existing.length >= CAROUSELS_PER_DAY) {
-    return NextResponse.json({ ok: true, creator: slug, date: forDate, generated: false, carousels: existing });
+  // LIVE rows only. A quarantined day is not a finished day — counting it would mean a rejected set
+  // permanently blocks the creator from ever getting content for that date.
+  const liveExisting = ((existing || []) as { meta?: CarouselMeta }[]).filter(isLive);
+  if (!force && liveExisting.length >= CAROUSELS_PER_DAY) {
+    return NextResponse.json({ ok: true, creator: slug, date: forDate, generated: false, carousels: liveExisting });
   }
 
   // Fallback window: only when an external worker is actually configured. Otherwise there is nobody
@@ -116,8 +120,26 @@ export async function POST(req: NextRequest) {
     // An audience failure is categorically different from a generation failure: the model produced
     // content for the wrong person. Refuse the write, keep the day as it was, and say so out loud.
     if (res.audit && !res.audit.ok) {
+      // QUARANTINE: store it flagged rather than throwing it away. The operator can read it, approve
+      // it, or discard it; nothing else in the system can see it.
+      let quarantined = 0;
+      if (res.carousels?.length) {
+        const qrows = res.carousels.map((c, i) => ({
+          client_key: slug,
+          for_date: forDate,
+          slot: i,
+          topic: c.topic || null,
+          slides: c.slides.map((sl) => ({ text: sl.text || "" })),
+          origin: "internal",
+          meta: { intent: intentForSlot(i), quarantined: true, audit_reason: res.reason.slice(0, 500) },
+          model: MODEL,
+          updated_at: new Date().toISOString(),
+        }));
+        const { error: qerr } = await sb.from("content_carousels").upsert(qrows, { onConflict: "client_key,for_date,slot" });
+        if (!qerr) quarantined = qrows.length;
+      }
       await alertIcpAudit(slug, `today's carousels (${forDate})`, res.reason, url.searchParams.get("test") === "1");
-      return NextResponse.json({ ok: false, creator: slug, date: forDate, reason: res.reason, icp_audit: res.audit, stored: false }, { status: 200 });
+      return NextResponse.json({ ok: false, creator: slug, date: forDate, reason: res.reason, icp_audit: res.audit, stored: false, quarantined }, { status: 200 });
     }
     return NextResponse.json({ ok: false, creator: slug, date: forDate, reason: res.reason }, { status: 200 });
   }
