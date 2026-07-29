@@ -36,12 +36,16 @@ export async function auditAudience(
   const lock = icpLockFor(client);
   if (!lock || !items.length) return { ok: true, ran: false, offAudience: [], lock };
 
+  // This audit exists to catch content written for SOMEONE ELSE, not content that is merely broad.
+  // The first version flagged a creator's own on-brief hooks for "having no military angle" — which
+  // would have blocked his set every night. Off-audience requires a different audience, named.
   const sys =
     `You are auditing marketing content for AUDIENCE FIT. The content is supposed to be for exactly this audience:\n\n${lock}\n\n` +
-    "For each item, decide whether it is written FOR that audience. Judge the audience it speaks to, not its quality.\n" +
-    "ON-AUDIENCE: it names, describes, or speaks to that person's situation, even obliquely.\n" +
-    "OFF-AUDIENCE: it speaks to a different person — a different career stage, a different goal, a different life. When a piece would land equally on anyone, that is not off-audience by itself; only call it off when it is aimed somewhere else.\n" +
-    'Return STRICT JSON and nothing else: {"items":[{"label":"the item label","on_audience":true,"why":"one short sentence"}]}';
+    "For each item, decide whether it is written for a DIFFERENT audience than the one above. Judge who it is aimed at, not its quality and not how specific it is.\n" +
+    "Mark on_audience TRUE when: it speaks to that person's situation, OR it is broad enough that this person is plainly included. Content that would land on a wider group INCLUDING them is on-audience. Not every piece has to name the niche — the absence of a niche detail is NOT a failure.\n" +
+    "Mark on_audience FALSE only when you can NAME the different audience it is actually written for — a different life stage, a different goal, a different problem that this audience does not have. If you cannot name that other audience in your reason, the answer is TRUE.\n" +
+    "Being generic is never enough to fail. Being aimed elsewhere is.\n" +
+    'Return STRICT JSON and nothing else: {"items":[{"label":"the item label","on_audience":true,"why":"one short sentence; if false, name the audience it is actually for"}]}';
 
   const user = items.map((i) => `[${i.label}]\n${i.text}`).join("\n\n---\n\n");
 
