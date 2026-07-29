@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
 import { logAiUsage } from "@/lib/ai-usage";
 import { CONTENT_CREATORS } from "@/lib/instagram-content";
+import { isBuyerCall } from "@/lib/content/call-source";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,7 +40,9 @@ export async function POST(req: NextRequest) {
   const { data: dms } = await sb.from("dm_transcripts").select("transcript").in("client", ALIASES[slug] || [slug]).order("submitted_at", { ascending: false }).limit(50);
   const dmText = (dms || []).map((d) => (d.transcript || "").slice(0, 1500)).filter((x) => x.trim());
 
-  const { data: fath } = await sb.from("fathom_calls").select("transcript, prospect_name").eq("client_key", slug).order("recorded_at", { ascending: false }).limit(20);
+  const { data: fathAll } = await sb.from("fathom_calls").select("transcript, prospect_name, title").eq("client_key", slug).order("recorded_at", { ascending: false }).limit(20);
+  // Buyer voice means the BUYER's voice — internal calls with the creator are not that.
+  const fath = (fathAll || []).filter((c) => isBuyerCall(c, slug));
   const callTranscripts = (fath || []).map((f) => (f.transcript || "").slice(0, 4000)).filter((x) => x.trim());
 
   if (!calls.length && !dmText.length && !callTranscripts.length) {

@@ -8,6 +8,8 @@ import type { Icp } from "@/lib/buyer-dna/icp";
 import { generateCarouselSet } from "@/lib/buyer-dna/carousels";
 import { getCadence } from "@/lib/content/calendar-build";
 import { CAROUSELS_PER_DAY, intentForSlot } from "@/lib/content/carousel-config";
+import { postToSlack, getSalesManagerChannel } from "@/lib/slack";
+import { auditAudience } from "@/lib/buyer-dna/audience-audit";
 
 // An external content worker, when one is configured, owns midnight → 06:00 in the creator's own
 // timezone and CCOS only steps in after 06:00. That handoff exists ONLY for a worker that is
@@ -25,6 +27,15 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const MODEL = "claude-sonnet-4-6";
+
+// The audit rejected the set. Nothing was stored, so the day keeps whatever it already had — but a
+// silent rejection is how off-audience content shipped unnoticed in the first place.
+async function alertIcpAudit(creator: string, what: string, reason: string, test = false) {
+  const channel = getSalesManagerChannel();
+  if (!channel) return;
+  const tag = test ? "[TEST] " : "";
+  await postToSlack(channel, `${tag}:rotating_light: *ICP audit failed for ${creator}* — ${what} rejected, needs eyes.\n${reason}`).catch(() => {});
+}
 
 async function authorized(req: NextRequest) {
   const bearer = req.headers.get("authorization") || "";
@@ -54,6 +65,29 @@ export async function POST(req: NextRequest) {
 
   const sb = getServiceSupabase();
 
+  // audit_only=1 — run the audience audit against the day's ALREADY STORED set and report. No
+  // generation, no writes. This is how a suspect day gets re-checked after the fact, and it is the
+  // same audit + alert path a live run uses.
+  if (url.searchParams.get("audit_only") === "1") {
+    const { data: stored } = await sb
+      .from("content_carousels")
+      .select("slot, topic, slides")
+      .eq("client_key", slug)
+      .eq("for_date", forDate)
+      .order("slot", { ascending: true });
+    const rows = (stored || []) as { slot: number; topic: string | null; slides: { text?: string }[] }[];
+    if (!rows.length) return NextResponse.json({ ok: false, creator: slug, date: forDate, reason: "nothing stored for that day" }, { status: 200 });
+    const verdict = await auditAudience(
+      slug,
+      rows.map((r) => ({ label: `carousel ${r.slot + 1}`, text: [r.topic || "", (r.slides || [])[0]?.text || ""].filter(Boolean).join("\n") })),
+      new Anthropic(),
+    );
+    if (!verdict.ok) {
+      await alertIcpAudit(slug, `stored carousels (${forDate})`, verdict.offAudience.map((o) => `${o.label} — ${o.why}`).join("; "), url.searchParams.get("test") === "1");
+    }
+    return NextResponse.json({ ok: true, creator: slug, date: forDate, mode: "audit_only", icp_audit: verdict });
+  }
+
   // No-regeneration guard: if the day's 5 rows already exist, return them as-is (no LLM call) —
   // unless force=1 asks for a fresh set.
   const { data: existing } = await sb
@@ -78,7 +112,15 @@ export async function POST(req: NextRequest) {
   const current = await getCurrentIcp(sb, slug);
   const icp = current ? ((current as { icp: Icp }).icp) : null;
   const res = await generateCarouselSet(sb, slug, forDate, icp, new Anthropic());
-  if (!res.ok) return NextResponse.json({ ok: false, creator: slug, date: forDate, reason: res.reason }, { status: 200 });
+  if (!res.ok) {
+    // An audience failure is categorically different from a generation failure: the model produced
+    // content for the wrong person. Refuse the write, keep the day as it was, and say so out loud.
+    if (res.audit && !res.audit.ok) {
+      await alertIcpAudit(slug, `today's carousels (${forDate})`, res.reason, url.searchParams.get("test") === "1");
+      return NextResponse.json({ ok: false, creator: slug, date: forDate, reason: res.reason, icp_audit: res.audit, stored: false }, { status: 200 });
+    }
+    return NextResponse.json({ ok: false, creator: slug, date: forDate, reason: res.reason }, { status: 200 });
+  }
 
   const rows = res.carousels.map((c, i) => ({
     client_key: slug,
@@ -121,5 +163,5 @@ export async function POST(req: NextRequest) {
   const ordered = (inserted || []).sort((a, b) => (a as { slot: number }).slot - (b as { slot: number }).slot);
   // sentence_violations > 0 means the model couldn't get every slide under the 4-sentence cap even
   // after the retry; the copy is kept in full (never truncated) and the count is surfaced.
-  return NextResponse.json({ ok: true, creator: slug, date: forDate, generated: true, sentence_violations: res.sentenceViolations, style_violations: res.styleViolations, carousels: ordered });
+  return NextResponse.json({ ok: true, creator: slug, date: forDate, generated: true, dashes_fixed: res.dashesFixed, icp_audit: res.audit, sentence_violations: res.sentenceViolations, style_violations: res.styleViolations, carousels: ordered });
 }
