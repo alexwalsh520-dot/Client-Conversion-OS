@@ -49,6 +49,16 @@ export interface Creator {
    */
   matchTokens: readonly string[];
   /**
+   * WHO THIS CREATOR SELLS TO — the one thing about a creator that is deliberately hardcoded rather
+   * than derived. Every generator that writes words injects this as the first line of its system
+   * prompt, and the audience audit checks the output against it. It exists because derived identity
+   * failed: a route with an incomplete lookup table wrote one creator's hardcoded ICP into another's
+   * row and a day of content shipped for the wrong audience.
+   *
+   * APPEND-ONLY. Changing a lock's wording is Matthew's edit and is never inferred from data.
+   */
+  icpLock?: string;
+  /**
    * The currency Meta bills this creator in (ISO 4217, e.g. "AUD"). Omitted means
    * USD. Money for a non-USD creator (spend and revenue) is stored raw in their
    * currency and converted to USD at read time, per the day it moved, so the ads
@@ -69,6 +79,7 @@ export const CREATORS: readonly Creator[] = [
     key: "tyson",
     name: "Tyson",
     active: true,
+    icpLock: "US military veterans and active-duty men rebuilding structure and fitness after/around service.",
     timezone: "America/Los_Angeles",
     market: "US",
     adAccountEnv: ["META_AD_ACCOUNT_TYSON", "META_ADS_ACCOUNT_TYSON"],
@@ -101,6 +112,7 @@ export const CREATORS: readonly Creator[] = [
     key: "antwan",
     name: "Antwan",
     active: false, // no longer a client (Jul 2026)
+    icpLock: "High-responsibility men 34-48 who let their body slide while building a career and family, and want to feel like that man again.",
     timezone: "America/New_York",
     adAccountEnv: ["META_AD_ACCOUNT_ANTWAN_RARCUS", "META_AD_ACCOUNT_ANTWAN"],
     tokenEnv: ["META_ACCESS_TOKEN_ANTWAN_RARCUS", "META_ACCESS_TOKEN_ANTWAN", "META_ACCESS_TOKEN"],
@@ -111,6 +123,8 @@ export const CREATORS: readonly Creator[] = [
     key: "jake",
     name: "Jake",
     active: true, // onboarded Jul 2026 (Jake Divljak — RecruitReady Fitness)
+    icpLock:
+      "US career changers training to PASS first-responder and military entry fitness tests (police academy, fire, EMS, military entry) — people changing INTO these careers.",
     // RRF V2 ad account reports in AUD on Sydney time. Spend/revenue values arrive
     // in AUD (the pipeline has no FX layer yet), so his figures are AUD until we add one.
     timezone: "Australia/Sydney",
@@ -188,4 +202,23 @@ export function creatorKeyFromText(
   }
   if (matches.size === 1) return [...matches][0];
   return null;
+}
+
+
+/**
+ * The audience lock for a creator, or null when none is declared. Callers that write words must
+ * treat a missing lock as a reason to be MORE careful, never as permission to write for anyone.
+ */
+export function icpLockFor(client: string): string | null {
+  const c = CREATORS.find((x) => x.key === (client || "").toLowerCase());
+  return c?.icpLock || null;
+}
+
+/**
+ * The lock as it appears at the top of a system prompt. Empty string when the creator has no lock,
+ * so callers can concatenate unconditionally.
+ */
+export function audienceLockLine(client: string): string {
+  const lock = icpLockFor(client);
+  return lock ? `AUDIENCE LOCK: every word you write is for ${lock} Content aimed at any other audience is a total failure.\n\n` : "";
 }

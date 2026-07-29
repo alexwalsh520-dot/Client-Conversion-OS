@@ -17,6 +17,9 @@ import {
 } from "@/lib/content/carousel-config";
 import { extractJson, salvageObjects } from "./json";
 import { marketDirective } from "@/lib/content/market";
+import { audienceLockLine } from "@/lib/creators";
+import { normalizeDashesInSlides } from "@/lib/content/punctuation";
+import { auditAudience, auditFeedback, type AuditVerdict } from "./audience-audit";
 
 const MODEL = "claude-sonnet-4-6";
 
@@ -114,7 +117,7 @@ const HOUSE_HOOK_RULES =
 //
 // hasPack: the house framework is installed. Without it, this returns exactly the pre-framework
 // prompt, so a missing framework doc degrades to the old behaviour rather than to nothing.
-function buildSys(hasDoc: boolean, hasPack: boolean, prohibitions: string[] = [], voiceRules = "", market = "", hookRules = ""): string {
+function buildSys(hasDoc: boolean, hasPack: boolean, prohibitions: string[] = [], voiceRules = "", market = "", hookRules = "", lock = ""): string {
   if (hasPack) {
     // The framework's own voice rules are hoisted here from the stored document. They live in the
     // system prompt because that is where a rule actually changes the output — the same words buried
@@ -129,9 +132,9 @@ function buildSys(hasDoc: boolean, hasPack: boolean, prohibitions: string[] = []
       ? "\n\nABSOLUTE PROHIBITIONS from the framework — these are not stylistic preferences, every one is checked:\n" +
         prohibitions.map((l) => `- ${l}`).join("\n")
       : "";
-    return MECHANICAL_BASE + voice + hooks + HOUSE_HOOK_RULES + absolutes + market + NO_DOLLARS;
+    return lock + MECHANICAL_BASE + voice + hooks + HOUSE_HOOK_RULES + absolutes + market + NO_DOLLARS;
   }
-  return BASE + VOICE + BANNED_TELLS + (hasDoc ? "" : STYLE_REFERENCE) + JSON_HYGIENE + market + NO_DOLLARS;
+  return lock + BASE + VOICE + BANNED_TELLS + (hasDoc ? "" : STYLE_REFERENCE) + JSON_HYGIENE + market + NO_DOLLARS;
 }
 
 function compactIcp(icp: Icp | null): string {
@@ -342,7 +345,7 @@ export async function generateCarouselSet(
   forDate: string,
   icp: Icp | null,
   anthropic: Anthropic,
-): Promise<{ ok: true; carousels: Carousel[]; sentenceViolations: number; styleViolations: number } | { ok: false; reason: string }> {
+): Promise<{ ok: true; carousels: Carousel[]; sentenceViolations: number; styleViolations: number; dashesFixed: number; audit: AuditVerdict } | { ok: false; reason: string; audit?: AuditVerdict }> {
   const [voiceRow, briefs, avoid, playbookRow, doc, pack] = await Promise.all([
     getCurrentVoice(sb, client),
     dossierBriefs(sb, client),
@@ -363,7 +366,7 @@ export async function generateCarouselSet(
   const { lines: packRules, terms: bannedTerms } = frameworkProhibitions(basePack);
   const packVoice = frameworkVoiceSection(basePack);
   const hookRules = frameworkHookRules(hooksDoc);
-  const sys = buildSys(hasDoc, !!packBlock, packRules, packVoice, marketDirective(client), hookRules); // doc creators drop the Tyson/Antwan style exemplars entirely.
+  const sys = buildSys(hasDoc, !!packBlock, packRules, packVoice, marketDirective(client), hookRules, audienceLockLine(client)); // doc creators drop the Tyson/Antwan style exemplars entirely.
 
   // The playbook's ranked tier list is the best evidence we have of what people actually voice, and
   // in what proportion — so the carousels aim at the top of it rather than at whatever reads well.
@@ -452,8 +455,30 @@ export async function generateCarouselSet(
   }
 
   // Normalize to exactly CAROUSELS_PER_DAY carousels, each clamped to the slide ceiling.
-  const set = carousels.slice(0, CAROUSELS_PER_DAY).map((c) => ({ topic: c.topic || "", slides: c.slides.slice(0, MAX_SLIDES) }));
+  let set = carousels.slice(0, CAROUSELS_PER_DAY).map((c) => ({ topic: c.topic || "", slides: c.slides.slice(0, MAX_SLIDES) }));
+
+  // AUDIENCE AUDIT — the lock is checked, not trusted. One off-audience item buys one full
+  // regeneration; a second failure is returned as a failure and the caller refuses to store it.
+  const auditItems = (cs: Carousel[]) =>
+    cs.map((c, i) => ({ label: `carousel ${i + 1}`, text: [c.topic || "", (c.slides || [])[0]?.text || ""].filter(Boolean).join("\n") }));
+  let audit = await auditAudience(client, auditItems(set), anthropic);
+  if (!audit.ok) {
+    const retry = await genOnce(auditFeedback(audit));
+    if (retry.length >= CAROUSELS_PER_DAY) {
+      const retrySet = retry.slice(0, CAROUSELS_PER_DAY).map((c) => ({ topic: c.topic || "", slides: c.slides.slice(0, MAX_SLIDES) }));
+      const retryAudit = await auditAudience(client, auditItems(retrySet), anthropic);
+      if (retryAudit.ok) { set = retrySet; audit = retryAudit; } else { audit = retryAudit; }
+    }
+    if (!audit.ok) {
+      return { ok: false, reason: `Audience audit failed: ${audit.offAudience.map((o) => `${o.label} — ${o.why}`).join("; ")}`, audit };
+    }
+  }
+
+  // The one permitted in-place mutation, punctuation only: em/en dashes the model keeps
+  // reintroducing despite the ban and the naming retry. Counted so it is never silent.
+  const dashesFixed = normalizeDashesInSlides(set);
+
   const sentenceViolations = overLongSlides(set).length;
   const styleIssues = styleViolations(set, bannedTerms).length + longSentences(set).length + hookViolations(set).length;
-  return { ok: true, carousels: set, sentenceViolations, styleViolations: styleIssues };
+  return { ok: true, carousels: set, sentenceViolations, styleViolations: styleIssues, dashesFixed, audit };
 }

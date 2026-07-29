@@ -11,6 +11,7 @@ import type { Research } from "./dossier";
 import { gatherBuyerData, normName, type QualifiedBuyer } from "./core";
 import { compactTrendBrief, type TrendBrief } from "./trends";
 import { extractJson, salvageObjects } from "./json";
+import { audienceLockLine } from "@/lib/creators";
 
 // Appended to JSON-returning prompts: the model's grade/idea output occasionally breaks a full
 // JSON.parse via an unescaped quote or an over-long field. Discouraging both raises the clean-parse
@@ -157,7 +158,7 @@ export async function generateBuyerIdeas(
       const resp = await anthropic.messages.create({
         model: MODEL,
         max_tokens: 8000,
-        system: BUYER_SYS,
+        system: audienceLockLine(client) + BUYER_SYS,
         messages: [{ role: "user", content: userContent }],
       });
       logAiUsage({ feature: "buyer-dna-video-ideas", model: MODEL, usage: resp.usage });
@@ -218,7 +219,7 @@ export async function generateIcpIdeas(
       const resp = await anthropic.messages.create({
         model: MODEL,
         max_tokens: 8000,
-        system: ICP_SYS,
+        system: audienceLockLine(client) + ICP_SYS,
         messages: [{ role: "user", content: userContent }],
       });
       logAiUsage({ feature: "buyer-dna-icp-ideas", model: MODEL, usage: resp.usage });
@@ -272,7 +273,7 @@ export async function gradeIdeaSet(
       const resp = await anthropic.messages.create({
         model: MODEL,
         max_tokens: 2500,
-        system: GRADE_SYS,
+        system: audienceLockLine(client) + GRADE_SYS,
         messages: [{ role: "user", content: userContent }],
       });
       logAiUsage({ feature: "buyer-dna-idea-grade", model: MODEL, usage: resp.usage });

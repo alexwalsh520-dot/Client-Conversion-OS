@@ -17,6 +17,8 @@ import { getCurrentShiftBrief } from "./shift";
 import { getCurrentVoice } from "./voice";
 import { getMessagingDoc, messagingDocBlock, listGlobalFrameworkDocs, frameworkChannelBlock, frameworkHookRules } from "./messaging-doc";
 import type { Research } from "./dossier";
+import { audienceLockLine } from "@/lib/creators";
+import { auditAudience, auditFeedback, type AuditVerdict } from "./audience-audit";
 
 const MODEL = "claude-sonnet-4-6";
 
@@ -297,7 +299,7 @@ export async function refreshPlaybook(
   icpVersion: number | null,
   anthropic: Anthropic,
   opts: { canProceed?: () => boolean } = {},
-): Promise<{ ok: true; version: number; saying: number; hooks: number; topics: number } | { ok: false; reason: string }> {
+): Promise<{ ok: true; version: number; saying: number; hooks: number; topics: number; audit: AuditVerdict } | { ok: false; reason: string; audit?: AuditVerdict }> {
   const [briefs, trend, shift, voc, voice, ads, doc, pack] = await Promise.all([
     buyerBriefs(sb, client),
     getCurrentTrendBrief(sb, client),
@@ -377,7 +379,7 @@ export async function refreshPlaybook(
       const resp = await anthropic.messages.create({
         model: MODEL,
         max_tokens: 8000,
-        system: (packBlock ? MECHANICAL_SYS : SYS) + (hookRules ? `\n\nHOOK RULES — these govern the hooks section and OUTRANK the general pack on anything hook-shaped:\n${hookRules}` : "") + marketDirective(client),
+        system: audienceLockLine(client) + (packBlock ? MECHANICAL_SYS : SYS) + (hookRules ? `\n\nHOOK RULES — these govern the hooks section and OUTRANK the general pack on anything hook-shaped:\n${hookRules}` : "") + marketDirective(client),
         messages: [{ role: "user", content: feedback ? `${userMsg}\n\n${feedback}` : userMsg }],
       });
       logAiUsage({ feature: "buyer-dna-playbook", model: MODEL, usage: resp.usage });
@@ -434,6 +436,27 @@ export async function refreshPlaybook(
       }
     : { saying, hooks: result.hooks.slice(0, 20), topics: result.topics.slice(0, 14) };
 
+  // AUDIENCE AUDIT before anything is stored. A playbook aimed at the wrong person poisons every
+  // carousel that reads it afterwards, so a second failure refuses the write rather than shipping.
+  const auditItemsOf = (pb: Playbook) => [
+    ...(pb.hooks || []).slice(0, 8).map((h, i) => ({ label: `hook ${i + 1}`, text: h.hook || "" })),
+    ...((pb.actions || []) as { headline?: string }[]).slice(0, 5).map((a, i) => ({ label: `action ${i + 1}`, text: a.headline || "" })),
+  ].filter((x) => x.text);
+  let audit = await auditAudience(client, auditItemsOf(playbook), anthropic);
+  if (!audit.ok && (opts.canProceed?.() ?? true)) {
+    const retry = await genOnce(auditFeedback(audit));
+    const retryPb: Playbook = packBlock
+      ? { ...playbook, hooks: retry.hooks.slice(0, 30), buyer_language: (retry.buyer_language || []).slice(0, 10).map((x, i) => (typeof x === "string" ? { rank: i + 1, theme: x } : { ...x, rank: i + 1 })), actions: (retry.actions || []).slice(0, 5), filming_concepts: (retry.filming_concepts || []).slice(0, 12) }
+      : { ...playbook, hooks: retry.hooks.slice(0, 20) };
+    if (retryPb.hooks.length) {
+      const retryAudit = await auditAudience(client, auditItemsOf(retryPb), anthropic);
+      if (retryAudit.ok) { Object.assign(playbook, retryPb); audit = retryAudit; } else { audit = retryAudit; }
+    }
+  }
+  if (!audit.ok) {
+    return { ok: false, reason: `Audience audit failed: ${audit.offAudience.map((o) => `${o.label} — ${o.why}`).join("; ")}`, audit };
+  }
+
   const current = await getCurrentPlaybook(sb, client);
   const version = current ? Number(current.version) + 1 : 1;
   const { error } = await sb.from("content_playbooks").insert({
@@ -446,5 +469,5 @@ export async function refreshPlaybook(
     generated_at: new Date().toISOString(),
   });
   if (error) return { ok: false, reason: error.message };
-  return { ok: true, version, saying: playbook.saying?.length ?? 0, hooks: playbook.hooks.length, topics: playbook.topics.length };
+  return { ok: true, version, saying: playbook.saying?.length ?? 0, hooks: playbook.hooks.length, topics: playbook.topics.length, audit };
 }

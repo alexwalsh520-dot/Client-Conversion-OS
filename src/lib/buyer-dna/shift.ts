@@ -9,6 +9,7 @@ import { logAiUsage } from "@/lib/ai-usage";
 import { marketDirective } from "@/lib/content/market";
 import type { Icp } from "./icp";
 import { extractJson, salvageObjects } from "./json";
+import { audienceLockLine } from "@/lib/creators";
 
 const MODEL = "claude-sonnet-4-6";
 
@@ -128,7 +129,7 @@ export async function refreshShiftBrief(
       const resp = await anthropic.messages.create({
         model: MODEL,
         max_tokens: 2500,
-        system: SYS + marketDirective(client),
+        system: audienceLockLine(client) + SYS + marketDirective(client),
         messages: [{ role: "user", content: userMsg }],
       });
       logAiUsage({ feature: "buyer-dna-shift", model: MODEL, usage: resp.usage });

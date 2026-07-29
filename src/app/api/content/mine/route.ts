@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
 import { logAiUsage } from "@/lib/ai-usage";
 import { CONTENT_CREATORS } from "@/lib/instagram-content";
+import { partitionBuyerCalls } from "@/lib/content/call-source";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,11 +57,14 @@ export async function POST(req: NextRequest) {
   const mined = new Set((minedRows || []).map((m) => `${m.source}:${m.source_id}`));
 
   // Un-mined calls + DM transcripts for this creator.
-  const { data: calls } = await sb.from("fathom_calls").select("fathom_id, title, transcript").eq("client_key", slug).not("transcript", "is", null).order("recorded_at", { ascending: false }).limit(150);
+  const { data: allCalls } = await sb.from("fathom_calls").select("fathom_id, title, prospect_name, transcript").eq("client_key", slug).not("transcript", "is", null).order("recorded_at", { ascending: false }).limit(150);
+  // Our own calls WITH the creator are attached to the creator too. Mining them puts the creator's
+  // own voice into the buyer pool, which is how Jake ended up quoted as his own buyer.
+  const { buyer: calls, internal: skippedInternal } = partitionBuyerCalls(allCalls || [], slug);
   const { data: dms } = await sb.from("dm_transcripts").select("id, transcript").in("client", ALIASES[slug] || [slug]).order("submitted_at", { ascending: false }).limit(150);
 
   const work: Array<{ source: string; id: string; label: string; text: string }> = [];
-  for (const c of calls || []) if (!mined.has(`call:${c.fathom_id}`) && (c.transcript || "").length > 400) work.push({ source: "call", id: c.fathom_id as string, label: `Sales call: ${c.title}`, text: c.transcript as string });
+  for (const c of calls) if (!mined.has(`call:${c.fathom_id}`) && (c.transcript || "").length > 400) work.push({ source: "call", id: c.fathom_id as string, label: `Sales call: ${c.title}`, text: c.transcript as string });
   for (const d of dms || []) if (!mined.has(`dm:${d.id}`) && (d.transcript || "").length > 120) work.push({ source: "dm", id: d.id as string, label: "DM conversation", text: d.transcript as string });
   const batch = work.slice(0, limit);
 
@@ -105,5 +109,5 @@ export async function POST(req: NextRequest) {
   }
 
   const remaining = work.length - batch.length;
-  return NextResponse.json({ ok: true, mined: minedCount, quotes_added: quotesAdded, failed, remaining, audience_updated: audienceUpdated, note: remaining ? `Run again — ${remaining} sources left.` : "All sources mined." });
+  return NextResponse.json({ ok: true, skipped_internal_calls: skippedInternal.length, mined: minedCount, quotes_added: quotesAdded, failed, remaining, audience_updated: audienceUpdated, note: remaining ? `Run again — ${remaining} sources left.` : "All sources mined." });
 }

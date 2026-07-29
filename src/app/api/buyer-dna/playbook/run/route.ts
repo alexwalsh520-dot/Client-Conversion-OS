@@ -6,6 +6,7 @@ import { CONTENT_CREATORS } from "@/lib/instagram-content";
 import { getCurrentIcp } from "@/lib/buyer-dna/icp";
 import type { Icp } from "@/lib/buyer-dna/icp";
 import { refreshPlaybook } from "@/lib/buyer-dna/playbook";
+import { postToSlack, getSalesManagerChannel } from "@/lib/slack";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,6 +37,14 @@ export async function POST(req: NextRequest) {
   const canProceed = () => Date.now() - start + 100_000 < 290_000;
 
   const res = await refreshPlaybook(sb, slug, icp, icpVersion, new Anthropic(), { canProceed });
-  if (!res.ok) return NextResponse.json({ ok: false, creator: slug, reason: res.reason }, { status: 200 });
-  return NextResponse.json({ ok: true, creator: slug, version: res.version, hooks: res.hooks, topics: res.topics });
+  if (!res.ok) {
+    if (res.audit && !res.audit.ok) {
+      const channel = getSalesManagerChannel();
+      const tag = url.searchParams.get("test") === "1" ? "[TEST] " : "";
+      if (channel) await postToSlack(channel, `${tag}:rotating_light: *ICP audit failed for ${slug}* — playbook rejected, needs eyes.\n${res.reason}`).catch(() => {});
+      return NextResponse.json({ ok: false, creator: slug, reason: res.reason, icp_audit: res.audit, stored: false }, { status: 200 });
+    }
+    return NextResponse.json({ ok: false, creator: slug, reason: res.reason }, { status: 200 });
+  }
+  return NextResponse.json({ ok: true, creator: slug, version: res.version, hooks: res.hooks, topics: res.topics, icp_audit: res.audit });
 }
