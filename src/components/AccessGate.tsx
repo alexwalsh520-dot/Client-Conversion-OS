@@ -128,6 +128,10 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
     // enforced by /api/public/setters/<token>). Setters open it at the midday
     // check-in. No CCOS login.
     pathname.startsWith("/p/setters/") ||
+    // /p/ads-v2/<token> is a public, no-login client share link for the Ads v2
+    // tab. It resolves the token server-side to ONE client and shows only that
+    // client's Ads v2 view (data hard-scoped by /api/public/ads-v2/<token>).
+    pathname.startsWith("/p/ads-v2/") ||
     // /p/factory/<token> is a public, no-login share link for ONE Factory
     // project (e.g. handing a creator their own ad batch to review). The token
     // resolves server-side to a single project_id and /api/public/factory/<token>
