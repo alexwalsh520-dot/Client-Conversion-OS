@@ -17,6 +17,8 @@ import {
   BookOpen,
   ListTree,
   X,
+  Pencil,
+  MessageSquare,
 } from "lucide-react";
 import "./factory.css";
 import Workspace from "./Workspace";
@@ -24,6 +26,15 @@ import CanvasBoard from "./CanvasBoard";
 
 // ---- Types mirror the /api/factory response ----
 type Stage = "copy_written" | "image_generated" | "revision" | "completed";
+
+interface FComment {
+  id: string;
+  author: "alex" | "claude";
+  text: string;
+  created_at: string;
+  quote?: string;
+  resolved?: boolean;
+}
 
 interface Item {
   id: string;
@@ -36,6 +47,7 @@ interface Item {
   stage: Stage;
   image_url: string | null;
   revision_note: string | null;
+  comments?: FComment[] | null;
   // Client (share-link reviewer) feedback. Separate from OUR pipeline: it never
   // moves stage — it is input to Alex's decision, not the decision.
   client_verdict?: "approved" | "change" | null;
@@ -415,6 +427,7 @@ export default function FactoryClient() {
               onExport={exportCompleted}
               onLightbox={setLightbox}
               onHistory={setHistoryItem}
+              onPatch={patchItem}
               completedCount={
                 filteredItems.filter((i) => i.stage === "completed").length
               }
@@ -634,6 +647,7 @@ function BoardView({
   onExport,
   onLightbox,
   onHistory,
+  onPatch,
   completedCount,
 }: {
   items: Item[];
@@ -643,14 +657,44 @@ function BoardView({
   onExport: () => void;
   onLightbox: (payload: { url: string; itemId?: string }) => void;
   onHistory: (item: Item) => void;
+  onPatch: (id: string, payload: Record<string, unknown>) => void;
   completedCount: number;
 }) {
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overCol, setOverCol] = useState<Stage | null>(null);
+  const dragged = dragId ? items.find((i) => i.id === dragId) || null : null;
+
+  const cardProps = (it: Item) => ({
+    item: it,
+    onApprove,
+    onRevision,
+    onLightbox,
+    onHistory,
+    onPatch,
+    dragging: dragId === it.id,
+    onDragStart: () => setDragId(it.id),
+    onDragEnd: () => { setDragId(null); setOverCol(null); },
+  });
+
   return (
     <div className="fc-board">
       {STAGE_COLUMNS.map((col) => {
         const colItems = items.filter((i) => i.stage === col.key);
+        const canDrop = !!dragged && dragged.stage !== col.key;
+        const isOver = overCol === col.key && canDrop;
         return (
-          <div className="fc-col" key={col.key}>
+          <div
+            className={`fc-col ${dragged ? (canDrop ? "fc-col-can" : "") : ""} ${isOver ? "fc-col-over" : ""}`}
+            key={col.key}
+            onDragOver={(e) => { if (canDrop) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setOverCol(col.key); } }}
+            onDragLeave={() => setOverCol((c) => (c === col.key ? null : c))}
+            onDrop={(e) => {
+              e.preventDefault();
+              setOverCol(null);
+              if (dragged && canDrop) onPatch(dragged.id, { stage: col.key });
+              setDragId(null);
+            }}
+          >
             <div className="fc-col-head">
               <span className="fc-col-title">{col.label}</span>
               <span className="fc-col-count">{colItems.length}</span>
@@ -661,33 +705,15 @@ function BoardView({
               )}
             </div>
             <div className="fc-col-body">
-              {colItems.length === 0 && <div className="fc-col-empty">Nothing here</div>}
+              {colItems.length === 0 && <div className="fc-col-empty">{isOver ? "Drop here" : "Nothing here"}</div>}
               {groupByBucket
                 ? groupedByBucket(colItems).map(([bucket, group]) => (
                     <div key={bucket} className="fc-subsection">
                       <div className="fc-subsection-label">{BUCKET_LABEL[bucket] || bucket}</div>
-                      {group.map((it) => (
-                        <Card
-                          key={it.id}
-                          item={it}
-                          onApprove={onApprove}
-                          onRevision={onRevision}
-                          onLightbox={onLightbox}
-                          onHistory={onHistory}
-                        />
-                      ))}
+                      {group.map((it) => <Card key={it.id} {...cardProps(it)} />)}
                     </div>
                   ))
-                : colItems.map((it) => (
-                    <Card
-                      key={it.id}
-                      item={it}
-                      onApprove={onApprove}
-                      onRevision={onRevision}
-                      onLightbox={onLightbox}
-                      onHistory={onHistory}
-                    />
-                  ))}
+                : colItems.map((it) => <Card key={it.id} {...cardProps(it)} />)}
             </div>
           </div>
         );
@@ -768,15 +794,29 @@ function Card({
   onRevision,
   onLightbox,
   onHistory,
+  onPatch,
+  dragging,
+  onDragStart,
+  onDragEnd,
 }: {
   item: Item;
   onApprove: (id: string) => void;
   onRevision: (id: string, note: string) => void;
   onLightbox: (payload: { url: string; itemId?: string }) => void;
   onHistory: (item: Item) => void;
+  onPatch: (id: string, payload: Record<string, unknown>) => void;
+  dragging: boolean;
+  onDragStart: () => void;
+  onDragEnd: () => void;
 }) {
   const [note, setNote] = useState("");
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(item.copy_text || "");
+  const [commentDraft, setCommentDraft] = useState("");
+  const [showComments, setShowComments] = useState(false);
+
+  const comments = item.comments || [];
 
   const submitRevision = () => {
     const n = note.trim();
@@ -785,8 +825,38 @@ function Card({
     setNote("");
   };
 
+  const saveCopy = () => {
+    setEditing(false);
+    if (draft !== (item.copy_text || "")) onPatch(item.id, { copyText: draft });
+  };
+
+  const addComment = () => {
+    const t = commentDraft.trim();
+    if (!t) return;
+    const next = [...comments, {
+      id: Math.random().toString(36).slice(2, 10) + Date.now().toString(36),
+      author: "alex" as const, text: t, created_at: new Date().toISOString(),
+    }];
+    setCommentDraft("");
+    onPatch(item.id, { comments: next });
+  };
+  const removeComment = (cid: string) =>
+    onPatch(item.id, { comments: comments.filter((c) => c.id !== cid) });
+
   return (
-    <div className="fc-card">
+    <div
+      className={`fc-card ${dragging ? "fc-card-dragging" : ""}`}
+      draggable={!editing}
+      onDragStart={(e) => {
+        // Never hijack a drag that started inside a text field or on the image.
+        const t = e.target as HTMLElement;
+        if (t.closest("textarea, input, .fc-card-thumb")) { e.preventDefault(); return; }
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", item.id);
+        onDragStart();
+      }}
+      onDragEnd={onDragEnd}
+    >
       <div className="fc-card-head">
         <span className="fc-card-label">{item.label}</span>
         <span className={bucketClass(item.bucket)}>{BUCKET_LABEL[item.bucket] || item.bucket}</span>
@@ -826,11 +896,30 @@ function Card({
         </div>
       )}
 
-      <p className={`fc-card-copy ${open ? "fc-card-copy-open" : ""}`}>{item.copy_text}</p>
-      {(item.copy_text?.length ?? 0) > 160 && (
-        <button className="fc-readmore" onClick={() => setOpen((o) => !o)}>
-          {open ? "Show less" : "Read more"}
-        </button>
+      {editing ? (
+        <div className="fc-copy-edit">
+          <textarea
+            autoFocus
+            className="fc-copy-input"
+            rows={Math.min(18, (draft.split("\n").length || 1) + 1)}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Escape") { setDraft(item.copy_text || ""); setEditing(false); } }}
+          />
+          <div className="fc-copy-edit-actions">
+            <button className="fc-act-approve" onClick={saveCopy}>Save</button>
+            <button className="fc-readmore" onClick={() => { setDraft(item.copy_text || ""); setEditing(false); }}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <p className={`fc-card-copy ${open ? "fc-card-copy-open" : ""}`}>{item.copy_text}</p>
+          {(item.copy_text?.length ?? 0) > 160 && (
+            <button className="fc-readmore" onClick={() => setOpen((o) => !o)}>
+              {open ? "Show less" : "Read more"}
+            </button>
+          )}
+        </>
       )}
 
       {item.revision_note && item.stage === "revision" && (
@@ -840,12 +929,50 @@ function Card({
       )}
 
       <div className="fc-card-actions">
-        {item.stage !== "completed" && (
+        {item.stage !== "completed" ? (
           <button className="fc-act-approve" onClick={() => onApprove(item.id)}>
             <Check size={13} /> Approve
           </button>
+        ) : (
+          <button className="fc-act-reopen" onClick={() => onPatch(item.id, { stage: "copy_written" })} title="Move back to Copy written">
+            <RotateCcw size={13} /> Reopen
+          </button>
         )}
+        {!editing && (
+          <button className="fc-act-edit" onClick={() => { setDraft(item.copy_text || ""); setEditing(true); }}>
+            <Pencil size={13} /> Edit copy
+          </button>
+        )}
+        <button className={`fc-act-comment ${showComments ? "on" : ""}`} onClick={() => setShowComments((v) => !v)}>
+          <MessageSquare size={13} /> {comments.length || "Comment"}
+        </button>
       </div>
+
+      {showComments && (
+        <div className="fc-comments">
+          {comments.length === 0 && <div className="fc-comment-empty">No comments yet.</div>}
+          {comments.map((c) => (
+            <div key={c.id} className={`fc-comment fc-comment-${c.author}`}>
+              <div className="fc-comment-head">
+                <span className="fc-comment-author">{c.author === "claude" ? "Claude" : "Alex"}</span>
+                <button className="fc-comment-x" onClick={() => removeComment(c.id)} aria-label="Delete comment">×</button>
+              </div>
+              <div className="fc-comment-text">{c.text}</div>
+            </div>
+          ))}
+          <div className="fc-comment-add">
+            <textarea
+              className="fc-revise-input"
+              rows={2}
+              placeholder="Leave a note on this copy…"
+              value={commentDraft}
+              onChange={(e) => setCommentDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addComment(); } }}
+            />
+            <button className="fc-revise-send" onClick={addComment} disabled={!commentDraft.trim()}>Add</button>
+          </div>
+        </div>
+      )}
 
       <div className="fc-revise-row">
         <textarea

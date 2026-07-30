@@ -25,18 +25,30 @@ const KIND_ICON: Record<string, ReactNode> = {
 const POLL_MS = 6000;
 
 // One consistent pipeline; image-ad generate-stages map into the same columns.
+// `match` is BOTH the set of statuses that land in this column AND, in order, the
+// preferred status to apply when a card is dropped here. Most canonical first.
 const PIPE: { key: string; label: string; match: string[] }[] = [
   { key: "todo", label: "To do", match: ["todo"] },
-  { key: "writing", label: "Script / Draft", match: ["in_progress", "script", "copy_written", "draft", "concept"] },
+  { key: "writing", label: "Script / Draft", match: ["copy_written", "in_progress", "script", "draft", "concept"] },
   { key: "record", label: "Record", match: ["ready_to_record", "recording"] },
   { key: "edit", label: "Edit", match: ["editing", "revisions"] },
-  { key: "review", label: "Review", match: ["review", "edit_review", "revision", "image_generated"] },
+  { key: "review", label: "Review", match: ["image_generated", "review", "edit_review", "revision"] },
   { key: "ready", label: "Approved / Ready", match: ["approved", "ready_to_launch"] },
   { key: "live", label: "Live", match: ["live", "completed", "done"] },
 ];
 function pipeColumn(item: WItem): string {
   const s = statusOf(item);
   return (PIPE.find((c) => c.match.includes(s)) || PIPE[0]).key;
+}
+
+// Which status this kind of card should take when dropped into a column. Returns
+// null when the column has no status this kind supports (e.g. an image ad can't
+// be "Recording") so the drop is refused instead of silently corrupting state.
+function dropStatusFor(item: WItem, colKey: string): string | null {
+  const col = PIPE.find((c) => c.key === colKey);
+  if (!col) return null;
+  const allowed = kindMeta(item.kind).statuses;
+  return col.match.find((s) => allowed.includes(s)) || null;
 }
 
 // Card preview: render either HTML or markdown bodies as clean plain text.
@@ -159,6 +171,26 @@ export default function Workspace({ projectId }: { projectId: string }) {
     catch (e) { setErr(e instanceof Error ? e.message : "restore failed"); } finally { setBusy(false); }
   };
 
+  // Drag a card to another pipeline column. Optimistic so the card lands under the
+  // cursor immediately, then persisted; a failed save reloads the true state.
+  const moveItem = useCallback(async (item: WItem, colKey: string) => {
+    const next = dropStatusFor(item, colKey);
+    if (!next || next === statusOf(item)) return;
+    const isImage = item.kind === "image_ad";
+    setProject((p) => p ? {
+      ...p,
+      items: p.items.map((i) => i.id === item.id ? { ...i, ...(isImage ? { stage: next } : { status: next }) } : i),
+    } : p);
+    try {
+      await api("PATCH", { id: item.id, ...(isImage ? { stage: next } : { status: next }) });
+      setErr(null);
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "move failed");
+      await load();
+    }
+  }, [load]);
+
   if (!project) return <div className="fc-empty">{err ? `Error: ${err}` : "Loading workspace…"}</div>;
 
   const ungrouped = itemsByGroup.get("__ungrouped__") || [];
@@ -228,7 +260,7 @@ export default function Workspace({ projectId }: { projectId: string }) {
       )}
       </>)}
 
-      {mode === "pipeline" && <PipelineView items={project.items} groups={groups} onOpen={setEditing} />}
+      {mode === "pipeline" && <PipelineView items={project.items} groups={groups} onOpen={setEditing} onMove={moveItem} />}
 
       {editing && <DocEditor item={editing} onClose={() => setEditing(null)} onChanged={load} />}
       {batchGroup && (
@@ -300,19 +332,47 @@ function BatchPanel({ group, batches, liveCount, busy, onClose, onSave, onRestor
   );
 }
 
-function PipelineView({ items, groups, onOpen }: { items: WItem[]; groups: WGroup[]; onOpen: (i: WItem) => void }) {
+function PipelineView({ items, groups, onOpen, onMove }: {
+  items: WItem[]; groups: WGroup[]; onOpen: (i: WItem) => void; onMove: (item: WItem, colKey: string) => void;
+}) {
   const groupName = new Map(groups.map((g) => [g.id, g.name]));
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overCol, setOverCol] = useState<string | null>(null);
+  const dragged = dragId ? items.find((i) => i.id === dragId) || null : null;
+
   return (
     <div className="fcw-kanban">
       {PIPE.map((col) => {
         const colItems = items.filter((i) => pipeColumn(i) === col.key).sort((a, b) => a.sort_order - b.sort_order);
+        // Can the card currently in hand actually live in this column?
+        const canDrop = dragged ? !!dropStatusFor(dragged, col.key) : false;
+        const isOver = overCol === col.key && canDrop;
         return (
-          <div className="fcw-kcol" key={col.key}>
+          <div
+            className={`fcw-kcol ${dragged ? (canDrop ? "fcw-kcol-can" : "fcw-kcol-no") : ""} ${isOver ? "fcw-kcol-over" : ""}`}
+            key={col.key}
+            onDragOver={(e) => { if (canDrop) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setOverCol(col.key); } }}
+            onDragLeave={() => setOverCol((c) => (c === col.key ? null : c))}
+            onDrop={(e) => {
+              e.preventDefault();
+              setOverCol(null);
+              if (dragged && canDrop) onMove(dragged, col.key);
+              setDragId(null);
+            }}
+          >
             <div className="fcw-kcol-head"><span>{col.label}</span><span className="fcw-kcount">{colItems.length}</span></div>
             <div className="fcw-kcol-body">
-              {colItems.length === 0 && <div className="fcw-group-empty">Nothing here</div>}
+              {colItems.length === 0 && <div className="fcw-group-empty">{isOver ? "Drop here" : "Nothing here"}</div>}
               {colItems.map((it) => (
-                <KanbanCard key={it.id} item={it} group={it.group_id ? groupName.get(it.group_id) : undefined} onOpen={() => onOpen(it)} />
+                <KanbanCard
+                  key={it.id}
+                  item={it}
+                  group={it.group_id ? groupName.get(it.group_id) : undefined}
+                  onOpen={() => onOpen(it)}
+                  dragging={dragId === it.id}
+                  onDragStart={() => setDragId(it.id)}
+                  onDragEnd={() => { setDragId(null); setOverCol(null); }}
+                />
               ))}
             </div>
           </div>
@@ -322,12 +382,29 @@ function PipelineView({ items, groups, onOpen }: { items: WItem[]; groups: WGrou
   );
 }
 
-function KanbanCard({ item, group, onOpen }: { item: WItem; group?: string; onOpen: () => void }) {
+function KanbanCard({ item, group, onOpen, dragging, onDragStart, onDragEnd }: {
+  item: WItem; group?: string; onOpen: () => void;
+  dragging: boolean; onDragStart: () => void; onDragEnd: () => void;
+}) {
   const meta = kindMeta(item.kind);
   const status = (item.kind === "image_ad" ? item.stage : item.status) || meta.statuses[0];
   const comments = (item.comments || []).filter((c) => !c.resolved).length;
+  // A real drag must not also fire the click that opens the drawer. Reset on
+  // mousedown (always first) rather than on a timer after dragend, so the flag
+  // can never leak into the next interaction.
+  const movedRef = useRef(false);
   return (
-    <button className="fcw-kcard" onClick={onOpen}>
+    <div
+      className={`fcw-kcard ${dragging ? "fcw-kcard-dragging" : ""}`}
+      role="button"
+      tabIndex={0}
+      draggable
+      onMouseDown={() => { movedRef.current = false; }}
+      onDragStart={(e) => { movedRef.current = true; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", item.id); onDragStart(); }}
+      onDragEnd={onDragEnd}
+      onClick={() => { if (!movedRef.current) onOpen(); }}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}
+    >
       <div className="fcw-kcard-top">
         <span className="fcw-card-kind">{KIND_ICON[meta.icon]}</span>
         <span className="fcw-kcard-label">{item.label}</span>
@@ -337,7 +414,7 @@ function KanbanCard({ item, group, onOpen }: { item: WItem; group?: string; onOp
         <span className={`fcw-card-status fcw-st-${status}`}>{statusText(status)}</span>
         {comments > 0 && <span className="fcw-chip"><MessageSquare size={11} /> {comments}</span>}
       </div>
-    </button>
+    </div>
   );
 }
 
