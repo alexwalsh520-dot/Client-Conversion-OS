@@ -9,8 +9,9 @@
 //          A near-duplicate "Strategy Session - (TS)" IeKPrRYzD2RS9ne3fOqT is
 //          included too. Everything else (onboarding calls, reschedule
 //          calendars, personal calendars, coach calls) is NOT a sales booking.
-//   Jake:  no sales calendar is connected in GoHighLevel yet, so bookings are
-//          honestly empty for him until one appears here.
+//   Jake:  "Strategy Session (JD)" t0R21g47N9eVdr9nGR98 is the sales calendar
+//          (first bookings landed 2026-07-29/30 with keywords captured; they sat
+//          client-less until this id was pinned here).
 // ─────────────────────────────────────────────────────────────────────────
 
 import { ACTIVE_CREATORS, type CreatorKey } from "@/lib/creators";
@@ -28,7 +29,7 @@ export const ADSV2_CLIENT_CONFIG: Partial<Record<CreatorKey, ClientAdsV2Config>>
   },
   jake: {
     key: "jake",
-    salesCalendarIds: [],
+    salesCalendarIds: ["t0R21g47N9eVdr9nGR98"],
   },
 };
 
