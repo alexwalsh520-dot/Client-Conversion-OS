@@ -1,19 +1,18 @@
 /**
- * Team recap — posts per-closer + per-setter metrics to #a-sales-manager at
- * 12:30 AM ET (alongside the daily recap). Covers the previous ET day.
+ * Per-creator content-compliance recap — posts to #a-sales-manager at 12:30 AM ET.
  *
- * Closers (from the sales sheet): calls · showed · closed · cash.
- * Setters (Sales Hub): leads · booked · booking rate · avg/median response · miss rate.
+ * NOTE: the original per-closer / per-setter SALES metrics were retired at the
+ * owner's request (2026-07). Only the content-compliance lines (reels / carousels /
+ * story vs target, per creator) remain — that feature is kept live here. The
+ * dormant sales-metrics builders still live in `@/lib/daily-report/team` if needed.
  *
  * Scheduled at 04:30 and 05:30 UTC; runs only when it's 12:30 AM ET (DST-correct).
- * `?force=1` ignores the gate; `?dry=1` returns the message without posting;
- * `?at=<ISO>` overrides "now". All require the Bearer secret.
+ * `?force=1` ignores the gate; `?dry=1` returns the message without posting.
  *
  * Auth: x-vercel-cron header OR Bearer CRON_SECRET (standard CCOS cron pattern).
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { buildTeamReport, formatTeam } from "@/lib/daily-report/team";
 import { etHour } from "@/lib/daily-report/time";
 import { postAsCso } from "@/lib/slack";
 import { getServiceSupabase } from "@/lib/supabase";
@@ -80,13 +79,19 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ skipped: true, reason: `ET hour ${etHour(now)} != ${TARGET_ET_HOUR}` });
   }
 
-  const report = await buildTeamReport(now);
-  const text = formatTeam(report) + (await complianceLines());
+  // Sales recap + closer/setter metrics retired (owner request) — post only the
+  // per-creator content-compliance lines. Strip the leading spacer they carried
+  // when they were appended to the sales metrics.
+  const text = (await complianceLines()).replace(/^\n+/, "");
 
   if (dry) {
-    return NextResponse.json({ dry: true, text, report });
+    return NextResponse.json({ dry: true, text });
+  }
+
+  if (!text.trim()) {
+    return NextResponse.json({ skipped: true, reason: "no content-compliance to post" });
   }
 
   const posted = await postAsCso(text);
-  return NextResponse.json({ posted, warnings: report.warnings, generated_at: report.generatedAt });
+  return NextResponse.json({ posted });
 }
