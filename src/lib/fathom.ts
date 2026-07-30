@@ -2,7 +2,7 @@
 // Fetches meeting recordings, transcripts, and summaries
 // Docs: https://fathom.video/api (external v1)
 
-import { createHmac } from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -197,12 +197,22 @@ export async function getMeetingTranscript(meetingId: string): Promise<string> {
  * Validate an incoming Fathom webhook request.
  *
  * Fathom signs webhooks using HMAC-SHA256 with the webhook secret.
+ * Fathom follows the Standard Webhooks spec, so all four of these matter:
+ *   - headers are `webhook-id` / `webhook-timestamp` / `webhook-signature`
+ *     (NOT `x-fathom-*`)
+ *   - the secret is `whsec_<base64>`; the part after the prefix is base64
+ *     DECODED to get the HMAC key
+ *   - the digest is base64, not hex
+ *   - `webhook-signature` is a space-delimited list of versioned signatures
+ *     (`v1,<sig> v1,<sig>`) — during a secret rotation more than one is sent,
+ *     so a match against ANY entry is valid
+ *
  * The signature is computed over: `${webhookId}.${timestamp}.${body}`
  *
- * @param body      - Raw request body string
- * @param signature - The `X-Fathom-Signature` header value
- * @param webhookId - The webhook ID (from `X-Fathom-Webhook-Id` header)
- * @param timestamp - The request timestamp (from `X-Fathom-Timestamp` header)
+ * @param body      - Raw request body string (pre-JSON.parse)
+ * @param signature - The `webhook-signature` header value
+ * @param webhookId - The `webhook-id` header value
+ * @param timestamp - The `webhook-timestamp` header value (unix seconds)
  * @returns true if the signature is valid
  */
 export function validateFathomWebhook(
@@ -223,25 +233,47 @@ export function validateFathomWebhook(
     return false;
   }
 
-  // Reject timestamps older than 5 minutes to prevent replay attacks
+  // Reject timestamps outside a 5-minute window to prevent replay attacks
   const ts = parseInt(timestamp, 10);
   if (isNaN(ts)) return false;
   const now = Math.floor(Date.now() / 1000);
-  const MAX_AGE_SECONDS = 300; // 5 minutes
+  const MAX_AGE_SECONDS = 300;
   if (Math.abs(now - ts) > MAX_AGE_SECONDS) {
     console.warn("[fathom] Webhook timestamp too old or in the future");
     return false;
   }
 
-  // Compute expected signature: HMAC-SHA256(secret, "webhookId.timestamp.body")
-  const payload = `${webhookId}.${timestamp}.${body}`;
-  const expected = createHmac("sha256", secret).update(payload).digest("hex");
-
-  // Constant-time comparison to prevent timing attacks
-  if (expected.length !== signature.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < expected.length; i++) {
-    mismatch |= expected.charCodeAt(i) ^ signature.charCodeAt(i);
+  // `whsec_` prefix is optional in the stored value; the remainder is base64.
+  const rawSecret = secret.startsWith("whsec_") ? secret.slice(6) : secret;
+  let key: Buffer;
+  try {
+    key = Buffer.from(rawSecret, "base64");
+  } catch {
+    console.error("[fathom] FATHOM_WEBHOOK_SECRET is not valid base64");
+    return false;
   }
-  return mismatch === 0;
+  if (key.length === 0) return false;
+
+  const expected = createHmac("sha256", key)
+    .update(`${webhookId}.${timestamp}.${body}`)
+    .digest();
+
+  // Header is a space-delimited list like "v1,<base64> v1,<base64>".
+  for (const entry of signature.split(" ")) {
+    const comma = entry.indexOf(",");
+    if (comma === -1) continue;
+    if (entry.slice(0, comma) !== "v1") continue;
+
+    let provided: Buffer;
+    try {
+      provided = Buffer.from(entry.slice(comma + 1), "base64");
+    } catch {
+      continue;
+    }
+    // timingSafeEqual throws on length mismatch, so gate on it first.
+    if (provided.length !== expected.length) continue;
+    if (timingSafeEqual(provided, expected)) return true;
+  }
+
+  return false;
 }

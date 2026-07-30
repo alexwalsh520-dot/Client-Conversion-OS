@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateFathomWebhook } from "@/lib/fathom";
 import { getServiceSupabase } from "@/lib/supabase";
+import { handleTeamCall, type FathomWebhookMeeting } from "@/lib/fathom-team-calls";
 
 // Pull the useful bits out of whatever shape Fathom sends (event shapes vary by plan).
 function pick<T = unknown>(obj: Record<string, unknown>, keys: string[]): T | null {
@@ -34,15 +35,33 @@ async function storeFathomCall(payload: Record<string, unknown>) {
   }
 }
 
+// Fathom retries delivery within seconds, so a warm-instance cache catches the
+// overwhelming majority of duplicate Slack posts. It won't survive a cold
+// start; that's an accepted tradeoff over adding a table, since migrations in
+// this repo have to be pasted into the Supabase dashboard by hand.
+const recentDeliveries = new Map<string, number>();
+const DEDUPE_TTL_MS = 10 * 60 * 1000;
+
+function alreadyNotified(key: string): boolean {
+  const now = Date.now();
+  for (const [k, seenAt] of recentDeliveries) {
+    if (now - seenAt > DEDUPE_TTL_MS) recentDeliveries.delete(k);
+  }
+  if (recentDeliveries.has(key)) return true;
+  recentDeliveries.set(key, now);
+  return false;
+}
+
 export async function POST(req: NextRequest) {
   try {
     // Read raw body for signature validation
     const rawBody = await req.text();
 
-    // Extract signature headers
-    const signature = req.headers.get("x-fathom-signature") || "";
-    const webhookId = req.headers.get("x-fathom-webhook-id") || "";
-    const timestamp = req.headers.get("x-fathom-timestamp") || "";
+    // Standard Webhooks header names. This route previously read `x-fathom-*`,
+    // which never matched anything Fathom actually sends — every delivery 401'd.
+    const signature = req.headers.get("webhook-signature") || "";
+    const webhookId = req.headers.get("webhook-id") || "";
+    const timestamp = req.headers.get("webhook-timestamp") || "";
 
     // Validate webhook secret is configured
     if (!process.env.FATHOM_WEBHOOK_SECRET) {
@@ -79,6 +98,7 @@ export async function POST(req: NextRequest) {
     }
 
     const eventType = payload.event || payload.type || "unknown";
+
     // Persist the call/transcript so the Content → Coach tab can mine it. Best-effort:
     // never fail the webhook (Fathom retries on non-200) — log and still 200.
     try {
@@ -86,7 +106,24 @@ export async function POST(req: NextRequest) {
     } catch (e) {
       console.error("[fathom-webhook] store failed", e);
     }
-    return NextResponse.json({ received: true, eventType });
+
+    // Notify #a-sales-manager when a non-sales call finishes. Also best-effort,
+    // and kept independent of the store above so one failing can't take out the
+    // other.
+    let notify: Awaited<ReturnType<typeof handleTeamCall>> | null = null;
+    try {
+      const dedupeKey =
+        webhookId || String(payload.recording_id ?? "") || rawBody.slice(0, 128);
+      if (alreadyNotified(dedupeKey)) {
+        console.log("[fathom-webhook] Duplicate delivery — no Slack post:", dedupeKey);
+      } else {
+        notify = await handleTeamCall(payload as FathomWebhookMeeting);
+      }
+    } catch (e) {
+      console.error("[fathom-webhook] team-call notification failed", e);
+    }
+
+    return NextResponse.json({ received: true, eventType, notify });
   } catch (err) {
     console.error("[fathom-webhook] Error processing webhook:", err);
     return NextResponse.json(
