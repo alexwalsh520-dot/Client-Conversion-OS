@@ -311,3 +311,39 @@ It refuses, with the list, until the law is actually true.
 No answer contract, no `ask()` tool, no certified questions (Bricks 2-3). No
 facts table was backfilled or modified. Nothing found along the way was cleaned
 up; it is all logged above instead.
+
+---
+
+## Addendum: 068 owner corrections + Fable audit (2026-08-02)
+
+The Fable audit verified every claim in this report against the live database
+and confirmed the build, with ONE factual correction and four owner rulings.
+
+**Audit correction to Finding 1:** the claim that all 9 keyword collisions have
+"zero live ads on both sides" is FALSE for 6 of them. Tyson has currently
+ACTIVE ads carrying bold, fuel, lift, spark, thrive and vital (TEST · Lead
+Magnet · 50, Meta-starved but live). The dead side in every pair is a former
+creator or a paused ad, so the ranked recommendation still holds: under
+"active = creator active AND live ACTIVE ad" every collision resolves to
+exactly one owner and the law arms. The decision itself is still with Alex.
+
+**Owner rulings (Alex, 2026-08-02), applied in migration 068:**
+1. Matthew Conder is Alex's BUSINESS PARTNER and co-owner ("Matt"). Not a
+   setter, not a creator. New entity kind `owner`; canonical key renamed to
+   `matthew_conder`; status active. The 14 mis-keyed DM rows remain a logged
+   data-quality item.
+2. There is no closer named AARON. The name was a voice mis-transcription of
+   ERIN, the setter who also does outbound and closing. `closer_aaron` removed;
+   `closer_roster` and `setter_roster` superseded by v2 (5 closers, Erin dual
+   role noted).
+3. Kelechi is a CURRENT setter (confirmed).
+4. Lucy WAS a client (former; the stale memory line "Lucy = NOT a client" is
+   corrected).
+
+Seed functions were replaced in 068 with matching content, so a reseed cannot
+resurrect any corrected row. Post-068 state, verified live: 17 entities
+(creator 6, closer 5, setter 5, owner 1), 27 definitions (25 signed, 2
+superseded), AARON resolves to NULL, reseed idempotent.
+
+**Still open:** the keyword "active" status rule (finding 1) awaits Alex's
+call; `registry_enforce_keyword_uniqueness()` keeps guarding until then.
