@@ -347,3 +347,26 @@ superseded), AARON resolves to NULL, reseed idempotent.
 
 **Still open:** the keyword "active" status rule (finding 1) awaits Alex's
 call; `registry_enforce_keyword_uniqueness()` keeps guarding until then.
+
+## Addendum 2: the keyword "active" rule signed and the uniqueness law ARMED (2026-08-02)
+
+Alex signed the rule: **an AD keyword is ACTIVE only when its creator is active
+AND a live ACTIVE ad carries it** (definition `keyword_active_status` v1).
+Migration 069 applied the rule to `registry_reseed_keywords()`, resweeped, and
+armed the law, all in one transaction that would have rolled back had any
+collision survived.
+
+Verified live after 069:
+- `registry_keywords_active_ad_all_clients_uidx` EXISTS (the all-time law).
+- `registry_keyword_active_collisions` returns 0 rows.
+- Active ad keywords: jake 31, tyson 55, former creators 0.
+- Spot checks: bold = tyson active / antwan retired; course = retired on both
+  sides (jake and tyson).
+- Negative test: inserting ('bold','jake','ad','active') is rejected by
+  unique_violation. The law is enforced by the database, not by convention.
+
+Retired keywords stay in the registry forever and still block NEW keyword
+selection: all-time uniqueness for new picks is checked against full history,
+not just active rows (encoded in keyword_active_status v1).
+
+Brick 1 is now fully closed: zero open owner decisions.
