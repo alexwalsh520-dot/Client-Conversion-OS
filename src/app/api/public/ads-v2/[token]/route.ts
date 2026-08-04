@@ -151,13 +151,21 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
       const publicPayload = {
         ...payload,
         revenue: payload.revenue
-          ? { ...payload.revenue, miscChatCents: 0, adsAllCents: 0, organicAllCents: 0, trackerAllCents: 0 }
+          ? {
+              ...payload.revenue,
+              miscChatCents: 0,
+              adsAllCents: 0,
+              organicAllCents: 0,
+              otherOriginAllCents: 0,
+              trackerAllCents: 0,
+            }
           : undefined,
         days: payload.days.map((d) => ({
           ...d,
           miscChatCents: 0,
           adsAllCents: 0,
           organicAllCents: 0,
+          otherOriginAllCents: 0,
           trackerAllCents: 0,
         })),
       };

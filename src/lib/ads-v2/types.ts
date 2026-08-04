@@ -135,6 +135,9 @@ export interface MetricsDay {
   adsAllCents?: number;
   /** Organic-attributed collected across ALL creators. */
   organicAllCents?: number;
+  /** Sales the team logged with another origin call type (Follow up,
+   *  Outbound Call, Closer Cold Call) that no keyword claims. Whole tracker. */
+  otherOriginAllCents?: number;
   /** Every tracker sale collected that day (coverage denominator). */
   trackerAllCents?: number;
 }
@@ -145,6 +148,7 @@ export interface RevenueCategories {
   miscChatCents: number;
   adsAllCents: number;
   organicAllCents: number;
+  otherOriginAllCents: number;
   trackerAllCents: number;
 }
 

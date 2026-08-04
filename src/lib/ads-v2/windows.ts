@@ -163,6 +163,7 @@ interface RevenueDayRow {
   ads_all_cents: number;
   organic_all_cents: number;
   misc_chat_all_cents: number;
+  other_origin_all_cents: number;
   tracker_all_cents: number;
 }
 
@@ -212,6 +213,7 @@ export async function buildDaySeries(
         miscChatCents: r?.misc_chat_all_cents ?? 0,
         adsAllCents: r?.ads_all_cents ?? 0,
         organicAllCents: r?.organic_all_cents ?? 0,
+        otherOriginAllCents: r?.other_origin_all_cents ?? 0,
         trackerAllCents: r?.tracker_all_cents ?? 0,
       };
     });
@@ -220,6 +222,7 @@ export async function buildDaySeries(
       miscChatCents: sumBy(days, (d) => d.miscChatCents ?? 0),
       adsAllCents: sumBy(days, (d) => d.adsAllCents ?? 0),
       organicAllCents: sumBy(days, (d) => d.organicAllCents ?? 0),
+      otherOriginAllCents: sumBy(days, (d) => d.otherOriginAllCents ?? 0),
       trackerAllCents: sumBy(days, (d) => d.trackerAllCents ?? 0),
     };
   }

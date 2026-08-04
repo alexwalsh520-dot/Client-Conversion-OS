@@ -126,6 +126,10 @@
     {
       "path": "/api/cron/morning-cmo-report",
       "schedule": "15 2 * * *"
+    },
+    {
+      "path": "/api/cron/attribution-ping",
+      "schedule": "10 13 * * *"
     }
   ]
 }

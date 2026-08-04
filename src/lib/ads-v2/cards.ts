@@ -260,17 +260,24 @@ export const CARD_DEFS: readonly CardDef[] = [
     label: "Attribution coverage",
     meta: "Revenue with a known origin",
     sentence:
-      "The share of ALL tracker revenue in the selected days that is attributed to ads, organic keywords, or Miscellaneous Chats. Whole team on every account view; the rest of the revenue has no recorded origin.",
-    source: "Attributed revenue (ads + organic + misc chats) divided by all tracker revenue.",
+      "The share of ALL tracker revenue in the selected days with a recorded origin: an ad keyword, an organic keyword, or a call type the team wrote that states one (Miscellaneous Chat, Follow up, Outbound Call, Closer Cold Call). Whole team on every account view; the rest has no recorded origin yet.",
+    source: "Origin-recorded revenue (ads + organic + misc chats + other written origins) divided by all tracker revenue.",
     format: "pct",
     value: (_t, r) =>
       r && r.trackerAllCents > 0
-        ? (r.adsAllCents + r.organicAllCents + r.miscChatCents) / r.trackerAllCents
+        ? (r.adsAllCents + r.organicAllCents + r.miscChatCents + (r.otherOriginAllCents ?? 0)) /
+          r.trackerAllCents
         : null,
     point: (d) => {
       const denom = d.trackerAllCents ?? 0;
       if (!denom) return 0;
-      return ((d.adsAllCents ?? 0) + (d.organicAllCents ?? 0) + (d.miscChatCents ?? 0)) / denom;
+      return (
+        ((d.adsAllCents ?? 0) +
+          (d.organicAllCents ?? 0) +
+          (d.miscChatCents ?? 0) +
+          (d.otherOriginAllCents ?? 0)) /
+        denom
+      );
     },
     trackerWide: true,
   },
