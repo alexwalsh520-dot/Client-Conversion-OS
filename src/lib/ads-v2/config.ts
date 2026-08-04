@@ -11,7 +11,11 @@
 //          calendars, personal calendars, coach calls) is NOT a sales booking.
 //   Jake:  "Strategy Session (JD)" t0R21g47N9eVdr9nGR98 is the sales calendar
 //          (first bookings landed 2026-07-29/30 with keywords captured; they sat
-//          client-less until this id was pinned here).
+//          client-less until this id was pinned here). The near-duplicate
+//          "Strategy Session - (JD)" OYzFv9Iuqu1XYLbCy0cp appeared 2026-08-03
+//          and swallowed 2 bookings, same pattern as Tyson's duplicate; pinned
+//          too. NOTE: its booking link carries NO keyword UTM, so bookings on
+//          it can only attribute via the strict bare-link recovery.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { ACTIVE_CREATORS, type CreatorKey } from "@/lib/creators";
@@ -29,7 +33,7 @@ export const ADSV2_CLIENT_CONFIG: Partial<Record<CreatorKey, ClientAdsV2Config>>
   },
   jake: {
     key: "jake",
-    salesCalendarIds: ["t0R21g47N9eVdr9nGR98"],
+    salesCalendarIds: ["t0R21g47N9eVdr9nGR98", "OYzFv9Iuqu1XYLbCy0cp"],
   },
 };
 

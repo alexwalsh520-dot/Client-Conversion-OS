@@ -157,12 +157,10 @@ export async function computeMoneyModel(db?: Db): Promise<MoneyModel | null> {
 
   for (const s of sales) {
     const key: CreatorKey | null = creatorKeyFromText(s.offer);
-    let cash = (s.collected_revenue_cents || 0) / 100;
+    // Tracker cash is USD for every creator (one team-wide USD sheet); a
+    // creator's `currency` is what Meta bills their AD ACCOUNT, spend only.
+    const cash = (s.collected_revenue_cents || 0) / 100;
     if (cash <= 0) continue;
-    const saleCur = creatorCurrency(key);
-    if (saleCur !== USD && fxRates) {
-      cash = convertDollarsToUsd(cash, saleCur, String(s.date || "").slice(0, 10), fxRates);
-    }
     const gp = saleGrossProfit({
       cashCollected: cash,
       closer: s.closer,

@@ -2648,35 +2648,6 @@ async function fetchMetaRowsForDateRange(
   return rows;
 }
 
-// Convert a non-USD creator's sale cash (collected + contracted) into USD, each
-// sale at its own day's rate, so ROAS/CAC read in one currency. Mutates in place.
-// No-op (and no DB call) when the view has no non-USD creators.
-async function convertSalesRowsToUsd(
-  db: ReturnType<typeof getServiceSupabase>,
-  rows: SheetRow[],
-  clientFilter: string[]
-): Promise<void> {
-  const bases = nonUsdCurrenciesForClients(clientFilter);
-  if (bases.length === 0 || rows.length === 0) return;
-  let min = "9999-12-31";
-  let max = "0000-01-01";
-  for (const r of rows) {
-    const d = (r.date || "").slice(0, 10);
-    if (!d) continue;
-    if (d < min) min = d;
-    if (d > max) max = d;
-  }
-  if (max < min) return;
-  const rateMap = await loadUsdRateMap(db, bases, min, max);
-  for (const r of rows) {
-    const cur = creatorCurrency(clientFromOffer(r));
-    if (cur === USD) continue;
-    const day = (r.date || "").slice(0, 10);
-    if (r.cashCollected) r.cashCollected = convertDollarsToUsd(r.cashCollected, cur, day, rateMap);
-    if (r.revenue) r.revenue = convertDollarsToUsd(r.revenue, cur, day, rateMap);
-  }
-}
-
 async function fetchKeywordEvents(
   db: ReturnType<typeof getServiceSupabase>,
   clientFilter: string[],
@@ -4099,10 +4070,10 @@ export async function getAdsTrackerDashboard(
 
   if (syncRunError) throw new Error(`Ads Tracker sync-run query failed: ${syncRunError.message}`);
 
-  // Money normalization: convert any non-USD creator's sale cash to USD before it
-  // feeds ROAS/CAC (spend is already converted at fetch). No-op for USD-only views.
-  await convertSalesRowsToUsd(db, salesRows, clientFilter);
-  if (!fast) await convertSalesRowsToUsd(db, alertSalesRows, alertClientFilter);
+  // Sale cash is NOT converted: the tracker is one team-wide USD sheet for
+  // every creator. A creator's `currency` is what Meta bills their ad account
+  // and applies to SPEND only (converted at fetch). Converting sales here
+  // shaved Jake's $1,200 to $842 by treating tracker USD as AUD.
 
   const groups = new Map<string, Group>();
   const rows = metaRows;

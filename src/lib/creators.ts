@@ -59,10 +59,13 @@ export interface Creator {
    */
   icpLock?: string;
   /**
-   * The currency Meta bills this creator in (ISO 4217, e.g. "AUD"). Omitted means
-   * USD. Money for a non-USD creator (spend and revenue) is stored raw in their
-   * currency and converted to USD at read time, per the day it moved, so the ads
-   * tab shows every creator in one currency. See src/lib/fx/.
+   * The currency Meta bills this creator's AD ACCOUNT in (ISO 4217, e.g.
+   * "AUD"). Omitted means USD. Applies to SPEND AND BUDGETS ONLY: stored raw
+   * in this currency, converted to USD at read time per the day it moved.
+   *
+   * NEVER apply this to sales. The sales tracker is one team-wide sheet
+   * written in USD for every creator; "converting" its numbers once shaved a
+   * $1,200 Jake sale to $842. See src/lib/fx/.
    */
   currency?: string;
   /**
@@ -125,12 +128,12 @@ export const CREATORS: readonly Creator[] = [
     active: true, // onboarded Jul 2026 (Jake Divljak — RecruitReady Fitness)
     icpLock:
       "US career changers training to PASS first-responder and military entry fitness tests (police academy, fire, EMS, military entry) — people changing INTO these careers.",
-    // RRF V2 ad account reports in AUD on Sydney time. Spend/revenue values arrive
-    // in AUD (the pipeline has no FX layer yet), so his figures are AUD until we add one.
+    // RRF V2 ad account reports in AUD on Sydney time. SPEND arrives in AUD and
+    // is converted to USD at read time; his SALES are in the team USD tracker.
     timezone: "Australia/Sydney",
     // Sydney-based, but the audience he sells to is American — content must read US-native.
     market: "US",
-    currency: "AUD", // RRF V2 bills in AUD; converted to USD at read time (src/lib/fx)
+    currency: "AUD", // Meta bills RRF V2 in AUD — spend/budgets only, never sales
     adAccountEnv: ["META_AD_ACCOUNT_JAKE_DIVLJAK", "META_AD_ACCOUNT_JAKE"],
     tokenEnv: ["META_ACCESS_TOKEN_JAKE_DIVLJAK", "META_ACCESS_TOKEN_JAKE"],
     defaultAdAccountId: "act_304988118349730", // RRF V2 (live lead-magnet campaign)

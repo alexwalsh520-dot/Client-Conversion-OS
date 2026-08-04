@@ -95,16 +95,14 @@ async function allCashByCreator(from: string, to: string): Promise<Map<string, n
     if (batch.length < pageSize) break;
   }
 
-  // Rate map covers whatever currencies the matched creators bill in (Jake=AUD).
-  const currencies = [...new Set(rows.map((r) => creatorKeyFromText(r.offer || "")).filter(Boolean).map((k) => creatorCurrency(k)))];
-  const rateMap = await loadUsdRateMap(db, currencies, from, to);
-
+  // Tracker cash is USD for every creator (one team-wide USD sheet). A
+  // creator's `currency` is what Meta bills their AD ACCOUNT: spend only,
+  // never sales. No conversion here.
   const byCreator = new Map<string, number>();
   for (const r of rows) {
     const key = creatorKeyFromText(r.offer || "");
     if (!key) continue; // unassignable rows (blank/foreign offer) belong to no creator
-    const usd = convertCentsToUsd(Number(r.collected_revenue_cents || 0), creatorCurrency(key), r.date, rateMap);
-    byCreator.set(key, (byCreator.get(key) || 0) + usd);
+    byCreator.set(key, (byCreator.get(key) || 0) + Number(r.collected_revenue_cents || 0));
   }
   return byCreator;
 }

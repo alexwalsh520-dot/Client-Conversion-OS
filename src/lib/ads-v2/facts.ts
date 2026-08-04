@@ -443,7 +443,12 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
       awaiting = true;
     }
 
-    const currency = client ? creatorCurrency(client) : "USD";
+    // The sales tracker is ONE team-wide sheet written in USD (US closers, US
+    // ticket prices), no matter which creator the sale belongs to. A creator's
+    // `currency` describes what META BILLS THEIR AD ACCOUNT (spend side only);
+    // applying it here shaved Jake's $1,200 sale to $842 by "converting" USD
+    // as if it were AUD. Tracker money is USD. Full stop.
+    const currency = "USD";
     const contracted = Number(r.contracted_revenue_cents || 0);
     const collected = Number(r.collected_revenue_cents || 0);
     saleFacts.push({
