@@ -463,6 +463,44 @@ async function replaceStoredMetaSlice(
   };
 }
 
+// Last stored status per ad for one account, shaped like Meta's response so a
+// failed status fetch can reuse the stored truth instead of nulling it.
+async function loadStoredStatusFallback(
+  db: ReturnType<typeof getServiceSupabase>,
+  accountKey: string
+): Promise<Map<string, MetaAdEntity>> {
+  const byAdId = new Map<string, MetaAdEntity>();
+  const { data, error } = await db
+    .from("ads_meta_insights_daily")
+    .select(
+      "ad_id,date,ad_effective_status,ad_configured_status,campaign_effective_status,campaign_configured_status"
+    )
+    .eq("client_key", accountKey)
+    .not("ad_effective_status", "is", null)
+    .order("date", { ascending: false })
+    .limit(5000);
+  if (error) {
+    console.warn(
+      `[ads-tracker-sync] Status fallback read failed for ${accountKey}`,
+      error
+    );
+    return byAdId;
+  }
+  for (const row of data || []) {
+    if (!row.ad_id || byAdId.has(row.ad_id)) continue;
+    byAdId.set(row.ad_id, {
+      id: row.ad_id,
+      effective_status: row.ad_effective_status || undefined,
+      configured_status: row.ad_configured_status || undefined,
+      campaign: {
+        effective_status: row.campaign_effective_status || undefined,
+        configured_status: row.campaign_configured_status || undefined,
+      },
+    });
+  }
+  return byAdId;
+}
+
 async function refreshStoredMetaStatuses(
   db: ReturnType<typeof getServiceSupabase>,
   accountKey: string,
@@ -633,6 +671,7 @@ export async function POST(req: NextRequest) {
     linkClicks: number;
     statusRows?: number;
     statusRowsUpdated?: number;
+    statusError?: string;
     targetingStored?: number;
     imagesStored?: number;
     dates?: Array<{
@@ -694,11 +733,20 @@ export async function POST(req: NextRequest) {
         accessToken: token,
         breakdowns: needsEasternRebucket ? [HOURLY_ADVERTISER_BREAKDOWN] : undefined,
       });
+      let statusError: string | null = null;
       const statusRows = await getAdEntities(adAccountId, { accessToken: token }).catch((error) => {
         console.warn(`[ads-tracker-sync] Could not fetch Meta ad statuses for ${account.key}`, error);
+        statusError = error instanceof Error ? error.message : String(error);
         return [] as MetaAdEntity[];
       });
-      const statusByAdId = new Map(statusRows.map((row) => [row.id, row]));
+      let statusByAdId = new Map(statusRows.map((row) => [row.id, row]));
+      // Status fetch failed: the slice replace below would stamp NULL over
+      // every stored status for this account (which blanks the Ads V2 Active
+      // view). Carry the last stored status per ad forward instead — stale
+      // beats destroyed, and the next successful fetch overwrites it anyway.
+      if (statusError) {
+        statusByAdId = await loadStoredStatusFallback(db, account.key);
+      }
       const rows = buildDailyRows(
         account,
         adAccountId,
@@ -761,6 +809,7 @@ export async function POST(req: NextRequest) {
         linkClicks: replacement.stored.linkClicks,
         statusRows: statusRows.length,
         statusRowsUpdated,
+        ...(statusError ? { statusError } : {}),
         targetingStored,
         imagesStored,
         dates: replacement.dates,

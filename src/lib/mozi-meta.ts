@@ -164,7 +164,24 @@ export async function getAdLevelInsights(
 /**
  * Fetch lightweight ad/campaign status metadata for Ads Tracker filters.
  * This is one paginated request per ad account sync, not one request per ad.
+ *
+ * Meta rejects pages whose nested fields (creative, campaign) add up to too
+ * much data with a 500 "Please reduce the amount of data you're asking for"
+ * (error code 1). The threshold depends on the account's ads, so a page size
+ * that works today can start failing as an account grows — this took Jake's
+ * statuses (and his whole Ads V2 Active view) down after his 8/2 relaunch.
+ * When that specific error comes back, restart the fetch at a smaller page
+ * size instead of failing the account's statuses outright.
  */
+const AD_ENTITY_PAGE_SIZES = [500, 100, 25];
+
+function isMetaTooMuchDataError(error: unknown) {
+  return (
+    error instanceof Error &&
+    error.message.includes("reduce the amount of data")
+  );
+}
+
 export async function getAdEntities(
   adAccountId: string,
   options?: { accessToken?: string }
@@ -177,22 +194,32 @@ export async function getAdEntities(
     "creative{id,name,thumbnail_url,image_url}",
     "campaign{id,name,effective_status,configured_status}",
   ].join(",");
-  const initialUrl = `${BASE_URL}/${adAccountId}/ads?fields=${fields}&limit=500`;
 
-  const allData: MetaAdEntity[] = [];
-  let nextUrl: string | undefined = initialUrl;
+  let lastError: unknown = null;
+  for (const pageSize of AD_ENTITY_PAGE_SIZES) {
+    const allData: MetaAdEntity[] = [];
+    let nextUrl: string | undefined =
+      `${BASE_URL}/${adAccountId}/ads?fields=${fields}&limit=${pageSize}`;
 
-  while (nextUrl) {
-    const response: MetaInsightsResponse<MetaAdEntity> =
-      await metaFetch<MetaInsightsResponse<MetaAdEntity>>(
-        nextUrl,
-        options?.accessToken
-      );
-    allData.push(...response.data);
-    nextUrl = response.paging?.next;
+    try {
+      while (nextUrl) {
+        const response: MetaInsightsResponse<MetaAdEntity> =
+          await metaFetch<MetaInsightsResponse<MetaAdEntity>>(
+            nextUrl,
+            options?.accessToken
+          );
+        allData.push(...response.data);
+        nextUrl = response.paging?.next;
+      }
+      return allData;
+    } catch (error) {
+      lastError = error;
+      if (!isMetaTooMuchDataError(error)) throw error;
+    }
   }
-
-  return allData;
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(String(lastError));
 }
 
 export interface MetaAdSetTargeting {
