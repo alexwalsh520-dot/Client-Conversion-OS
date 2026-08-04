@@ -8,20 +8,31 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CARD_BY_ID, CARD_DEFS, DEFAULT_CARD_IDS, type CardDef, type CardFormat } from "@/lib/ads-v2/cards";
-import type { AdsV2MetricsPayload, BaseMetrics, MetricsDay } from "@/lib/ads-v2/types";
+import type { AdsV2MetricsPayload, BaseMetrics, MetricsDay, RevenueCategories } from "@/lib/ads-v2/types";
 import { IcCheck, IcEdit, IcPlus } from "./icons";
 import { fmtMD } from "./format";
 import LineChart from "./LineChart";
 
 const STORE_KEY = "ccos.adsv2.metricCards.v1";
+// One-time additions to ALREADY-SAVED layouts. A saved layout predating these
+// cards gets them appended once (flagged below); deleting them after that
+// sticks like any other card.
+const APPENDED_ONCE_KEY = "ccos.adsv2.metricCards.appended.revenueCards";
+const APPEND_ONCE_IDS = ["organic_revenue", "misc_chat_revenue", "attribution_coverage"];
 
 function loadLayout(): string[] {
   if (typeof window === "undefined") return [...DEFAULT_CARD_IDS];
   try {
     const raw = window.localStorage.getItem(STORE_KEY);
     if (!raw) return [...DEFAULT_CARD_IDS];
-    const ids = (JSON.parse(raw) as string[]).filter((id) => CARD_BY_ID[id]);
-    return ids.length ? ids : [...DEFAULT_CARD_IDS];
+    let ids = (JSON.parse(raw) as string[]).filter((id) => CARD_BY_ID[id]);
+    if (!ids.length) return [...DEFAULT_CARD_IDS];
+    if (!window.localStorage.getItem(APPENDED_ONCE_KEY)) {
+      ids = [...ids, ...APPEND_ONCE_IDS.filter((id) => !ids.includes(id))];
+      window.localStorage.setItem(APPENDED_ONCE_KEY, "1");
+      saveLayout(ids);
+    }
+    return ids;
   } catch {
     return [...DEFAULT_CARD_IDS];
   }
@@ -151,8 +162,15 @@ export default function MetricsBoard({
   const ready = metrics && !metrics.preparing && metrics.dataVersion === tableVersion;
   const total: BaseMetrics | null = ready ? metrics!.total : null;
   const days: MetricsDay[] = ready ? metrics!.days : [];
+  const revenue: RevenueCategories | undefined = ready ? metrics!.revenue : undefined;
 
-  const visibleLayout = useMemo(() => layout.filter((id) => CARD_BY_ID[id]), [layout]);
+  // Client share links never show tracker-wide money (misc chats, coverage):
+  // those numbers span the whole team, not the creator holding the link.
+  const cardAllowed = useCallback(
+    (id: string) => Boolean(CARD_BY_ID[id]) && !(publicToken && CARD_BY_ID[id].trackerWide),
+    [publicToken],
+  );
+  const visibleLayout = useMemo(() => layout.filter(cardAllowed), [layout, cardAllowed]);
   const visibleLayoutKey = visibleLayout.join("|");
   const leftLayout = visibleLayout.filter((_, i) => i % 2 === 0);
   const rightLayout = visibleLayout.filter((_, i) => i % 2 === 1);
@@ -352,7 +370,7 @@ export default function MetricsBoard({
         onPointerDown={beginPointerDrag}
         registerRef={registerRef}
       >
-        <MetricChartCard def={def} total={total} days={days} />
+        <MetricChartCard def={def} total={total} days={days} revenue={revenue} />
       </MetricCardShell>
     );
   };
@@ -379,12 +397,13 @@ export default function MetricsBoard({
       </div>
       {floatingDef && (
         <div className="metric-floating-card" style={floatingStyle}>
-          <MetricChartCard def={floatingDef} total={total} days={days} />
+          <MetricChartCard def={floatingDef} total={total} days={days} revenue={revenue} />
         </div>
       )}
       {pickerOpen && (
         <MetricAddModal
           layout={visibleLayout}
+          cardAllowed={cardAllowed}
           onApply={applyPicker}
           onClose={() => setPickerOpen(false)}
         />
@@ -466,13 +485,15 @@ function MetricChartCard({
   def,
   total,
   days,
+  revenue,
 }: {
   def: CardDef;
   total: BaseMetrics | null;
   days: MetricsDay[];
+  revenue?: RevenueCategories;
 }) {
   const [tip, setTip] = useState(false);
-  const value = total ? def.value(total) : null;
+  const value = total ? def.value(total, revenue) : null;
   const values = days.map((d) => def.point(d));
   const labels = days.map((d) => fmtMD(d.day));
   const axisFmt = axisFormat(def.format);
@@ -531,14 +552,17 @@ function MetricChartCard({
 // existing-selected order, then appends the newly picked ones.
 function MetricAddModal({
   layout,
+  cardAllowed,
   onApply,
   onClose,
 }: {
   layout: string[];
+  cardAllowed: (id: string) => boolean;
   onApply: (ids: string[]) => void;
   onClose: () => void;
 }) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set(layout));
+  const pickableDefs = CARD_DEFS.filter((def) => cardAllowed(def.id));
   const toggle = (id: string) =>
     setSelected((prev) => {
       const next = new Set(prev);
@@ -547,7 +571,7 @@ function MetricAddModal({
     });
   const apply = () => {
     const kept = layout.filter((id) => selected.has(id));
-    const added = CARD_DEFS.map((def) => def.id).filter((id) => selected.has(id) && !kept.includes(id));
+    const added = pickableDefs.map((def) => def.id).filter((id) => selected.has(id) && !kept.includes(id));
     onApply([...kept, ...added]);
   };
 
@@ -565,7 +589,7 @@ function MetricAddModal({
         </div>
         <div className="modal-body">
           <div className="metric-add-grid">
-            {CARD_DEFS.map((def) => {
+            {pickableDefs.map((def) => {
               const isSelected = selected.has(def.id);
               return (
                 <button

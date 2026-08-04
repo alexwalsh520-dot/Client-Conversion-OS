@@ -354,11 +354,12 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
     collected_revenue_cents: number | null;
     manychat_subscriber_id: string | null;
     setter: string | null;
+    call_type: string | null;
   }>((from, to) =>
     db
       .from("sales_tracker_rows")
       .select(
-        "id, sheet_row_key, date, prospect_name, call_taken_status, outcome, closer, contracted_revenue_cents, collected_revenue_cents, manychat_subscriber_id, setter",
+        "id, sheet_row_key, date, prospect_name, call_taken_status, outcome, closer, contracted_revenue_cents, collected_revenue_cents, manychat_subscriber_id, setter, call_type:raw_payload->>callType",
       )
       .gte("date", factFrom)
       .lte("date", saleTo)
@@ -463,6 +464,9 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
       subscriber_id: pasted,
       closer: r.closer,
       sale_et_day: saleDay,
+      // The tracker's human-written origin label ("Miscellaneous Chat", ...),
+      // carried verbatim so revenue category cards read facts, not raw tables.
+      call_type: (r.call_type || "").trim() || null,
       // A sale inherits its setter and closer from the sales tracker, which is
       // where a human wrote them down; the DM-side setter is a fallback when
       // the sheet is blank but their ManyChat id is known.

@@ -124,6 +124,28 @@ export interface MetricsDay {
   taken: number;
   newClients: number;
   collectedCents: number;
+  // Revenue-category fields (optional: absent on snapshots written before the
+  // revenue cards existed; the next version bump rebuilds them in).
+  /** Organic-keyword sales collected, scoped to the selected account. */
+  organicCents?: number;
+  /** "Miscellaneous Chat" tracker sales no keyword claims. WHOLE tracker: the
+   *  sales sheet has no creator column, so this cannot be scoped per creator. */
+  miscChatCents?: number;
+  /** Ads-attributed collected across ALL creators (coverage numerator part). */
+  adsAllCents?: number;
+  /** Organic-attributed collected across ALL creators. */
+  organicAllCents?: number;
+  /** Every tracker sale collected that day (coverage denominator). */
+  trackerAllCents?: number;
+}
+
+/** Window totals of the revenue-category day fields, same scoping rules. */
+export interface RevenueCategories {
+  organicCents: number;
+  miscChatCents: number;
+  adsAllCents: number;
+  organicAllCents: number;
+  trackerAllCents: number;
 }
 
 /** The Metrics section's slice, stored beside the table snapshot at the SAME
@@ -137,6 +159,8 @@ export interface AdsV2MetricsPayload {
   dataVersion: number;
   days: MetricsDay[];
   total: BaseMetrics;
+  /** Window totals for the revenue category cards (optional on old snapshots). */
+  revenue?: RevenueCategories;
   generatedAt: string;
   preparing?: boolean;
 }

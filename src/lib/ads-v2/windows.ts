@@ -26,6 +26,7 @@ import {
   type BudgetInfo,
   type CallDetail,
   type MetricsDay,
+  type RevenueCategories,
 } from "./types";
 
 interface LeafRow {
@@ -156,6 +157,15 @@ interface DayRow {
   collected_usd_cents: number;
 }
 
+interface RevenueDayRow {
+  et_day: string;
+  organic_scoped_cents: number;
+  ads_all_cents: number;
+  organic_all_cents: number;
+  misc_chat_all_cents: number;
+  tracker_all_cents: number;
+}
+
 // The Metrics-card day series. Same account/window/status filters and the same
 // DB (set-based) work as the table; run in the precompute job, never a request.
 // Its total equals the table payload's total by construction.
@@ -166,6 +176,7 @@ export async function buildDaySeries(
   const db = getServiceSupabase();
   const clients = clientsForAccount(query.account);
   let days: MetricsDay[] = [];
+  let revenue: RevenueCategories | undefined;
   if (clients.length > 0) {
     const { data, error } = await db.rpc("adsv2_window_days", {
       p_clients: clients,
@@ -174,17 +185,43 @@ export async function buildDaySeries(
       p_currency: currencyMap(clients),
     });
     if (error) throw new Error(`adsv2_window_days failed: ${error.message}`);
-    days = ((data || []) as DayRow[]).map((d) => ({
-      day: d.et_day,
-      spendCents: d.spend_cents,
-      impressions: d.impressions,
-      clicks: d.clicks,
-      messages: d.messages,
-      booked: d.booked,
-      taken: d.taken,
-      newClients: d.new_clients,
-      collectedCents: d.collected_usd_cents,
-    }));
+    // Revenue by category (organic / misc chat / coverage). Organic is scoped
+    // to this account's clients; the misc and coverage numbers are whole-tracker
+    // because the sales sheet has no creator column. Both RPCs emit one row per
+    // window day, so this zips 1:1 with the base series.
+    const { data: revData, error: revErr } = await db.rpc("adsv2_revenue_days", {
+      p_clients: clients,
+      p_from: query.dateFrom,
+      p_to: query.dateTo,
+    });
+    if (revErr) throw new Error(`adsv2_revenue_days failed: ${revErr.message}`);
+    const revByDay = new Map(((revData || []) as RevenueDayRow[]).map((r) => [r.et_day, r]));
+    days = ((data || []) as DayRow[]).map((d) => {
+      const r = revByDay.get(d.et_day);
+      return {
+        day: d.et_day,
+        spendCents: d.spend_cents,
+        impressions: d.impressions,
+        clicks: d.clicks,
+        messages: d.messages,
+        booked: d.booked,
+        taken: d.taken,
+        newClients: d.new_clients,
+        collectedCents: d.collected_usd_cents,
+        organicCents: r?.organic_scoped_cents ?? 0,
+        miscChatCents: r?.misc_chat_all_cents ?? 0,
+        adsAllCents: r?.ads_all_cents ?? 0,
+        organicAllCents: r?.organic_all_cents ?? 0,
+        trackerAllCents: r?.tracker_all_cents ?? 0,
+      };
+    });
+    revenue = {
+      organicCents: sumBy(days, (d) => d.organicCents ?? 0),
+      miscChatCents: sumBy(days, (d) => d.miscChatCents ?? 0),
+      adsAllCents: sumBy(days, (d) => d.adsAllCents ?? 0),
+      organicAllCents: sumBy(days, (d) => d.organicAllCents ?? 0),
+      trackerAllCents: sumBy(days, (d) => d.trackerAllCents ?? 0),
+    };
   }
   // Total over the union of days (base sums), so the cards' big numbers derive
   // exactly like the table's TOTAL row.
@@ -210,8 +247,13 @@ export async function buildDaySeries(
     dataVersion,
     days,
     total,
+    revenue,
     generatedAt: new Date().toISOString(),
   };
+}
+
+function sumBy<T>(items: T[], pick: (item: T) => number): number {
+  return items.reduce((acc, item) => acc + pick(item), 0);
 }
 
 function leafBase(l: LeafRow): BaseMetrics {

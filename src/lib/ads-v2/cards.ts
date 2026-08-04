@@ -11,7 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 import { derive } from "./metrics";
-import type { BaseMetrics, MetricsDay } from "./types";
+import type { BaseMetrics, MetricsDay, RevenueCategories } from "./types";
 
 export type CardFormat = "usd" | "usd2" | "int" | "pct" | "ratio2" | "cpm";
 
@@ -25,10 +25,15 @@ export interface CardDef {
   /** Where the number comes from, in plain English. */
   source: string;
   format: CardFormat;
-  /** The big number over the window total (null when undefined, e.g. 0/0). */
-  value: (t: BaseMetrics) => number | null;
+  /** The big number over the window total (null when undefined, e.g. 0/0).
+   *  Revenue-category cards read the payload's revenue block instead and get
+   *  null until a snapshot built after the block existed serves the window. */
+  value: (t: BaseMetrics, r?: RevenueCategories) => number | null;
   /** One chart point from one ET day (0 when undefined, for a clean line). */
   point: (d: MetricsDay) => number;
+  /** True for cards whose number covers the whole team tracker, not only the
+   *  selected account. Hidden on client share links. */
+  trackerWide?: boolean;
 }
 
 const dayBase = (d: MetricsDay): BaseMetrics => ({
@@ -227,6 +232,48 @@ export const CARD_DEFS: readonly CardDef[] = [
     value: (t) => t.collectedCents / 100,
     point: (d) => d.collectedCents / 100,
   },
+  {
+    id: "organic_revenue",
+    label: "Organic revenue",
+    meta: "Cash from organic keywords",
+    sentence:
+      "Cash collected from sales tied to a keyword marked organic for this account, over the selected days.",
+    source: "The sales tracker, tied to an organic-marked keyword by hard key only.",
+    format: "usd",
+    value: (_t, r) => (r ? r.organicCents / 100 : null),
+    point: (d) => (d.organicCents ?? 0) / 100,
+  },
+  {
+    id: "misc_chat_revenue",
+    label: "Misc chats revenue",
+    meta: "Cash from Miscellaneous Chat sales",
+    sentence:
+      "Cash collected from sales the team logged as Miscellaneous Chat that no ad or organic keyword claims. The tracker has no creator column, so this covers the whole team on every account view.",
+    source: "The sales tracker's call type column, written by the sales team.",
+    format: "usd",
+    value: (_t, r) => (r ? r.miscChatCents / 100 : null),
+    point: (d) => (d.miscChatCents ?? 0) / 100,
+    trackerWide: true,
+  },
+  {
+    id: "attribution_coverage",
+    label: "Attribution coverage",
+    meta: "Revenue with a known origin",
+    sentence:
+      "The share of ALL tracker revenue in the selected days that is attributed to ads, organic keywords, or Miscellaneous Chats. Whole team on every account view; the rest of the revenue has no recorded origin.",
+    source: "Attributed revenue (ads + organic + misc chats) divided by all tracker revenue.",
+    format: "pct",
+    value: (_t, r) =>
+      r && r.trackerAllCents > 0
+        ? (r.adsAllCents + r.organicAllCents + r.miscChatCents) / r.trackerAllCents
+        : null,
+    point: (d) => {
+      const denom = d.trackerAllCents ?? 0;
+      if (!denom) return 0;
+      return ((d.adsAllCents ?? 0) + (d.organicAllCents ?? 0) + (d.miscChatCents ?? 0)) / denom;
+    },
+    trackerWide: true,
+  },
 ];
 
 function centsOrNull(cents: number | null): number | null {
@@ -248,4 +295,7 @@ export const DEFAULT_CARD_IDS: readonly string[] = [
   "calls_booked",
   "calls_taken",
   "collected",
+  "organic_revenue",
+  "misc_chat_revenue",
+  "attribution_coverage",
 ];

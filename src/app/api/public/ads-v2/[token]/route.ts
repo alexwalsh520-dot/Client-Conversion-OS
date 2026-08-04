@@ -144,7 +144,24 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
           }
         });
       }
-      return NextResponse.json(payload, { headers: NO_STORE_HEADERS });
+      // Tracker-wide money (misc chats, coverage denominators) spans the whole
+      // team; a creator's share link must never carry it, so it is stripped
+      // from the JSON itself, not just hidden in the UI. Account-scoped organic
+      // stays: it is this creator's own revenue.
+      const publicPayload = {
+        ...payload,
+        revenue: payload.revenue
+          ? { ...payload.revenue, miscChatCents: 0, adsAllCents: 0, organicAllCents: 0, trackerAllCents: 0 }
+          : undefined,
+        days: payload.days.map((d) => ({
+          ...d,
+          miscChatCents: 0,
+          adsAllCents: 0,
+          organicAllCents: 0,
+          trackerAllCents: 0,
+        })),
+      };
+      return NextResponse.json(publicPayload, { headers: NO_STORE_HEADERS });
     } catch (err) {
       return NextResponse.json(
         { error: err instanceof Error ? err.message : "Failed" },
