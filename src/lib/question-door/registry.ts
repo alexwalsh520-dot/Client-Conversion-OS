@@ -83,9 +83,24 @@ const metric_value: QuestionEntry = {
   sources: [S_ANSWERS, S_DEFS],
   freshnessSources: [S_ANSWERS],
   budgetMs: 20_000,
+  // Version 1. A money answer over a window the tab already saved, so the
+  // receipt carries the four coverage buckets for that same window.
+  receipt: {
+    version: 1,
+    windowKind: "saved_window",
+    money: true,
+    usesDataVersion: true,
+    exclusions: [
+      {
+        what: "anything outside the saved window, or outside the status asked for",
+        count: 0,
+        why: "this question returns a saved answer verbatim. It excludes nothing WITHIN its window; the window and the status are the whole of its scope.",
+      },
+    ],
+  },
   async run(ctx, params) {
     rejectUnknown(params, ["client", "account", "date_from", "date_to", "status", "metrics", "scope"]);
-    const account = requireAccount(params, ctx.clients);
+    const account = await requireAccount(ctx, params);
     const { from, to } = requireRange(params);
     const status = optionalStatus(params);
     const scope = String(params.scope ?? "total").toLowerCase();
@@ -154,9 +169,17 @@ const yesterday_summary: QuestionEntry = {
   sources: [S_ANSWERS, S_CHANGES, S_DEFS],
   freshnessSources: [S_ANSWERS, S_CHANGES],
   budgetMs: 25_000,
+  // Version 1. Yesterday always ends inside the sales lag, so this answer
+  // carries the understatement caveat automatically, every time.
+  receipt: {
+    version: 1,
+    windowKind: "yesterday_et",
+    money: true,
+    usesDataVersion: true,
+  },
   async run(ctx, params) {
     rejectUnknown(params, ["client", "account"]);
-    const account = requireAccount(params, ctx.clients);
+    const account = await requireAccount(ctx, params);
     const range = rangeForPreset("yesterday", todayEt(ctx.now));
     const key = { account, from: range.from, to: range.to, status: "all" };
     const row = await readStoredWindow(ctx.db, key);
@@ -187,6 +210,10 @@ const yesterday_summary: QuestionEntry = {
       definitionKeys: headline,
       asOf: [],
       usedParams: { client: account, day: range.from },
+      // This template works its own window out from Eastern time, so it hands
+      // the real one to the receipt rather than letting the receipt guess from
+      // parameters that carry no date at all.
+      window: { from: range.from, to: range.to },
     };
   },
 };
@@ -207,9 +234,25 @@ const change_history: QuestionEntry = {
   sources: [S_CHANGES],
   freshnessSources: [S_CHANGES],
   budgetMs: 25_000,
+  // Version 1. No money and no sale rows, so no coverage block: there is
+  // nothing here whose completeness could be overstated.
+  receipt: {
+    version: 1,
+    windowKind: "explicit_range",
+    money: false,
+    usesDataVersion: false,
+    exclusions: [
+      {
+        what: "changes made before Meta's activity history reaches",
+        count: 0,
+        why: "exact change times reach back to 30 September 2024 for Tyson and 3 August 2024 for Jake. Day-level budget changes derived from our own budget photos start 23 July 2026. There is nothing before those dates to get.",
+      },
+    ],
+    definitionsCited: ["structure_rules"],
+  },
   async run(ctx, params) {
     rejectUnknown(params, ["client", "account", "date_from", "date_to", "level", "entity_id", "limit"]);
-    const account = requireAccount(params, ctx.clients);
+    const account = await requireAccount(ctx, params);
     const { from, to } = requireRange(params);
     const level = optionalText(params, "level");
     if (level && !["ad", "adset", "campaign"].includes(level)) {
@@ -264,9 +307,24 @@ const why_unattributed: QuestionEntry = {
   sources: [S_BOOK, S_SALE, S_DM, S_PEOPLE],
   freshnessSources: [S_BOOK, S_SALE, S_DM],
   budgetMs: 25_000,
+  // Version 1. One row explained from its own stamp. No window, no totals.
+  receipt: {
+    version: 1,
+    windowKind: null,
+    money: false,
+    usesDataVersion: false,
+    exclusions: [
+      {
+        what: "any row not named by an exact key",
+        count: 0,
+        why: "this question explains ONE row, found by a hard key. A name returns a candidate list and never a single answer, because two people can share a name and a wrong answer here would read as fact.",
+      },
+    ],
+    definitionsCited: ["sale_to_ad_chain"],
+  },
   async run(ctx, params) {
     rejectUnknown(params, ["client", "account", "kind", "fact_key", "person_id", "name"]);
-    const client = requireClient(params, ctx.clients);
+    const client = await requireClient(ctx, params);
     const kind = requireText(params, "kind").toLowerCase();
     if (!["booking", "sale", "dm"].includes(kind)) {
       throw new BadParams("kind must be one of: booking, sale, dm.");
@@ -337,9 +395,16 @@ const ad_setup: QuestionEntry = {
   sources: [S_ADS],
   freshnessSources: [S_ADS],
   budgetMs: 20_000,
+  // Version 1. Configuration, not performance. No sale rows are touched.
+  receipt: {
+    version: 1,
+    windowKind: null,
+    money: false,
+    usesDataVersion: false,
+  },
   async run(ctx, params) {
     rejectUnknown(params, ["client", "account", "keyword", "ad_id"]);
-    const client = requireClient(params, ctx.clients);
+    const client = await requireClient(ctx, params);
     const keyword = optionalText(params, "keyword");
     const adId = optionalText(params, "ad_id");
     if (!keyword && !adId) throw new BadParams("give either keyword or ad_id.");
@@ -381,9 +446,28 @@ const person_lookup: QuestionEntry = {
   sources: [S_PEOPLE, S_DM, S_BOOK, S_SALE],
   freshnessSources: [S_PEOPLE, S_DM, S_BOOK, S_SALE],
   budgetMs: 30_000,
+  // Version 1. The identity bridge is a LATER brick, and until it lands this
+  // answer can only see the id spaces already stitched into warehouse.people.
+  // Saying so is the difference between "this person did nothing" and "this
+  // is what we can currently see", which person_identity v1 makes the whole
+  // point: a zero-row join across id systems is never evidence of absence.
+  receipt: {
+    version: 1,
+    windowKind: null,
+    money: false,
+    usesDataVersion: false,
+    exclusions: [
+      {
+        what: "id spaces not yet bridged into the merged people table",
+        count: 0,
+        why: "the identity bridge is a later brick. Events keyed only in an id space this person has not yet been stitched to will not appear here. An empty event list is therefore not proof that the person did nothing.",
+      },
+    ],
+    definitionsCited: ["person_identity"],
+  },
   async run(ctx, params) {
     rejectUnknown(params, ["client", "account", "id", "handle", "name"]);
-    const client = params.client || params.account ? requireClient(params, ctx.clients) : null;
+    const client = params.client || params.account ? await requireClient(ctx, params) : null;
     const id = optionalText(params, "id");
     const handle = optionalText(params, "handle");
     const name = optionalText(params, "name");
@@ -450,9 +534,26 @@ const sales_cycle: QuestionEntry = {
   sources: [S_SALE, S_DM],
   freshnessSources: [S_SALE, S_DM],
   budgetMs: 35_000,
+  // Version 1. Reads the stamped sale facts, so it carries coverage: a cohort
+  // statistic means little without knowing how much of the window is even
+  // classifiable.
+  receipt: {
+    version: 1,
+    windowKind: "explicit_range",
+    money: true,
+    usesDataVersion: false,
+    exclusions: [
+      {
+        what: "sales without a hard evidence key, a keyword, a ManyChat id and a matching stamped DM",
+        count: 0,
+        why: "a sale is measured only when all four exist. The ones that fail are counted and returned as could_not_measure rather than quietly dropped, so the cohort never looks bigger than it is.",
+      },
+    ],
+    definitionsCited: ["sales_lag", "sale_to_ad_chain"],
+  },
   async run(ctx, params) {
     rejectUnknown(params, ["client", "account", "date_from", "date_to"]);
-    const client = requireClient(params, ctx.clients);
+    const client = await requireClient(ctx, params);
     const { from, to } = requireRange(params);
     const rows = await rpc(ctx, "question_door_sales_cycle", {
       p_client: client,
@@ -501,6 +602,14 @@ const attribution_share: QuestionEntry = {
   sources: [S_SALE],
   freshnessSources: [S_SALE],
   budgetMs: 35_000,
+  // Version 1. Roster-wide by design, so its coverage block is roster-wide too.
+  receipt: {
+    version: 1,
+    windowKind: "explicit_range",
+    money: true,
+    usesDataVersion: false,
+    definitionsCited: ["certainty_buckets", "coverage", "collected_vs_contracted"],
+  },
   async run(ctx, params) {
     rejectUnknown(params, ["date_from", "date_to"]);
     const { from, to } = requireRange(params);
@@ -556,6 +665,14 @@ const leak_map: QuestionEntry = {
   sources: [S_BOOK, S_SALE, S_DM],
   freshnessSources: [S_BOOK, S_SALE, S_DM],
   budgetMs: 35_000,
+  // Version 1. Roster-wide, for the same reason attribution_share is.
+  receipt: {
+    version: 1,
+    windowKind: "explicit_range",
+    money: true,
+    usesDataVersion: false,
+    definitionsCited: ["certainty_buckets", "coverage"],
+  },
   async run(ctx, params) {
     rejectUnknown(params, ["date_from", "date_to"]);
     const { from, to } = requireRange(params);
@@ -602,9 +719,20 @@ const kill_scale_inputs: QuestionEntry = {
   sources: [S_ANSWERS, S_ADS, S_DEFS],
   freshnessSources: [S_ANSWERS, S_ADS],
   budgetMs: 30_000,
+  // Version 1. INPUTS to a decision, never a verdict. Marked directional
+  // because a decision read off a window inside the sales lag is provisional
+  // by construction, however exact each individual number in it is.
+  receipt: {
+    version: 1,
+    windowKind: "saved_window",
+    money: true,
+    usesDataVersion: true,
+    certainty: "directional",
+    definitionsCited: ["decision_cadence", "verdict_floors_kill_tree", "touch_floor_72h", "sales_lag"],
+  },
   async run(ctx, params) {
     rejectUnknown(params, ["client", "account", "date_from", "date_to", "status"]);
-    const account = requireAccount(params, ctx.clients);
+    const account = await requireAccount(ctx, params);
     const { from, to } = requireRange(params);
     const status = params.status === undefined ? "active" : optionalStatus(params);
     const key = { account, from, to, status };
@@ -673,6 +801,13 @@ const data_health: QuestionEntry = {
   sources: [S_HEALTH],
   freshnessSources: [S_HEALTH],
   budgetMs: 20_000,
+  // Version 1. The accuracy rows verbatim. No window and no money.
+  receipt: {
+    version: 1,
+    windowKind: null,
+    money: false,
+    usesDataVersion: false,
+  },
   async run(ctx, params) {
     rejectUnknown(params, []);
     const rows = await rpc(ctx, "question_door_data_health", {});
@@ -711,6 +846,13 @@ const define: QuestionEntry = {
   sources: [S_DEFS],
   freshnessSources: [S_DEFS],
   budgetMs: 15_000,
+  // Version 1. Quoting stored meanings. Nothing is computed at all.
+  receipt: {
+    version: 1,
+    windowKind: null,
+    money: false,
+    usesDataVersion: false,
+  },
   async run(ctx, params) {
     rejectUnknown(params, ["metric"]);
     const metric = optionalText(params, "metric");

@@ -9,15 +9,24 @@
 // what the door says.
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { askQuestion, describeDoor } from "@/lib/question-door/service";
+import { askQuestion, describeDoor, describeMisses } from "@/lib/question-door/service";
 import { isRefusal } from "@/lib/question-door/types";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-export async function GET() {
+export async function GET(req: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // ?misses=1 returns the certification backlog instead of the locked list:
+  // what callers keep asking that this door cannot answer yet. Same route
+  // because they are two halves of one question, "what can this door do".
+  if (new URL(req.url).searchParams.get("misses")) {
+    const backlog = await describeMisses(50);
+    return NextResponse.json(backlog, { headers: { "Cache-Control": "no-store" } });
+  }
+
   return NextResponse.json(
     {
       note: "These are the only questions this door answers. Anything else is refused in writing rather than improvised.",
@@ -39,10 +48,13 @@ export async function POST(req: Request) {
     );
   }
 
-  const result = await askQuestion({
-    question_key: (body as Record<string, unknown>).question_key,
-    params: ((body as Record<string, unknown>).params ?? {}) as Record<string, unknown>,
-  });
+  const result = await askQuestion(
+    {
+      question_key: (body as Record<string, unknown>).question_key,
+      params: ((body as Record<string, unknown>).params ?? {}) as Record<string, unknown>,
+    },
+    { caller: "app" },
+  );
 
   // A refusal is a normal, expected outcome of a locked door, not a server
   // fault. It is returned as 200 with refused: true so a caller reads the

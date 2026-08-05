@@ -757,7 +757,7 @@ const oneFrontDoor: AccuracyCheck = {
                 status: s.status, metrics: DOOR_METRICS.map((m) => m.door),
               },
             },
-            { db: ctx.db, clients: ctx.clients },
+            { db: ctx.db, clients: ctx.clients, caller: "accuracy" },
           ),
         ),
       );

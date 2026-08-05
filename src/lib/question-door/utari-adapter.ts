@@ -98,7 +98,7 @@ export async function canonicalAdsFromDoor(
         scope: "per_ad",
       },
     },
-    { db },
+    { db, caller: "utari" },
   );
   if (isRefusal(result)) {
     return { ads: [], window: null, refused: result.reason };

@@ -198,10 +198,13 @@ async function callTool(name: string, a: Record<string, unknown>, origin: string
           questions: describeDoor(),
         };
       }
-      return askQuestion({
-        question_key: a.question_key,
-        params: (a.params as Record<string, unknown>) || {},
-      });
+      return askQuestion(
+        {
+          question_key: a.question_key,
+          params: (a.params as Record<string, unknown>) || {},
+        },
+        { caller: "utari" },
+      );
     }
     case "list_ads": {
       const { ads, window, refused, as_of } = await canonicalAds(client);

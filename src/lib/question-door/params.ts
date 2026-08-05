@@ -7,9 +7,97 @@
 // it should have sent.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { BadParams } from "./types";
+import { BadParams, type AliasTrail, type Db } from "./types";
 
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+// ─────────────────────────────────────────────────────────────────────────
+// REGISTRY RESOLUTION (Brick 2).
+//
+// Brick 1 put every spelling every system uses into registry_entities. This is
+// where the door starts using it. "jake_divljak", "Jake Divijak" (the tracker's
+// own misspelling), "rrf" and "JAKE" are all the same creator, and the door
+// now knows that instead of refusing four names for one person.
+//
+// The failure this kills: an AI reported "Jake has zero DMs" because the
+// message store keys him jake_divljak while the warehouse keys him jake.
+//
+// Resolution is NOT fuzzy matching. registry_resolve_entity does exact,
+// case-insensitive lookup over declared aliases only. An unknown name is still
+// refused; it is never repaired by guessing at the nearest creator.
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Resolve one alias to its canonical key through the registry, recording the
+ * hop on the trail so the receipt can show the caller what its input became.
+ * Cached per ask: the same alias costs one round trip however many parameters
+ * mention it.
+ *
+ * Returns null when the registry names nothing. The CALLER decides what an
+ * unresolvable name means, because "not a creator" and "not a person" need
+ * different refusals.
+ */
+export async function resolveEntity(
+  db: Db,
+  trail: AliasTrail,
+  given: string,
+): Promise<string | null> {
+  const key = given.trim().toLowerCase();
+  if (!key) return null;
+  if (trail.cache.has(key)) return trail.cache.get(key) ?? null;
+
+  let resolved: string | null = null;
+  try {
+    const { data, error } = await db.rpc("registry_resolve_entity", { p_alias: given.trim() });
+    if (error) throw new Error(error.message);
+    resolved = typeof data === "string" && data ? data : null;
+  } catch {
+    // A registry that cannot be reached must not turn a valid question into a
+    // refusal. Null falls through to the caller's own membership check, which
+    // is the pre-Brick-2 behaviour: strictly no worse than before.
+    resolved = null;
+  }
+
+  trail.cache.set(key, resolved);
+  // Only a real rename is worth recording. An input that was already the
+  // canonical key is not an "alias resolved", it is just a correct input.
+  if (resolved && resolved.toLowerCase() !== key) {
+    trail.entries.push({ given, resolved_to: resolved });
+  }
+  return resolved;
+}
+
+/**
+ * Resolve an alias that MUST name an entity of one of the given kinds. Used
+ * where a wrong answer would be worse than no answer.
+ */
+export async function resolveEntityOrThrow(
+  db: Db,
+  trail: AliasTrail,
+  given: string,
+  expectedKinds: readonly string[],
+): Promise<string> {
+  const resolved = await resolveEntity(db, trail, given);
+  if (!resolved) {
+    throw new BadParams(
+      `"${given}" does not name anyone the registry knows. Names are resolved against the declared aliases in registry_entities only; nothing is guessed at.`,
+    );
+  }
+  if (expectedKinds.length) {
+    const { data } = await db
+      .from("registry_entities")
+      .select("kind")
+      .eq("canonical_key", resolved)
+      .maybeSingle();
+    const kind = (data as { kind?: string } | null)?.kind;
+    if (kind && !expectedKinds.includes(kind)) {
+      throw new BadParams(
+        `"${given}" resolves to ${resolved}, who is a ${kind}, but this question needs one of: ${expectedKinds.join(", ")}.`,
+      );
+    }
+  }
+  return resolved;
+}
 
 /** An inclusive Eastern-time day, YYYY-MM-DD. Anything else is refused. */
 export function requireDay(params: Record<string, unknown>, name: string): string {
@@ -34,14 +122,21 @@ export function optionalDay(params: Record<string, unknown>, name: string): stri
 
 /**
  * An ACTIVE creator, or "all". Law 7 of this build: the roster is read from the
- * engine's own list, never hardcoded here. A former creator is refused by name
- * so the caller understands why rather than seeing an empty answer.
+ * engine's own roster, never hardcoded here. Since Brick 2 that roster comes
+ * from registry_entities, and the name given is resolved through the registry
+ * first, so every declared spelling of a creator works.
+ *
+ * A former creator is still refused BY NAME so the caller understands why
+ * rather than seeing an empty answer. That refusal is now better, not worse:
+ * "antwan" resolves to a real entity the registry knows is former, so the door
+ * can say which creator it means instead of saying the word is unknown.
  */
-export function requireAccount(
+export async function requireAccount(
+  ctx: { db: Db; clients: readonly string[]; resolved: AliasTrail },
   params: Record<string, unknown>,
-  clients: readonly string[],
   opts: { allowAll?: boolean } = {},
-): string {
+): Promise<string> {
+  const { clients } = ctx;
   const allowAll = opts.allowAll !== false;
   const raw = params.client ?? params.account;
   if (typeof raw !== "string" || !raw.trim()) {
@@ -53,16 +148,31 @@ export function requireAccount(
     if (!allowAll) throw new BadParams(`this question needs one creator, not "all". Ask for one of: ${clients.join(", ")}.`);
     return "all";
   }
+  // Already canonical: no registry round trip needed for the common case.
   if (clients.includes(v)) return v;
+
+  // Not a name we serve as written. Ask the registry what it is before
+  // refusing, so an alias is answered and a former creator is named.
+  const resolved = await resolveEntity(ctx.db, ctx.resolved, v);
+  if (resolved && clients.includes(resolved)) return resolved;
+
   const list = [...(allowAll ? ["all"] : []), ...clients].join(", ");
+  if (resolved) {
+    throw new BadParams(
+      `"${raw.trim()}" is ${resolved}, who is not on the active roster this door serves: ${list}. A creator who has left the roster is not answered here; their old ads appear only inside honest labels such as former_creator_ad.`,
+    );
+  }
   throw new BadParams(
-    `"${v}" is not a creator this door serves. It serves the active roster only: ${list}. A creator who has left the roster is not answered here; their old ads appear only inside honest labels such as former_creator_ad.`,
+    `"${v}" is not a creator this door serves. It serves the active roster only: ${list}. The name was checked against every alias in the registry before this refusal, so it is not a spelling problem. A creator who has left the roster is not answered here; their old ads appear only inside honest labels such as former_creator_ad.`,
   );
 }
 
 /** One creator, never "all". Used where an answer only makes sense per creator. */
-export function requireClient(params: Record<string, unknown>, clients: readonly string[]): string {
-  return requireAccount(params, clients, { allowAll: false });
+export function requireClient(
+  ctx: { db: Db; clients: readonly string[]; resolved: AliasTrail },
+  params: Record<string, unknown>,
+): Promise<string> {
+  return requireAccount(ctx, params, { allowAll: false });
 }
 
 const STATUSES = ["active", "finished", "all"] as const;
