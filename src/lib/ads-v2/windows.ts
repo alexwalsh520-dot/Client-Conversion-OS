@@ -9,7 +9,7 @@
 import { getServiceSupabase } from "@/lib/supabase";
 import { CREATORS_BY_KEY, type CreatorKey } from "@/lib/creators";
 import { creatorCurrency } from "@/lib/fx/rates";
-import { etDay } from "./time";
+import { etDay, shiftDay } from "./time";
 import { displayKeyword } from "./keyword";
 import { groupBookingsByPerson, type BookingRecord } from "./attribution";
 import { fetchAllRows, type Db } from "./db";
@@ -475,9 +475,14 @@ async function loadHoverDetails(
   clients: CreatorKey[],
   query: AdsV2Query,
 ): Promise<Map<string, { booked: CallDetail[]; taken: CallDetail[] }>> {
-  // Booked people in the window (bounded: tens per client per month). `taken` is
-  // the hard-key-linked taken record stamped on the fact; `status` is the raw
-  // GoHighLevel appointment status. Both drive the cohort-true show-rate popup.
+  // Booking facts fetched WIDER than the window (bounded: tens per client per
+  // month) and without the organic/review filters, for two jobs:
+  //   1. the booked/show-rate cohort: window-scoped, paid, reviewed, contact-id
+  //      rows - filtered below to EXACTLY the rows the cell counts;
+  //   2. hard-key enrichment of the taken popup: a taken sale carries no DM or
+  //      booked date of its own, so we look the person's booking up by the
+  //      stamped linked_subscriber_id, even when that booking sits before the
+  //      window or is awaiting review (display only, never counted).
   const bookings = await fetchAllRows<{
     client_key: string;
     keyword_normalized: string | null;
@@ -490,16 +495,19 @@ async function loadHoverDetails(
     is_upcoming: boolean;
     taken: boolean;
     status: string | null;
+    is_organic: boolean;
+    awaiting_review: boolean;
+    linked_subscriber_id: string | null;
     evidence: { subscriber?: string | null } | null;
   }>((from, to) =>
     db
       .from("adsv2_booking_facts")
-      .select("client_key, keyword_normalized, contact_id, person_name, start_time, created_time, booked_et_day, dm_et_day, is_upcoming, taken, status, evidence")
+      .select(
+        "client_key, keyword_normalized, contact_id, person_name, start_time, created_time, booked_et_day, dm_et_day, is_upcoming, taken, status, is_organic, awaiting_review, linked_subscriber_id, evidence",
+      )
       .in("client_key", clients)
-      .gte("booked_et_day", query.dateFrom)
-      .lte("booked_et_day", query.dateTo)
-      .eq("is_organic", false)
-      .eq("awaiting_review", false)
+      .gte("booked_et_day", shiftDay(query.dateFrom, -60))
+      .lte("booked_et_day", shiftDay(query.dateTo, 60))
       .order("booked_et_day", { ascending: false })
       .range(from, to),
   );
@@ -525,15 +533,46 @@ async function loadHoverDetails(
       .range(from, to),
   );
 
+  // Hard-key lookup: subscriber -> that person's bookings (any keyword, any
+  // date in the fetched span, review status irrelevant). Used ONLY to fill the
+  // taken popup's DMed/Booked columns; never to count anything.
+  const bookingsBySubscriber = new Map<string, typeof bookings>();
+  for (const b of bookings) {
+    const sub = b.linked_subscriber_id || b.evidence?.subscriber || null;
+    if (!sub) continue;
+    const list = bookingsBySubscriber.get(sub) || [];
+    list.push(b);
+    bookingsBySubscriber.set(sub, list);
+  }
+
   const takenDetailByLeaf = new Map<string, CallDetail[]>();
   for (const s of takenSales) {
     if (!s.keyword_normalized) continue;
     const key = `${s.client_key}:${s.keyword_normalized}`;
+    // The person's booking, by hard key only: prefer the latest booking on or
+    // before the sale day (the call the sale came from), else their earliest
+    // one after it. No match -> the columns stay dashes, which is the truth:
+    // no sales-calendar booking is linked to this taken call.
+    let linked: (typeof bookings)[number] | null = null;
+    for (const b of bookingsBySubscriber.get(s.subscriber_id || "") || []) {
+      if (b.client_key !== s.client_key) continue;
+      if (!linked) {
+        linked = b;
+        continue;
+      }
+      const bBefore = b.booked_et_day <= s.sale_et_day;
+      const lBefore = linked.booked_et_day <= s.sale_et_day;
+      if (bBefore !== lBefore) {
+        if (bBefore) linked = b;
+      } else if (bBefore ? b.booked_et_day > linked.booked_et_day : b.booked_et_day < linked.booked_et_day) {
+        linked = b;
+      }
+    }
     const list = takenDetailByLeaf.get(key) || [];
     list.push({
       name: s.prospect_name || "Unknown",
-      dmEtDay: null,
-      bookedEtDay: null,
+      dmEtDay: linked?.dm_et_day ?? null,
+      bookedEtDay: linked ? (linked.created_time ? etDay(linked.created_time) : linked.booked_et_day) : null,
       callEtDay: s.sale_et_day,
       status: "showed",
       records: 1,
@@ -542,10 +581,15 @@ async function loadHoverDetails(
   }
 
   // Booked rows carry their OWN hard-key taken flag + GHL status, so the
-  // show-rate popup is the same cohort as the cell. No name matching.
+  // show-rate popup is the same cohort as the cell. No name matching. The
+  // filters here mirror the leaves function's bk_person CTE exactly (window,
+  // paid, reviewed, contact_id present), so the popup lists the same people
+  // the cell counted - no more, no fewer.
   const bookingsByLeaf = new Map<string, BookingRecord[]>();
   for (const b of bookings) {
     if (!b.keyword_normalized) continue;
+    if (b.booked_et_day < query.dateFrom || b.booked_et_day > query.dateTo) continue;
+    if (b.is_organic || b.awaiting_review || !b.contact_id) continue;
     const key = `${b.client_key}:${b.keyword_normalized}`;
     const rec: BookingRecord = {
       contactId: b.contact_id,

@@ -752,6 +752,15 @@ html.light .adsv2 {
   color: var(--text-3);
   margin-top: 6px;
 }
+.adsv2 .ch-note {
+  font-size: 10.5px;
+  color: var(--text-3);
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--border-2);
+  white-space: normal;
+  line-height: 1.45;
+}
 .adsv2 .ch-status {
   font-size: 9px;
   text-transform: uppercase;

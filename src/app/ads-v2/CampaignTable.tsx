@@ -700,9 +700,18 @@ function CallHover({
   let rows: CallDetail[];
   let title: string;
   let proof: string | null = null;
+  let note: string | null = null;
   if (kind === "taken") {
     rows = details.taken.length ? details.taken : details.booked.filter((d) => d.status === "showed");
     title = `${node.taken} taken - ${kw}`;
+    // A taken call with no Booked date could not be hard-key linked to any
+    // sales-calendar booking (booked off-calendar, keyword lost, or a
+    // duplicate GHL contact broke the bridge). Say so: silence here read as a
+    // contradiction whenever taken ran higher than booked.
+    const unbooked = rows.filter((d) => !d.bookedEtDay).length;
+    if (unbooked > 0) {
+      note = `${unbooked} of ${rows.length} taken ${unbooked === 1 ? "call" : "calls"} could not be hard-key linked to a sales-calendar booking, so those DMed and Booked cells are blank. Booked only counts sales-calendar bookings scheduled inside this window, which is why Taken can run higher than Booked.`;
+    }
   } else if (kind === "showRate") {
     rows = details.booked;
     title = `Show rate - ${kw}`;
@@ -713,6 +722,9 @@ function CallHover({
     const due = rows.length - upcoming;
     const pct = due > 0 ? Math.round((showed / due) * 100) : 0;
     proof = `${showed} of ${due} showed  ·  ${pct}%${upcoming ? `  ·  ${upcoming} upcoming (not counted)` : ""}`;
+    if (rows.length === 0 && details.taken.length > 0) {
+      note = "No sales-calendar bookings captured in this window, so there is no show-rate cohort. The taken calls listed under Calls Taken were logged in the sales tracker without a linked booking.";
+    }
   } else {
     rows = details.booked;
     title = `${node.booked} booked - ${kw}`;
@@ -763,6 +775,7 @@ function CallHover({
         </tbody>
       </table>
       {rows.length > shown.length && <div className="ch-more">+ {rows.length - shown.length} more</div>}
+      {note && <div className="ch-note">{note}</div>}
     </div>
   );
 }
