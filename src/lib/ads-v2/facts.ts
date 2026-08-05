@@ -226,6 +226,23 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
   for (const list of dmBySubscriber.values()) list.sort((a, b) => a.at.localeCompare(b.at));
 
   // ── Booking facts ────────────────────────────────────────────────────────
+  // Recorded human resolutions outrank every machine guess (the signed
+  // resolution-order rule). Small table: one row per corrected appointment.
+  const resolutionRows = await fetchAllRows<{
+    appointment_key: string;
+    keyword_normalized: string | null;
+    subscriber_id: string | null;
+    resolved_by: string;
+    reason: string;
+  }>((from, to) =>
+    db
+      .from("adsv2_booking_resolutions")
+      .select("appointment_key, keyword_normalized, subscriber_id, resolved_by, reason")
+      .order("appointment_key", { ascending: true })
+      .range(from, to),
+  );
+  const resolutionByAppointment = new Map(resolutionRows.map((r) => [r.appointment_key, r]));
+
   const nowIso = now.toISOString();
   const apptRows = ALL_SALES_CALENDAR_IDS.length
     ? await fetchAllRows<{
@@ -261,8 +278,11 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
     if (!client) continue;
     const day = r.start_time ? etDay(r.start_time) : "";
     if (!day || day < factFrom || day > bookTo) continue;
+    const resolution = resolutionByAppointment.get(r.appointment_id) || null;
     const kw = normalizeKeyword(r.keyword_normalized);
-    const subscriber = r.contact_id ? contactToSubscriber.get(r.contact_id) || null : null;
+    const subscriber =
+      resolution?.subscriber_id ||
+      (r.contact_id ? contactToSubscriber.get(r.contact_id) || null : null);
     const dmDay = subscriber ? dmBySubscriber.get(subscriber)?.[0]?.day ?? null : null;
     const cls = classifyKeyword({
       keyword: kw,
@@ -308,6 +328,33 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
             why: "the only pre-booking keyword has no paid spend behind it",
           },
           blankReason: finalCls === "organic" ? "organic_dm" : "unknown",
+        };
+      }
+    }
+
+    // A recorded human resolution outranks everything above: the corrected
+    // keyword is re-classified like any other (so it still can't smuggle in a
+    // no-spend word) and the row carries who decided and why.
+    if (resolution?.keyword_normalized) {
+      const resolvedKw = normalizeKeyword(resolution.keyword_normalized);
+      if (resolvedKw) {
+        finalKeyword = resolvedKw;
+        finalCls = classifyKeyword({
+          keyword: resolvedKw,
+          organicMarked: isOrganicMarked(client, resolvedKw),
+          paidSpendDays: spendDaysFor(client, resolvedKw),
+          eventDay: day,
+        });
+        finalStamp = {
+          keyword: resolvedKw,
+          evidenceKey: "human_resolution",
+          evidenceDetail: {
+            resolved_by: resolution.resolved_by,
+            reason: resolution.reason,
+            machine_keyword: kw,
+            subscriber_id: resolution.subscriber_id,
+          },
+          blankReason: null,
         };
       }
     }

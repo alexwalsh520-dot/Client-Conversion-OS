@@ -273,6 +273,16 @@ export async function POST(req: NextRequest) {
       readString(root, ["tags", "contact_source", "contactSource"])
     );
     const supabase = getServiceSupabase();
+
+    // A recorded human resolution for this appointment outranks the payload's
+    // UTM (real case: setter pasted the wrong booking link, so the UTM keyword
+    // is simply wrong and every webhook re-fire would restore the error).
+    const { data: bookingResolution } = await supabase
+      .from("adsv2_booking_resolutions")
+      .select("keyword_normalized, subscriber_id")
+      .eq("appointment_key", appointment_id)
+      .maybeSingle();
+
     const directKeywordNormalized = normalizeKeyword(extractKeywordFromPayload(body));
     const fallbackKeyword = directKeywordNormalized
       ? null
@@ -283,9 +293,16 @@ export async function POST(req: NextRequest) {
           eventAt: event_at,
           body,
         });
-    const keywordNormalized = directKeywordNormalized || fallbackKeyword?.keywordNormalized || null;
+    const keywordNormalized =
+      normalizeKeyword(bookingResolution?.keyword_normalized) ||
+      directKeywordNormalized ||
+      fallbackKeyword?.keywordNormalized ||
+      null;
     const keywordRaw = keywordNormalized ? displayKeyword(keywordNormalized) : null;
-    const subscriberId = fallbackKeyword?.subscriberId || extractManychatSubscriberId(body);
+    const subscriberId =
+      bookingResolution?.subscriber_id ||
+      fallbackKeyword?.subscriberId ||
+      extractManychatSubscriberId(body);
 
     const { data, error } = await supabase
       .from("ghl_appointments")
