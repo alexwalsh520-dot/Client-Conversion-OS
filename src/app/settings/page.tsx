@@ -71,6 +71,7 @@ const TAB_LABELS: Record<string, string> = {
   "/log": "Change Log",
   "/settings": "Settings",
   "/setter-response-time": "Setter Response Time",
+  "/lead-magnet": "Lead Magnet Funnel",
   "/partner-onboarding": "Client Onboarding",
   "/testimonials": "Testimonials",
   "/testimonials/videos": "Video Testimonials",
