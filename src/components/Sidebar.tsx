@@ -36,6 +36,7 @@ import {
   Factory,
   Film,
   Timer,
+  Magnet,
 } from "lucide-react";
 
 const navItems = [
@@ -45,6 +46,7 @@ const navItems = [
   { href: "/sales-hub", label: "Sales Hub", icon: BarChart3 },
   { href: "/time-to-eat", label: "Time to Eat", icon: Utensils },
   { href: "/setter-response-time", label: "Setter Response Time", icon: Timer },
+  { href: "/lead-magnet", label: "Lead Magnet Funnel", icon: Magnet },
   { href: "/coaching", label: "Coaching", icon: Users },
   { href: "/partner-onboarding", label: "Client Onboarding", icon: Handshake },
   { href: "/testimonials", label: "Testimonials", icon: Star },
@@ -125,6 +127,8 @@ export default function Sidebar() {
       // Setter Response Time rides on Sales Hub access (it's the front-facing
       // cut of the same response-times data).
       (item.href === "/setter-response-time" && allowedTabs?.includes("/sales-hub")) ||
+      // Lead Magnet Funnel rides on Sales Hub access the same way.
+      (item.href === "/lead-magnet" && allowedTabs?.includes("/sales-hub")) ||
       // Video Testimonials manager rides on Coaching access (view + download).
       (item.href === "/testimonials/videos" && allowedTabs?.includes("/coaching"))
     );
