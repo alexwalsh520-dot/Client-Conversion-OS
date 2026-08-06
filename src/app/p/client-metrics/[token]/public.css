@@ -1,0 +1,345 @@
+/* Public client call-metrics view — strip ALL CCOS app chrome so the client
+   sees only their call numbers, full-bleed, with no sidebar/nav into the rest
+   of the app. Self-contained dark palette (no dependency on the app theme
+   toggle). Mirrors the /p/setters share-view styling. */
+
+.app-layout:has(.pub-cm-page) .sidebar,
+.app-layout:has(.pub-unavailable) .sidebar {
+  display: none !important;
+}
+
+.app-layout:has(.pub-cm-page) .main-content,
+.app-layout:has(.pub-unavailable) .main-content {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+}
+
+/* Clean "link not available" state — no data, no stack traces. */
+.pub-unavailable {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: #050505;
+  padding: 24px;
+}
+
+.pub-unavailable-card {
+  max-width: 420px;
+  text-align: center;
+  background: #0f0f12;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  padding: 40px 32px;
+}
+
+.pub-unavailable-card h1 {
+  margin: 0 0 12px;
+  font-size: 20px;
+  font-weight: 600;
+  color: #f5f5f5;
+}
+
+.pub-unavailable-card p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #9a9aa2;
+}
+
+/* ── Dashboard ─────────────────────────────────────────────────────────── */
+
+.pub-cm-page {
+  min-height: 100vh;
+  background: #050505;
+  color: #f5f5f5;
+  padding: 20px 16px 48px;
+  font-size: 14px;
+}
+
+.pub-cm-inner {
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.pub-cm-header h1 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.pub-live-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  font-size: 12px;
+  color: #9a9aa2;
+}
+
+.pub-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #34d399;
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.15);
+  animation: pub-cm-pulse 2s ease-in-out infinite;
+}
+
+@keyframes pub-cm-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+.pub-refresh-btn {
+  margin-left: auto;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #121216;
+  color: #e7e7ee;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pub-refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Month switcher (matches the tracker's month tabs). */
+.pub-month-nav {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0 12px;
+}
+
+.pub-month-nav .pub-refresh-btn {
+  margin-left: 0;
+  white-space: nowrap;
+}
+
+.pub-month-arrow {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #121216;
+  color: #e7e7ee;
+  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  font-size: 15px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.pub-month-arrow:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.pub-month-nav .pub-month-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e7e7ee;
+  min-width: 130px;
+  text-align: center;
+}
+
+.pub-month-nav .pub-month-chip {
+  font-size: 11px;
+  font-weight: 700;
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.12);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+
+/* Stat cards — tappable, the active one drives the list below. */
+.pub-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+}
+
+@media (max-width: 760px) {
+  .pub-stat-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .pub-stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.pub-stat {
+  background: #0f0f12;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  padding: 14px 14px 12px;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.pub-stat.is-active {
+  border-color: rgba(52, 211, 153, 0.55);
+  background: rgba(52, 211, 153, 0.06);
+}
+
+.pub-stat .pub-stat-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #8f8f98;
+  margin: 0 0 6px;
+  white-space: nowrap;
+}
+
+.pub-stat .pub-stat-value {
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.pub-stat .pub-stat-sub {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: #8f8f98;
+}
+
+/* Who's behind the number. */
+.pub-list {
+  margin-top: 18px;
+  background: #0f0f12;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.pub-list-title {
+  padding: 12px 14px 0;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #8f8f98;
+  margin: 0;
+}
+
+.pub-list-scroll {
+  overflow-x: auto;
+}
+
+.pub-list table {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.pub-list th,
+.pub-list td {
+  padding: 9px 10px;
+  text-align: left;
+  font-size: 13px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  white-space: nowrap;
+}
+
+.pub-list th {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #8f8f98;
+  border-top: none;
+}
+
+.pub-list th:first-child,
+.pub-list td:first-child {
+  padding-left: 14px;
+  color: #c9c9d1;
+}
+
+.pub-list th:last-child,
+.pub-list td:last-child {
+  padding-right: 14px;
+}
+
+.pub-cell-name {
+  font-weight: 600;
+  color: #f5f5f5;
+}
+
+@media (max-width: 420px) {
+  .pub-list th,
+  .pub-list td {
+    padding: 8px 6px;
+    font-size: 12px;
+  }
+}
+
+/* Status chips. */
+.pub-chip {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 3px 9px;
+  white-space: nowrap;
+}
+
+.pub-chip-upcoming {
+  color: #60a5fa;
+  background: rgba(96, 165, 250, 0.12);
+}
+
+.pub-chip-taken {
+  color: #e7e7ee;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.pub-chip-closed {
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.12);
+}
+
+.pub-chip-no {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+}
+
+/* Rules footnote + error/loading states. */
+.pub-rules {
+  margin-top: 18px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #8f8f98;
+}
+
+.pub-rules strong {
+  color: #c9c9d1;
+}
+
+.pub-state {
+  padding: 48px 16px;
+  text-align: center;
+  color: #9a9aa2;
+  font-size: 14px;
+}
+
+.pub-state.pub-state-error {
+  color: #f87171;
+}
