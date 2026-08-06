@@ -17,9 +17,10 @@
 //   * A blank "Call Taken" cell means the call hasn't happened yet — those rows
 //     are the UPCOMING bucket. "Yes"/"No" is the decider for taken; a WIN
 //     outcome is the decider for closed; AOV = cash collected ÷ closes.
-//   * ?month=YYYY-MM navigates whole calendar months (matching the tracker's
-//     month tabs), clamped between Jan 2026 and next month — a full-month
-//     window is what keeps future upcoming calls visible.
+//   * ?from=YYYY-MM-DD&to=YYYY-MM-DD picks the date window. Default is the
+//     current calendar month (full month, so future upcoming calls are
+//     visible). Clamped to the tracker's range and capped at a year so a
+//     hostile query can't fan out over unbounded sheet reads.
 //   * Only call-level facts the client already owns leave this route: date,
 //     name, setter, closer, status, and cash on closed deals. No call notes,
 //     no recording links, no ManyChat links.
@@ -43,7 +44,11 @@ const NO_STORE_HEADERS = {
 };
 
 // The tracker's first month tab is JANUARY 2026.
-const EARLIEST_MONTH = "2026-01";
+const EARLIEST_DATE = "2026-01-01";
+// Widest window one request may span — keeps the tab fan-out bounded.
+const MAX_RANGE_DAYS = 366;
+// How far past today the window may reach (calls get booked ahead).
+const MAX_FUTURE_DAYS = 92;
 
 // Per-token rate limit (per instance): plenty for a dashboard someone leaves
 // open, hostile to token-guessing scripts.
@@ -70,20 +75,25 @@ function etTodayIso(): string {
   }).format(new Date());
 }
 
-/** "2026-08" + 1 → "2026-09" (handles year rollover). */
-function shiftMonth(month: string, delta: number): string {
-  const [y, m] = month.split("-").map(Number);
-  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+function shiftDate(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
 }
 
-function monthBounds(month: string): { from: string; to: string } {
-  const [y, m] = month.split("-").map(Number);
+/** Full calendar month around a date — the default window. */
+function monthBounds(date: string): { from: string; to: string } {
+  const [y, m] = date.split("-").map(Number);
   const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const month = date.slice(0, 7);
   return {
     from: `${month}-01`,
     to: `${month}-${String(lastDay).padStart(2, "0")}`,
   };
+}
+
+function clampDate(value: string, min: string, max: string): string {
+  return value < min ? min : value > max ? max : value;
 }
 
 function titleCase(value: string): string {
@@ -189,23 +199,22 @@ export async function GET(
     );
   }
 
-  // 2) Resolve the month — whole calendar months, clamped to the tracker's
-  //    range. "Next month" is allowed so calls booked past month-end stay
-  //    visible as upcoming.
-  const currentMonth = etTodayIso().slice(0, 7);
-  const latestMonth = shiftMonth(currentMonth, 1);
-  const requested = req.nextUrl.searchParams.get("month") || currentMonth;
-  const month = /^\d{4}-\d{2}$/.test(requested)
-    ? requested < EARLIEST_MONTH
-      ? EARLIEST_MONTH
-      : requested > latestMonth
-        ? latestMonth
-        : requested
-    : currentMonth;
+  // 2) Resolve the date window — default the current full calendar month
+  //    (keeps future upcoming calls visible), clamped to the tracker's range.
+  const today = etTodayIso();
+  const latestDate = shiftDate(today, MAX_FUTURE_DAYS);
+  const defaults = monthBounds(today);
+  const isIsoDate = (v: string | null): v is string =>
+    !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
+  const rawFrom = req.nextUrl.searchParams.get("from");
+  const rawTo = req.nextUrl.searchParams.get("to");
+  let from = clampDate(isIsoDate(rawFrom) ? rawFrom : defaults.from, EARLIEST_DATE, latestDate);
+  let to = clampDate(isIsoDate(rawTo) ? rawTo : defaults.to, EARLIEST_DATE, latestDate);
+  if (from > to) [from, to] = [to, from];
+  if (shiftDate(from, MAX_RANGE_DAYS) < to) to = shiftDate(from, MAX_RANGE_DAYS);
 
   // 3) Live read of the tracker, scoped hard to this token's client.
   try {
-    const { from, to } = monthBounds(month);
     const allRows = await fetchSheetData(from, to);
     const rows = allRows
       .filter((row) => row.programLength !== "Subscription")
@@ -225,10 +234,12 @@ export async function GET(
 
     return NextResponse.json(
       {
-        month,
-        currentMonth,
-        earliestMonth: EARLIEST_MONTH,
-        latestMonth,
+        from,
+        to,
+        earliestDate: EARLIEST_DATE,
+        latestDate,
+        defaultFrom: defaults.from,
+        defaultTo: defaults.to,
         clientLabel: CREATORS_BY_KEY[clientKey].name,
         generatedAt: new Date().toISOString(),
         metrics: { booked, upcoming, taken, closed, cashCollected, aov },
