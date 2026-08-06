@@ -342,7 +342,7 @@ export default function LeadMagnetView() {
               marginBottom: 12,
             }}
           >
-            <StatTile label="Leads" value={String(m.leads)} sub={`${m.dialed} dialed`} />
+            <StatTile label="Leads" value={String(m.leads)} sub={`${m.dialed} with dials logged in GHL`} />
             <StatTile
               label="Median Speed to Lead"
               value={fmtDuration(m.medianSpeedToLeadSec)}
@@ -366,7 +366,7 @@ export default function LeadMagnetView() {
             <StatTile
               label="Pickup Rate"
               value={fmtPct(m.pickupRate)}
-              sub={`${m.connected} of ${m.dialed} dialed`}
+              sub={`${m.connected} pickups ÷ ${m.dialed} leads dialed`}
             />
             <StatTile
               label="Booking Rate"
@@ -494,7 +494,7 @@ export default function LeadMagnetView() {
                           color: speedColor(lead.speedToLeadSec, target),
                         }}
                       >
-                        {lead.speedToLeadSec !== null ? fmtDuration(lead.speedToLeadSec) : "never dialed"}
+                        {lead.speedToLeadSec !== null ? fmtDuration(lead.speedToLeadSec) : "no GHL dial logged"}
                       </td>
                       <td style={{ padding: "10px 14px", color: "var(--text-secondary)" }}>{lead.dials}</td>
                       <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>
