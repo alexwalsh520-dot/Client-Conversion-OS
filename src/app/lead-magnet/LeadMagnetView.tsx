@@ -17,7 +17,6 @@ import {
   CalendarDays,
   ChevronRight,
   Loader2,
-  Magnet,
   PhoneCall,
 } from "lucide-react";
 
@@ -163,16 +162,6 @@ function fmtEtTime(iso: string) {
   }).format(new Date(iso));
 }
 
-function fmtEtClock(iso: string) {
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-    timeZoneName: "short",
-  }).format(new Date(iso));
-}
-
 // Speed to lead against the 1-minute target: green inside, amber to 5 min,
 // red beyond (or never dialed).
 function speedColor(seconds: number | null, target: number) {
@@ -199,8 +188,6 @@ export default function LeadMagnetView() {
   const [data, setData] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-  const [, setTick] = useState(0);
   const inFlight = useRef<string | null>(null);
 
   const range = useMemo(
@@ -221,7 +208,6 @@ export default function LeadMagnetView() {
         if (inFlight.current !== url) return; // superseded by a newer request
         if (!res.ok) throw new Error(body?.error || "Failed to load funnel data");
         setData(body as Report);
-        setLastUpdated(new Date().toISOString());
         setError(null);
       } catch (err) {
         if (inFlight.current !== url) return;
@@ -247,18 +233,8 @@ export default function LeadMagnetView() {
     return () => window.clearInterval(id);
   }, [load, range.to]);
 
-  // Tick the "updated Xs ago" readout once a second.
-  useEffect(() => {
-    const id = window.setInterval(() => setTick((t) => t + 1), 1000);
-    return () => window.clearInterval(id);
-  }, []);
-
   const m = data?.metrics;
   const target = data?.speedTargetSeconds ?? 60;
-  const updatedAgoSec = lastUpdated
-    ? Math.max(0, Math.round((Date.now() - new Date(lastUpdated).getTime()) / 1000))
-    : null;
-  const liveRange = range.to >= etToday();
 
   const chip = (active: boolean): React.CSSProperties => ({
     padding: "7px 14px",
@@ -285,27 +261,8 @@ export default function LeadMagnetView() {
 
   return (
     <div className="fade-up" style={{ maxWidth: 1150 }}>
-      <div className="page-header" style={{ marginBottom: 16 }}>
-        <h1 className="page-title" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <Magnet size={22} style={{ color: "var(--accent)" }} />
-          Lead Magnet Funnel
-        </h1>
-        <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 4 }}>
-          #fresh-leads pings → setter dials (GHL) → sales tracker phone-set bookings. Target:
-          first dial within {target}s. A pickup is a completed call of{" "}
-          {data?.connectMinSeconds ?? 30}s+.
-          {lastUpdated ? (
-            <>
-              {" "}Updated {fmtEtClock(lastUpdated)}
-              {updatedAgoSec !== null ? ` (${updatedAgoSec}s ago)` : ""}
-              {liveRange ? " · auto-refreshes every 2 min" : ""}
-            </>
-          ) : null}
-        </p>
-      </div>
-
       {/* ── Date range ── */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "4px 0 20px" }}>
         <CalendarDays size={15} style={{ color: "var(--text-muted)" }} />
         {PRESETS.map((p) => (
           <button key={p.key} style={chip(preset === p.key)} onClick={() => setPreset(p.key)}>
