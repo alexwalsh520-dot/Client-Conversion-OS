@@ -45,6 +45,7 @@ export interface LeadCall {
   direction: "inbound" | "outbound";
   status: string;
   durationSec: number | null;
+  userId: string | null; // GHL user who placed the call
 }
 
 export interface LeadBooking {
@@ -71,8 +72,19 @@ export interface LeadJourney {
   speedToLeadSec: number | null;
   connected: boolean;
   longestCallSec: number | null;
+  setter: string | null; // GHL user who made the first dial (name)
   ghlAppointmentAt: string | null; // appointment activity in GHL (signal only)
   booking: LeadBooking | null; // sales tracker match — source of truth
+}
+
+export interface SetterStats {
+  name: string;
+  leadsDialed: number;
+  dialedWithinTarget: number;
+  avgSpeedToLeadSec: number | null;
+  medianSpeedToLeadSec: number | null;
+  pickups: number;
+  bookings: number;
 }
 
 export interface FunnelMetrics {
@@ -103,6 +115,7 @@ export interface LeadMagnetReport {
   generatedAt: string;
   slackError: string | null; // set when #fresh-leads can't be read (setup needed)
   metrics: FunnelMetrics;
+  setters: SetterStats[];
   leadList: LeadJourney[];
   /** Phone-set tracker rows in range that didn't match any Slack lead. */
   unmatchedBookings: LeadBooking[];
@@ -156,6 +169,16 @@ function phoneKey(raw: string | null | undefined): string | null {
 /** Lowercase letters only — "JosephRoemer" and "Joseph Roemer " both → "josephroemer". */
 function nameKey(raw: string | null | undefined): string {
   return (raw || "").toLowerCase().replace(/[^a-z]/g, "");
+}
+
+/** "ERIN" (tracker Setter column) → "Erin" so it merges with GHL user names. */
+function titleCaseName(raw: string): string {
+  return raw
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+    .join(" ")
+    .trim();
 }
 
 function median(values: number[]): number | null {
@@ -335,6 +358,7 @@ async function enrichFromGhl(phone: string | null): Promise<GhlEnrichment> {
           direction?: string;
           status?: string;
           dateAdded?: string;
+          userId?: string;
           meta?: { call?: { duration?: number | null } };
         }>;
       };
@@ -347,6 +371,7 @@ async function enrichFromGhl(phone: string | null): Promise<GhlEnrichment> {
           direction: msg.direction === "inbound" ? "inbound" : "outbound",
           status: msg.status || "unknown",
           durationSec: msg.meta?.call?.duration ?? null,
+          userId: msg.userId || null,
         });
       } else if (msg.messageType === "TYPE_ACTIVITY_APPOINTMENT") {
         if (!appointmentAt || msg.dateAdded < appointmentAt) appointmentAt = msg.dateAdded;
@@ -362,6 +387,23 @@ async function enrichFromGhl(phone: string | null): Promise<GhlEnrichment> {
     calls,
     appointmentAt,
   };
+}
+
+/** Resolve GHL user IDs to display first names (per-request cache). */
+async function fetchUserNames(userIds: string[]): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  await mapWithConcurrency(userIds, 3, async (id) => {
+    try {
+      const res = await ghlFetch(`/users/${id}`);
+      if (!res.ok) return;
+      const user = (await res.json()) as { name?: string; firstName?: string };
+      const name = user.firstName || user.name?.split(" ")[0];
+      if (name) names.set(id, name);
+    } catch {
+      // Unresolvable user — the setter shows by raw id below.
+    }
+  });
+  return names;
 }
 
 // ---------------------------------------------------------------------------
@@ -454,7 +496,7 @@ export async function buildLeadMagnetReport(from: string, to: string): Promise<L
 
   const claimedRowKeys = new Set<SheetRow>();
 
-  const leadList: LeadJourney[] = slackLeads.map((lead, i) => {
+  const drafts = slackLeads.map((lead, i) => {
     const ghl = enrichments[i];
     // Only calls from just before the ping onward belong to this funnel —
     // a matched contact may be older than the ping (e.g. re-opt-in).
@@ -481,22 +523,35 @@ export async function buildLeadMagnetReport(from: string, to: string): Promise<L
     if (bookingRow) matches.forEach((row) => claimedRowKeys.add(row));
 
     return {
-      slackTs: lead.slackTs,
-      pingAt: lead.pingAt,
-      dateEt: lead.dateEt,
-      name: ghlName || lead.slackName.replace(/([a-z])([A-Z])/g, "$1 $2"),
-      phone: lead.phone,
-      offer: lead.offer,
-      ghlContactId: ghl.contactId,
-      dials: outbound.length,
-      firstDialAt: firstDial?.at || null,
-      speedToLeadSec,
-      connected: connects.length > 0,
-      longestCallSec,
-      ghlAppointmentAt: ghl.appointmentAt,
-      booking: bookingRow ? toBooking(bookingRow) : null,
+      journey: {
+        slackTs: lead.slackTs,
+        pingAt: lead.pingAt,
+        dateEt: lead.dateEt,
+        name: ghlName || lead.slackName.replace(/([a-z])([A-Z])/g, "$1 $2"),
+        phone: lead.phone,
+        offer: lead.offer,
+        ghlContactId: ghl.contactId,
+        dials: outbound.length,
+        firstDialAt: firstDial?.at || null,
+        speedToLeadSec,
+        connected: connects.length > 0,
+        longestCallSec,
+        setter: null as string | null,
+        ghlAppointmentAt: ghl.appointmentAt,
+        booking: bookingRow ? toBooking(bookingRow) : null,
+      },
+      firstDialUserId: firstDial?.userId || null,
     };
   });
+
+  // Name the setter on each lead: the GHL user who made the first dial. The
+  // tracker's Setter column wins for bookings when it's filled in.
+  const dialUserIds = [...new Set(drafts.map((d) => d.firstDialUserId).filter((id): id is string => !!id))];
+  const userNames = await fetchUserNames(dialUserIds);
+  const leadList: LeadJourney[] = drafts.map((d) => ({
+    ...d.journey,
+    setter: d.firstDialUserId ? userNames.get(d.firstDialUserId) || d.firstDialUserId : null,
+  }));
 
   const unmatchedBookings = phoneSetRows
     .filter((row) => !claimedRowKeys.has(row) && row.date >= from && row.date <= to)
@@ -542,12 +597,58 @@ export async function buildLeadMagnetReport(from: string, to: string): Promise<L
     revenuePerLead: ratio(totalCash, leadList.length),
   };
 
+  // Per-setter cut. Dial stats go to whoever made the first GHL dial; a
+  // booking goes to the tracker's Setter column when filled, else the dialer.
+  const setterMap = new Map<string, SetterStats & { speeds: number[] }>();
+  const setterFor = (name: string) => {
+    const existing = setterMap.get(name);
+    if (existing) return existing;
+    const fresh = {
+      name,
+      leadsDialed: 0,
+      dialedWithinTarget: 0,
+      avgSpeedToLeadSec: null,
+      medianSpeedToLeadSec: null,
+      pickups: 0,
+      bookings: 0,
+      speeds: [] as number[],
+    };
+    setterMap.set(name, fresh);
+    return fresh;
+  };
+  for (const lead of leadList) {
+    if (lead.setter) {
+      const s = setterFor(lead.setter);
+      s.leadsDialed += 1;
+      if (lead.speedToLeadSec !== null) {
+        s.speeds.push(lead.speedToLeadSec);
+        if (lead.speedToLeadSec <= SPEED_TARGET_SECONDS) s.dialedWithinTarget += 1;
+      }
+      if (lead.connected) s.pickups += 1;
+    }
+    if (lead.booking) {
+      const bookingSetter =
+        (lead.booking.setter && titleCaseName(lead.booking.setter)) || lead.setter;
+      if (bookingSetter) setterFor(bookingSetter).bookings += 1;
+    }
+  }
+  const setters: SetterStats[] = [...setterMap.values()]
+    .map(({ speeds, ...s }) => ({
+      ...s,
+      avgSpeedToLeadSec: speeds.length
+        ? Math.round(speeds.reduce((a, b) => a + b, 0) / speeds.length)
+        : null,
+      medianSpeedToLeadSec: median(speeds),
+    }))
+    .sort((a, b) => b.leadsDialed - a.leadsDialed || b.bookings - a.bookings);
+
   return {
     from,
     to,
     generatedAt: new Date().toISOString(),
     slackError,
     metrics,
+    setters,
     leadList: leadList.sort((a, b) => b.pingAt.localeCompare(a.pingAt)),
     unmatchedBookings,
     connectMinSeconds: CONNECT_MIN_SECONDS,
