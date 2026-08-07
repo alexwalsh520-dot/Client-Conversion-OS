@@ -19,6 +19,7 @@
 // delay, corrupt, or take down the spend sync.
 // ─────────────────────────────────────────────────────────────────────────
 
+import { randomUUID } from "node:crypto";
 import { getServiceSupabase } from "@/lib/supabase";
 import { runBudgetSnapshot } from "./budget-sync";
 import { runFactsPass } from "./facts";
@@ -27,10 +28,12 @@ import { runActivitySync } from "./activity-sync";
 import { runWarehouseRefresh } from "./warehouse-sync";
 import { precomputeStandard } from "./precompute";
 import { todayEt } from "./time";
-import { bumpDataVersion, type Db } from "./db";
+import { bumpDataVersion, finishRun, startRun, type Db } from "./db";
 
-const LOCK_KEY = "sync_lock";
-const LOCK_TTL_MS = 10 * 60 * 1000;
+// How long a claim stays valid without being released. A run that has been
+// holding the lock longer than this is presumed dead and may be taken over,
+// which is what stops one killed function from blocking the sync forever.
+const LOCK_TTL_MS = 15 * 60 * 1000;
 
 /**
  * Run one optional sync step under its OWN wall-clock budget, and never let it
@@ -85,31 +88,95 @@ async function runIsolatedStep<T>(
   }
 }
 
-async function acquireLock(db: Db): Promise<boolean> {
-  const nowMs = Date.now();
-  const { data } = await db.from("adsv2_meta").select("value").eq("key", LOCK_KEY).maybeSingle();
-  const held = data?.value as { at?: number } | undefined;
-  if (held?.at && nowMs - held.at < LOCK_TTL_MS) return false; // someone is running
-  await db
-    .from("adsv2_meta")
-    .upsert(
-      { key: LOCK_KEY, value: { at: nowMs } as unknown as object, updated_at: new Date().toISOString() },
-      { onConflict: "key" },
-    );
-  return true;
+// ─────────────────────────────────────────────────────────────────────────
+// SINGLE FLIGHT (Brick 4).
+//
+// The lock this replaced was a READ, then a WRITE: select the row, decide it
+// was free, upsert it. Two runners arriving inside the same few milliseconds
+// both read a free lock and both proceeded. It never prevented a double entry;
+// it only made the window small enough to look like it had.
+//
+// The real evidence, from adsv2_sync_runs on 2026-07-31: twin budget rows 6ms
+// apart every hour at :25, and the losing twin dying mid-facts on a duplicate
+// key insert.
+//
+// The decision now happens inside ONE database statement, under a row lock
+// (adsv2_claim_sync_lock, migration 081). There is no window between the read
+// and the write because there is no separate read.
+//
+// The duplicate-key alarm on the facts inserts is deliberately left armed. It
+// is a CORRECT alarm for concurrent execution, and silencing it with an upsert
+// would hide the next concurrency bug behind a green run. This removes the
+// cause and leaves the alarm.
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface LockClaim {
+  claimed: boolean;
+  tookOver: boolean;
+  previousHolder: string | null;
+  previousAt: string | null;
 }
 
-async function releaseLock(db: Db): Promise<void> {
-  await db
-    .from("adsv2_meta")
-    .upsert(
-      { key: LOCK_KEY, value: { at: 0 } as unknown as object, updated_at: new Date().toISOString() },
-      { onConflict: "key" },
-    );
+/** Claim the sync, atomically. Exactly one concurrent caller gets claimed. */
+export async function claimSyncLock(db: Db, holder: string): Promise<LockClaim> {
+  const { data, error } = await db.rpc("adsv2_claim_sync_lock", {
+    p_holder: holder,
+    p_ttl_seconds: Math.round(LOCK_TTL_MS / 1000),
+  });
+  if (error) {
+    // A claim that cannot be READ is not a claim. Refusing to run is the safe
+    // failure: a missed sync costs one hour of freshness, while two concurrent
+    // syncs rebuilding the same window is the bug this exists to stop.
+    throw new Error(`could not claim the sync lock: ${error.message}`);
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { claimed?: boolean; took_over?: boolean; previous_holder?: string | null; previous_at?: string | null }
+    | undefined;
+  return {
+    claimed: Boolean(row?.claimed),
+    tookOver: Boolean(row?.took_over),
+    previousHolder: row?.previous_holder ?? null,
+    previousAt: row?.previous_at ?? null,
+  };
+}
+
+/**
+ * Leave one row in the sync history saying what happened, and never let writing
+ * it change the outcome.
+ *
+ * The loser's whole job is to stand down cheaply. If its bookkeeping write
+ * threw, the twin would come back as a 500 instead of a clean skip, and the
+ * cron would look broken on exactly the runs where the lock was working
+ * perfectly. Same law as the door's two logs: losing a log line is a cost worth
+ * paying; losing the correct outcome to save a log line is not.
+ */
+async function note(db: Db, source: string, detail: Record<string, unknown>): Promise<void> {
+  try {
+    const id = await startRun(db, source);
+    await finishRun(db, id, { status: "ok", durationMs: 0, detail });
+  } catch {
+    // Deliberately silent.
+  }
+}
+
+/** Release, holder-scoped. A runner that lost its lock to a TTL takeover must
+ *  never free the lock the new runner is holding. */
+async function releaseSyncLock(db: Db, holder: string): Promise<void> {
+  try {
+    await db.rpc("adsv2_release_sync_lock", { p_holder: holder });
+  } catch {
+    // A release that fails is survivable: the TTL takes the lock back. Letting
+    // this throw out of a finally block would replace the sync's real result,
+    // including its real error, with a bookkeeping failure.
+  }
 }
 
 export interface SyncResult {
   ran: boolean;
+  /** Brick 4. True when another runner already held the lock and this one
+   *  stood down before fetching or writing anything at all. */
+  skipped?: boolean;
+  reason?: string;
   budget?: unknown;
   budgetError?: string;
   facts?: unknown;
@@ -129,7 +196,29 @@ export async function runAdsV2Sync(
   opts: { factsOnly?: boolean } = {},
 ): Promise<SyncResult> {
   const db = getServiceSupabase();
-  if (!(await acquireLock(db))) return { ran: false };
+
+  // A holder id per invocation, so the release can be holder-scoped and a
+  // takeover names who it took over from. Never reused across runs.
+  const holder = `sync-${randomUUID()}`;
+  const claim = await claimSyncLock(db, holder);
+  if (!claim.claimed) {
+    // The loser stands down BEFORE any fetch and before any write, and leaves
+    // one row behind saying so. A twin that vanishes silently is a twin nobody
+    // can prove stopped happening, and proving it is the point.
+    const reason = `a sync is already running (holder ${claim.previousHolder ?? "unknown"}, claimed at ${claim.previousAt ?? "an unknown time"}). This runner stopped before fetching or writing anything.`;
+    await note(db, "skipped", { reason, holder, held_by: claim.previousHolder, held_since: claim.previousAt });
+    return { ran: false, skipped: true, reason };
+  }
+  if (claim.tookOver) {
+    // A takeover means the previous run never released, which means it died.
+    // It is recorded rather than passed over: a sync that has to be recovered
+    // from is a fact about the system, not an implementation detail.
+    await note(db, "lock_takeover", {
+      reason: `the previous sync (holder ${claim.previousHolder}) never released its lock and its claim had aged past the ${Math.round(LOCK_TTL_MS / 60000)} minute limit, so this run took it over. The previous run did not finish.`,
+      took_over_from: claim.previousHolder,
+      took_over_at: claim.previousAt,
+    });
+  }
 
   const result: SyncResult = { ran: true };
   try {
@@ -193,6 +282,6 @@ export async function runAdsV2Sync(
 
     return result;
   } finally {
-    await releaseLock(db);
+    await releaseSyncLock(db, holder);
   }
 }

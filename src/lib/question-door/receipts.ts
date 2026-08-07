@@ -200,6 +200,11 @@ interface CoverageRow {
   awaiting_cash_usd_cents: number;
   unassigned_awaiting_wins: number;
   misc_chat_awaiting_overlap: number;
+  /** Brick 4. Optional so a pre-080 coverage function still reads cleanly
+   *  rather than turning every money answer into an error. */
+  human_confirmed_non_ad_wins?: number;
+  unbucketed_resolved_wins?: number;
+  unbucketed_resolved_cash_usd_cents?: number;
 }
 
 function pct(part: number, whole: number): number {
@@ -271,6 +276,22 @@ export async function coverageFor(
     );
   }
 
+  // BRICK 4. The gap now has two different kinds of row in it, and a reader who
+  // cannot tell them apart cannot tell how much work is actually outstanding.
+  const reviewed = Number(r.human_confirmed_non_ad_wins) || 0;
+  if (reviewed > 0) {
+    parts.push(
+      `${reviewed} win${reviewed === 1 ? " in" : "s in"} this window ${reviewed === 1 ? "has" : "have"} been reviewed by a person who confirmed it is not an ad sale.`,
+    );
+  }
+  const unbucketed = Number(r.unbucketed_resolved_wins) || 0;
+  if (unbucketed > 0) {
+    const cash = Number(r.unbucketed_resolved_cash_usd_cents) || 0;
+    parts.push(
+      `${unbucketed} of those, worth ${(cash / 100).toFixed(2)} USD, are still counted in the awaiting-review gap even though a person HAS classified them. Their callType is not "Miscellaneous Chat", and certainty_buckets v1 defines misc chat strictly by that field, so no signed bucket covers them. They are counted in the gap rather than moved, because understating coverage is allowed and inventing a bucket nobody signed is not. This is a decision for the owner, not for this read.`,
+    );
+  }
+
   return {
     window_wins_total: total,
     window_cash_usd_cents_total: cashTotal,
@@ -319,6 +340,21 @@ export interface CaveatInput {
   coverage: CoverageBlock | null;
   /** True when the roster came from the fallback list, not the registry. */
   rosterFallback: boolean;
+  /**
+   * TRUE when this answer actually reports money.
+   *
+   * Two of the caveat rules below are statements ABOUT money: the sales-lag
+   * understatement and the AUD conversion. Brick 2 fired them on any answer
+   * with a window, which was harmless while every windowed question was a money
+   * question. Brick 4's capture_health is the first that is not, and it came
+   * back carrying "its cash and close numbers will keep rising" on an answer
+   * that reports no cash and no closes at all.
+   *
+   * Brick 2 made this exact point about a currency note that fired on the wrong
+   * creator: a caveat that fires when it does not apply trains the reader to
+   * skip caveats, which costs more than the caveat was ever worth.
+   */
+  money: boolean;
   /** The question's own standing note, carried into the caveats. */
   note?: string;
   now: Date;
@@ -349,8 +385,9 @@ export async function buildCaveats(db: Db, input: CaveatInput): Promise<CaveatRe
   // backward compatibility and appears here so one field carries them all.
   if (input.note) caveats.push(input.note);
 
-  // RULE 1: a window ending inside the sales lag understates itself.
-  if (input.window && daysAgo(input.window.to, input.now) <= 14) {
+  // RULE 1: a window ending inside the sales lag understates itself. MONEY
+  // answers only: an answer that reports no cash has no cash to understate.
+  if (input.money && input.window && daysAgo(input.window.to, input.now) <= 14) {
     cite(
       "sales_lag",
       "Sales lag is a median of 2 days and a p90 of 13 days, so a window ending in the last fortnight understates itself.",
@@ -372,8 +409,10 @@ export async function buildCaveats(db: Db, input: CaveatInput): Promise<CaveatRe
     .map((v) => v.toLowerCase());
   const touched = new Set([...input.clients.map((c) => String(c).toLowerCase()), ...named]);
 
-  // RULE 3: spend for a non-USD ad account has been converted.
-  if ([...NON_USD_AD_ACCOUNTS].some((c) => touched.has(c))) {
+  // RULE 3: spend for a non-USD ad account has been converted. MONEY answers
+  // only, for the same reason: this is a statement about a number the answer
+  // has to be reporting for the note to mean anything.
+  if (input.money && [...NON_USD_AD_ACCOUNTS].some((c) => touched.has(c))) {
     cite(
       "pricing_currency",
       "Revenue reports in USD. Jake's ad account bills in AUD and spend converts at the synced rate.",
@@ -438,6 +477,8 @@ export interface AssembleInput {
   rosterFallback: boolean;
   exclusions: AnswerExclusion[];
   definitionKeys: readonly string[];
+  /** TRUE when this answer reports money. Gates the two money-only caveats. */
+  money?: boolean;
   /**
    * SIGNED registry definitions this answer APPLIED, by name.
    *
@@ -462,6 +503,7 @@ export async function assembleReceipt(input: AssembleInput): Promise<AnswerRecei
     stale,
     coverage: input.coverage,
     rosterFallback: input.rosterFallback,
+    money: input.money ?? false,
     note: input.note,
     now: input.now,
   });

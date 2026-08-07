@@ -313,6 +313,10 @@ export async function askQuestion(input: AskInput, opts: AskOptions = {}): Promi
       rosterFallback,
       exclusions,
       definitionKeys,
+      // Whether this answer reports money, so the two money-only caveat rules
+      // (sales lag, AUD conversion) do not fire on a trust answer that reports
+      // no cash at all.
+      money: decl.money,
       // The signed rules this answer applied: the ones the question standingly
       // leans on, plus any the RUN resolved (a ruleset's components are only
       // known once the ruleset has been loaded). Brick 2 declared these and

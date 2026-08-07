@@ -1,7 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────
-// THE LOCKED QUESTION LIST — fourteen questions.
-// Build 4 opened with twelve; Brick 3 added kill_scale_read and health_check
-// and changed none of the original twelve.
+// THE LOCKED QUESTION LIST — seventeen questions.
+// Build 4 opened with twelve; Brick 3 added kill_scale_read and health_check;
+// Brick 4 added coverage_report, resolution_queue and capture_health. Neither
+// brick changed a single one of the questions before it.
 //
 // THE TEMPLATE RULE, which is the heart of Build 4: every allowed question maps
 // to exactly ONE fixed template that lives here, is unit-tested, and is the only
@@ -41,8 +42,11 @@ import {
   requireRange,
   requireText,
 } from "./params";
+import { capture_health } from "./capture-health";
+import { coverage_report } from "./coverage-report";
 import { health_check, META_LIVE_SOURCE } from "./health-check";
 import { kill_scale_read } from "./kill-scale";
+import { resolution_queue } from "./resolution-queue";
 import { BadParams, type AsOf, type QuestionEntry, type TemplateContext } from "./types";
 
 // The stored places, named once so every answer spells them the same way.
@@ -61,6 +65,11 @@ const S_BUDGETS = "adsv2_budget_snapshots";
 const S_REG_DEFS = "registry_definitions";
 const S_REG_ENTS = "registry_entities";
 const S_COPY = "ad_creative_copy";
+// Brick 4's stored places: the capture pipes themselves.
+const S_KW_EVENTS = "ads_keyword_events";
+const S_DM_MSGS = "dm_conversation_messages";
+const S_TRACKER = "sales_tracker_rows";
+const S_REG_KWS = "registry_keywords";
 
 /** Rows arrive from the database as loose objects; this is the honest name. */
 type Row = Record<string, unknown>;
@@ -894,6 +903,22 @@ const define: QuestionEntry = {
 //     Brick 3's law is that no existing template's numbers change.
 // ─────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────
+// 15. coverage_report, 16. resolution_queue and 17. capture_health — BRICK 4,
+//     the trust pack. Like Brick 3's pair, each lives in its own file because
+//     each is substantial, and each is an entry on THIS list and nowhere else.
+//
+//     The three go together on purpose and in this order:
+//       coverage_report   how big is the gap, and is it shrinking
+//       resolution_queue  which rows, so a person can shrink it
+//       capture_health    is the gap being refilled faster than it is cleared
+//
+//     Brick 2 made coverage honest. These make it IMPROVE. Nothing here changed
+//     the numbers of any earlier question; what changed the stored facts was
+//     the labeler (migrations 078 and 079), which is a separate thing and is
+//     enumerated in docs/truthlayer-brick4-report.md.
+// ─────────────────────────────────────────────────────────────────────────
+
 /** THE LOCKED LIST. Order is the order a caller should read them in. */
 export const QUESTIONS: readonly QuestionEntry[] = [
   metric_value,
@@ -908,6 +933,9 @@ export const QUESTIONS: readonly QuestionEntry[] = [
   kill_scale_inputs,
   kill_scale_read,
   health_check,
+  coverage_report,
+  resolution_queue,
+  capture_health,
   data_health,
   define,
 ];
@@ -942,6 +970,12 @@ export const ALL_KNOWN_SOURCES: readonly string[] = [
   S_REG_ENTS,
   S_COPY,
   META_LIVE_SOURCE,
+  // Brick 4. The capture pipes. ads_keyword_events and the raw DM messages were
+  // always read by the engine; Brick 4 is the first time a QUESTION names them.
+  S_KW_EVENTS,
+  S_DM_MSGS,
+  S_TRACKER,
+  S_REG_KWS,
 ];
 
 export type { AsOf };

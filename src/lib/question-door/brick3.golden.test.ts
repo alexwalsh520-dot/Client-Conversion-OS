@@ -292,8 +292,15 @@ test("GOLDEN LIVE: both new questions are on the locked list and reachable only 
   const keys = describeDoor().map((q) => q.question_key);
   assert.ok(keys.includes("kill_scale_read"));
   assert.ok(keys.includes("health_check"));
-  // Brick 3 adds two and changes none.
-  assert.equal(keys.length, 14);
+  // Brick 3 added two and changed none. Brick 4 added three more and changed
+  // none, so the list is 17. This is the ONE assertion Brick 4 updated in a
+  // Brick 3 golden test, and it is updated because the locked list grew on
+  // purpose: it is a count of certified questions, not a behaviour.
+  assert.equal(keys.length, 17);
   // The pre-existing kill_scale_inputs is untouched and still answering.
   assert.ok(keys.includes("kill_scale_inputs"));
+  // Brick 3's two are still here, unchanged, alongside Brick 4's three.
+  for (const k of ["coverage_report", "resolution_queue", "capture_health"]) {
+    assert.ok(keys.includes(k), `${k} must be on the locked list`);
+  }
 });

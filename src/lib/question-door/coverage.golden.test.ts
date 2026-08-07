@@ -127,15 +127,29 @@ test(
   async () => {
     const c = await coverageFor(liveDb(), ["tyson"], "2026-06-24", "2026-07-31");
     assert.ok(c);
-    // The four locked organic sales, classified by the registry keyword list.
+    // The four locked organic sales. Brick 2 classified these by the registry
+    // keyword list alone, because is_organic was false on all four. Brick 4's
+    // labeler part C now sets the flag at the source too, so both routes agree.
     assert.ok(c.buckets.organic.wins >= 4, `expected at least 4 organic wins, got ${c.buckets.organic.wins}`);
-    // Real, unclassified money is visible rather than hidden by the filter.
+    // Real, unclassified money is still visible rather than hidden by the filter.
     assert.ok(c.buckets.awaiting_review.wins > 0);
-    // The misc-chat overlap is REPORTED rather than silently resolved. Every
-    // misc-chat win in this window is also awaiting review, so misc_chat is 0
-    // and the overlap is stated in the note. Moving those rows belongs to the
-    // labeler; this read never flatters coverage by claiming them.
-    assert.match(c.note, /Miscellaneous Chat/);
+
+    // ── CHANGED BY BRICK 4, DELIBERATELY ────────────────────────────────
+    // This assertion used to be `assert.match(c.note, /Miscellaneous Chat/)`.
+    //
+    // Brick 2 could only REPORT the overlap: 6 wins in this window carried the
+    // team's own "Miscellaneous Chat" label AND were awaiting review, so they
+    // counted as the gap and the note said so. Brick 2's own report called that
+    // out and said "when labeler part D lands, those rows move to misc_chat and
+    // coverage will rise".
+    //
+    // Part D has landed. Those 6 are resolved, the overlap for this window is
+    // now 0, and the sentence the old assertion matched is correctly gone. The
+    // test now pins the OUTCOME that replaced it, which is a stronger claim
+    // than the one it replaces: the rows did not just get described, they got
+    // classified.
+    assert.equal(c.buckets.misc_chat.wins, 6, "the 6 resolved misc-chat wins now count as misc chat");
+    assert.equal(c.buckets.misc_chat.cash_usd_cents, 1269800);
   },
 );
 
