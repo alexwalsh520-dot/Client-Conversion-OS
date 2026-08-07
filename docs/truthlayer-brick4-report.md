@@ -8,6 +8,11 @@ Business-wide, since the attribution floor of 2026-05-22, this brick moved **6 w
 
 **Locked list: 14 to 17.** No earlier question's numbers changed.
 
+**Two things in this report contradict what a reader might reasonably expect, and both are load-bearing:**
+
+1. The organic-break detector is **not** the per-person one the spec asked for, because the two subscriber id spaces share 1 id out of 7,585. Read "The finding that shaped the brick" before judging that design.
+2. The hourly sync double-fire **never stopped**. I said it had, from four days of clean history, and the first unattended cron cycle after deploy proved me wrong within half an hour. Read "What I first concluded, and why it was wrong" before trusting any earlier note that says the twin is gone.
+
 ---
 
 ## The finding that shaped the brick
@@ -190,13 +195,37 @@ Zero organic keyword events existed in the entire database before 2026-08-04. Th
 
 ## Part C: the sync single-flight
 
-### What I found, and it is not what the standing prompt describes
+### What I first concluded, and why it was wrong
 
-The standing prompt (`CCOS-SyncLock-Fix-Opus-Prompt.md`) documents twin runs every hour at :25, pinned to 2026-07-31. **That is no longer happening.** Over the four days to 2026-08-07, `adsv2_sync_runs` shows exactly one budget row and one facts row per hour, with zero duplicate-key errors. The only hours with doubles are three on 2026-08-04, which is the day of the Jake status-null incident and its manual re-runs.
+My first read of this was: the standing prompt (`CCOS-SyncLock-Fix-Opus-Prompt.md`) documents twin runs every hour at :25 pinned to 2026-07-31, and over the four days to 2026-08-07 `adsv2_sale_runs` showed exactly one budget row and one facts row per hour with zero duplicate-key errors, so the chronic double-fire had stopped on its own.
 
-So I could not reproduce the chronic hourly double-fire, and I am not going to claim I fixed something I could not observe failing.
+**That conclusion was wrong, and the first unattended cron cycle after deploy disproved it.**
 
-**The race is still real, and it still shipped.** `acquireLock()` was a read, then a write:
+At 10:25 UTC on 2026-08-07, with no human involved:
+
+| source | status | started_at | duration_ms |
+|---|---|---|---|
+| budget | ok | 10:25:04.231 | 1819 |
+| facts | ok | 10:25:06.133 | 6425 |
+| **skipped** | **ok** | **10:25:12.242** | **0** |
+| precompute | ok | 10:25:12.714 | 34938 |
+| media | ok | 10:25:47.719 | 65772 |
+| activity | ok | 10:26:53.597 | 1986 |
+| warehouse | ok | 10:26:55.691 | 7500 |
+
+> a sync is already running (holder sync-5e5763f8-ac51-44a4-9a30-cc101ef9df54, claimed at 2026-08-07T10:25:04.181+00:00). This runner stopped before fetching or writing anything.
+
+**A second invocation still arrives every cycle.** It was there the whole time. I could not see it in the history because the OLD code stood down SILENTLY: `if (!(await acquireLock(db))) return { ran: false };` wrote no row at all. Absence of duplicate rows was not evidence of absence of a twin; it was evidence that the loser left no trace.
+
+The reason the old lock mostly held is timing. Today's twin arrived **8 seconds** after the winner, and 8 seconds is far outside the read-then-write race window, so the old check caught it. The 2026-07-31 evidence has twins **6ms** apart, which is inside that window, so both proceeded and the loser died on a duplicate key. Same bug every hour; whether it did damage depended on how close together the two invocations landed.
+
+So the honest statement is the opposite of my first one: **the double-fire never stopped, the old lock was quietly absorbing most of it, and the duplicate-key errors were the unlucky subset.** The fix now catches every one atomically regardless of timing, and records each one so the twin is finally visible instead of being inferred from wreckage.
+
+One thing this brick does NOT establish: whether the twin arrives on every single cycle or only some. I have one unattended cycle of evidence. Every future cycle now writes a `skipped` row when a twin arrives, so a week of `adsv2_sync_runs` will answer it without anyone having to instrument anything.
+
+**Worth chasing separately:** the second invocation's SOURCE is still unidentified. Single-flight makes it harmless, and it is now measurable, but something is calling that endpoint twice and nobody has found what.
+
+**The race is real, and the fix shipped.** `acquireLock()` was a read, then a write:
 
 ```ts
 const { data } = await db.from("adsv2_meta").select(...)   // read
@@ -429,7 +458,7 @@ A ran the whole pipeline in 130 seconds. B stood down in 3.2 seconds, before any
 
 **One budget row. One facts row. Zero duplicate-key errors.** The twin is visible in history as a `skipped` row carrying the reason, rather than vanishing silently, which was the design requirement: a twin nobody can prove stopped happening is a twin nobody can prove stopped happening.
 
-The unattended hourly cron at :25 was not yet observable at the time of writing, since the deploy landed at 09:55 and the next cycle is 10:25. The concurrent-collision proof above is the stronger of the two anyway: a single quiet cron cycle only shows one runner arriving, while this shows two arriving together and exactly one proceeding.
+The unattended 10:25 cron cycle then closed the second half, and did more than confirm the fix: it disproved my own earlier reading of the history. See "What I first concluded, and why it was wrong" above. One budget row, one facts row, one `skipped` row from a twin nobody triggered, zero errors, and `data_version` bumped exactly once (384 to 385).
 
 ### The misc-chat recoverable detector via the body-text bridge
 
@@ -443,6 +472,8 @@ The spec asked for misc-chat rows whose person "via the same body-text bridge, D
 - **`resolution_queue` reports 39 rows; `door_coverage_block` reports 41 awaiting.** Not a discrepancy. The queue reads `awaiting_review = true` on the facts, which the 2 human-confirmed non-ad rows no longer are. The coverage block folds those 2 into the gap because no signed bucket covers them. Both are right, and this is precisely the state the owner decision above would collapse.
 - **The webhook keyword miss rate is 20.3% over 14 days and 123 of 415 sales all-time.** That is the real `lead_engaged` flow gap, now counted for the first time rather than known about. It is not a regression; it is a number that had never been measured.
 - **`meta_graph_live` has a 1 hour threshold and health_check hardcodes `last_written_at: null` on the budget-snapshot entry of its own `asOf` array.** That is a Brick 3 template detail, so a permanent unknown-freshness flag remains on health_check's receipt. I did NOT change it: health_check is Brick 3's template and altering another brick's answer shape was not in scope. It is a one-line fix for whoever touches that file next.
+- **Hugo Magana, the case the spec named for the zero-cash class, is NOT in the queue, and that is right.** His row (`2026-07-04:call-20:hugo-magana`, EDGE, machine-stamped, still `awaiting_review`) carries `is_win = false`. The queue and the coverage block both scope to WINS, per `coverage v1` and `win_definition v1`, so a non-win never appears in either. No money is hidden by this: the row is $0. The zero-cash class is real and the detector does find it, currently one row, Max De Los Reyes on 2026-08-04. Worth knowing before someone looks for Hugo in the queue and concludes the filter is broken.
+- **An awaiting-review NON-win is invisible to every certified answer.** That follows from the signed definitions rather than from an oversight, and today it hides nothing, because the only such row carries no cash. It would stop being harmless the day a cash-bearing non-win row appears, and nothing currently watches for that.
 - **The three new questions add no crons and no automation.** They read and report. Nothing auto-executes.
 
 ---
