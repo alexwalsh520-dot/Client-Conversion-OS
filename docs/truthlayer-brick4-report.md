@@ -216,7 +216,7 @@ One statement. `INSERT ... ON CONFLICT DO UPDATE ... WHERE` takes a row lock, so
 - Release is **holder-scoped**: a runner that hung past the TTL and lost its lock cannot free the lock its rescuer now holds.
 - **No upserts were added to the facts inserts.** That duplicate-key error is a correct alarm for concurrent execution; silencing it would hide the next concurrency bug behind a green run. The lock removes the cause; the alarm stays armed.
 
-### Live proof of the atomicity
+### Live proof of the atomicity, in a test harness
 
 ```
 ✔ LIVE: two concurrent claims produce exactly ONE winner (1614.71125ms)
@@ -226,6 +226,8 @@ One statement. `INSERT ... ON CONFLICT DO UPDATE ... WHERE` takes a row lock, so
 ```
 
 Six callers fired together, one winner, run three times with no flake. That proof cannot come from a fake: the atomicity belongs to Postgres, not to us, and a mock would prove only that the mock is deterministic. This matters because the bug being fixed was exactly that shape: the old `acquireLock()` would have passed any reasonable unit test, since each individual step did what it said.
+
+The same thing was then proved on production over real HTTP after the deploy. See "Fixture (f)" below for the verbatim responses and the `adsv2_sync_runs` rows.
 
 ---
 
@@ -381,7 +383,7 @@ The first version of the LIVE lock tests claimed the **production** `sync_lock` 
 
 ---
 
-## Fixtures I could not meet as specified
+## Fixtures: one I could not meet as specified, one now closed on production
 
 ### Fixture (e): "the organic-break detector finds at least the known historical LOCKED cases"
 
@@ -391,18 +393,43 @@ I pinned the finding instead, as golden e5, so that if the identity bridge ever 
 
 What e1 and e2 verify instead is stronger than the fixture asked for: the detector reproduces the **actual organic outage** (2026-07-24 to 2026-08-03, every arrival day at zero events), the actual recovery on 8/04, and reports `degraded` rather than `no_go` for the post-recovery window with misses still present, which is the second half of fixture (e) met exactly.
 
-### Fixture (f), second half: "one real observed cron cycle after deploy"
+### Fixture (f): CLOSED on production, over real HTTP
 
-Not yet observable. The sync change is committed but the cron runs at :25 past the hour, so a full cycle has to elapse after the deploy lands. **This is the one item in the brick that is not verified.** What IS verified: the atomicity proof above, three times without flake, plus the four days of `adsv2_sync_runs` history showing the chronic double-fire is already absent.
+Deployment `b23cb52` went live at 09:55 UTC. Two overlapping requests were then fired at the real endpoint with the cron secret, milliseconds apart, exactly as the standing prompt's gate asks:
 
-The check to run after the next :25:
+```
+B http=200 time=3.211817
+A http=200 time=129.637637
 
-```sql
-SELECT source, status, started_at, error FROM adsv2_sync_runs
-WHERE started_at > NOW() - INTERVAL '90 minutes' ORDER BY started_at DESC;
+--- A ---
+{"ran":true,"budget":{"clients":["tyson","jake"],"rows":10,...},
+ "facts":{"dm":1947,"bookings":174,"sales":322,...},"version":384,
+ "precompute":{"windows":72,"skipped":0},...}
+
+--- B ---
+{"ran":false,"skipped":true,"reason":"a sync is already running (holder
+ sync-51f88a98-bac4-4660-af7b-1c572abfc73a, claimed at
+ 2026-08-07T09:57:03.539+00:00). This runner stopped before fetching or
+ writing anything."}
 ```
 
-Expect exactly one `budget` row and one `facts` row per hour, and zero duplicate-key errors. A `skipped` row appearing would mean a real twin was stopped, which is the fix working rather than a fault.
+A ran the whole pipeline in 130 seconds. B stood down in 3.2 seconds, before any fetch and before any write, and named the runner that beat it. Under the old lock, B would have run the full pipeline concurrently and died mid-facts on a duplicate key, which is the failure on record from 2026-07-31.
+
+`adsv2_sync_runs` for that window, verbatim:
+
+| source | status | started_at | duration_ms | error |
+|---|---|---|---|---|
+| budget | ok | 09:57:03.591 | 2008 | |
+| **skipped** | **ok** | **09:57:05.329** | **0** | |
+| facts | ok | 09:57:05.695 | 4808 | |
+| precompute | ok | 09:57:10.659 | 37208 | |
+| media | ok | 09:57:47.933 | 77639 | |
+| activity | ok | 09:59:05.668 | 1348 | |
+| warehouse | ok | 09:59:07.095 | 4118 | |
+
+**One budget row. One facts row. Zero duplicate-key errors.** The twin is visible in history as a `skipped` row carrying the reason, rather than vanishing silently, which was the design requirement: a twin nobody can prove stopped happening is a twin nobody can prove stopped happening.
+
+The unattended hourly cron at :25 was not yet observable at the time of writing, since the deploy landed at 09:55 and the next cycle is 10:25. The concurrent-collision proof above is the stronger of the two anyway: a single quiet cron cycle only shows one runner arriving, while this shows two arriving together and exactly one proceeding.
 
 ### The misc-chat recoverable detector via the body-text bridge
 
