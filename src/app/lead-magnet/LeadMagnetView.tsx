@@ -44,8 +44,19 @@ interface LeadJourney {
   speedToLeadSec: number | null;
   connected: boolean;
   longestCallSec: number | null;
+  setter: string | null;
   ghlAppointmentAt: string | null;
   booking: LeadBooking | null;
+}
+
+interface SetterStats {
+  name: string;
+  leadsDialed: number;
+  dialedWithinTarget: number;
+  avgSpeedToLeadSec: number | null;
+  medianSpeedToLeadSec: number | null;
+  pickups: number;
+  bookings: number;
 }
 
 interface FunnelMetrics {
@@ -76,6 +87,7 @@ interface Report {
   generatedAt: string;
   slackError: string | null;
   metrics: FunnelMetrics;
+  setters: SetterStats[];
   leadList: LeadJourney[];
   unmatchedBookings: LeadBooking[];
   connectMinSeconds: number;
@@ -145,6 +157,10 @@ function fmtDuration(seconds: number | null) {
 function fmtPct(rate: number | null) {
   if (rate === null || !Number.isFinite(rate)) return "—";
   return `${Math.round(rate * 100)}%`;
+}
+
+function ratio(num: number, den: number): number | null {
+  return den > 0 ? num / den : null;
 }
 
 function fmtMoney(amount: number | null) {
@@ -333,26 +349,25 @@ export default function LeadMagnetView() {
         </div>
       ) : m ? (
         <>
-          {/* ── Speed tiles ── */}
+          {/* ── Speed tiles — Leads · Dialed · Dialed ≤60s · Pickup · Booking · Avg STL ── */}
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
               gap: 12,
               marginBottom: 12,
             }}
           >
-            <StatTile label="Leads" value={String(m.leads)} sub={`${m.dialed} with dials logged in GHL`} />
+            <StatTile label="Leads" value={String(m.leads)} />
             <StatTile
-              label="Median Speed to Lead"
-              value={fmtDuration(m.medianSpeedToLeadSec)}
-              sub={`avg ${fmtDuration(m.avgSpeedToLeadSec)}`}
-              color={speedColor(m.medianSpeedToLeadSec, target)}
+              label="Leads Dialed"
+              value={String(m.dialed)}
+              sub={`${fmtPct(ratio(m.dialed, m.leads))} of leads · GHL dialer only`}
             />
             <StatTile
               label={`Dialed ≤ ${target}s`}
-              value={fmtPct(m.withinTargetRate)}
-              sub="of all leads"
+              value={String(Math.round((m.withinTargetRate ?? 0) * m.leads))}
+              sub={`${fmtPct(m.withinTargetRate)} of all leads`}
               color={
                 m.withinTargetRate === null
                   ? undefined
@@ -372,6 +387,12 @@ export default function LeadMagnetView() {
               label="Booking Rate"
               value={fmtPct(m.bookingRate)}
               sub={`${m.booked} of ${m.leads} leads`}
+            />
+            <StatTile
+              label="Avg Speed to Lead"
+              value={fmtDuration(m.avgSpeedToLeadSec)}
+              sub={`median ${fmtDuration(m.medianSpeedToLeadSec)}`}
+              color={speedColor(m.avgSpeedToLeadSec, target)}
             />
           </div>
 
@@ -442,12 +463,75 @@ export default function LeadMagnetView() {
             })}
           </div>
 
+          {/* ── By setter ── */}
+          {data!.setters.length > 0 && (
+            <div className="glass-static" style={{ padding: 0, overflowX: "auto", marginBottom: 20 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+                    {["Setter", "Leads Dialed", `≤ ${target}s`, "Avg Speed to Lead", "Median", "Pickups", "Bookings"].map((h) => (
+                      <th
+                        key={h}
+                        style={{
+                          textAlign: "left",
+                          padding: "10px 14px",
+                          color: "var(--text-muted)",
+                          fontSize: 11,
+                          textTransform: "uppercase",
+                          letterSpacing: 0.5,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {data!.setters.map((s) => (
+                    <tr key={s.name} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                      <td style={{ padding: "10px 14px", color: "var(--text-primary)", fontWeight: 600, whiteSpace: "nowrap" }}>
+                        {s.name}
+                      </td>
+                      <td style={{ padding: "10px 14px", color: "var(--text-secondary)" }}>{s.leadsDialed}</td>
+                      <td style={{ padding: "10px 14px", color: "var(--text-secondary)" }}>
+                        {s.dialedWithinTarget}
+                        {s.leadsDialed > 0 ? (
+                          <span style={{ color: "var(--text-muted)" }}>
+                            {" "}({fmtPct(ratio(s.dialedWithinTarget, s.leadsDialed))})
+                          </span>
+                        ) : null}
+                      </td>
+                      <td
+                        style={{
+                          padding: "10px 14px",
+                          fontWeight: 600,
+                          whiteSpace: "nowrap",
+                          color: speedColor(s.avgSpeedToLeadSec, target),
+                        }}
+                      >
+                        {fmtDuration(s.avgSpeedToLeadSec)}
+                      </td>
+                      <td style={{ padding: "10px 14px", color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
+                        {fmtDuration(s.medianSpeedToLeadSec)}
+                      </td>
+                      <td style={{ padding: "10px 14px", color: "var(--text-secondary)" }}>{s.pickups}</td>
+                      <td style={{ padding: "10px 14px", color: s.bookings > 0 ? "var(--success)" : "var(--text-secondary)", fontWeight: s.bookings > 0 ? 600 : 400 }}>
+                        {s.bookings}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
           {/* ── Lead-by-lead table ── */}
           <div className="glass-static" style={{ padding: 0, overflowX: "auto", marginBottom: 20 }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-                  {["Lead In (ET)", "Name", "Speed to Lead", "Dials", "Pickup", "Booked", "Call Taken", "Outcome", "Cash"].map(
+                  {["Lead In (ET)", "Name", "Setter", "Speed to Lead", "Dials", "Pickup", "Booked", "Call Taken", "Outcome", "Cash"].map(
                     (h) => (
                       <th
                         key={h}
@@ -470,7 +554,7 @@ export default function LeadMagnetView() {
               <tbody>
                 {data!.leadList.length === 0 ? (
                   <tr>
-                    <td colSpan={9} style={{ padding: 24, textAlign: "center", color: "var(--text-muted)" }}>
+                    <td colSpan={10} style={{ padding: 24, textAlign: "center", color: "var(--text-muted)" }}>
                       No lead-magnet leads in this range.
                     </td>
                   </tr>
@@ -485,6 +569,9 @@ export default function LeadMagnetView() {
                         {!lead.ghlContactId && (
                           <span style={{ color: "var(--text-muted)", fontWeight: 400 }}> · no GHL match</span>
                         )}
+                      </td>
+                      <td style={{ padding: "10px 14px", color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
+                        {lead.setter || "—"}
                       </td>
                       <td
                         style={{
