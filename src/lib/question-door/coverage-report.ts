@@ -25,6 +25,7 @@
 // here and something else in a receipt.
 // ─────────────────────────────────────────────────────────────────────────
 
+import { shiftDay, todayEt } from "@/lib/ads-v2/time";
 import { coverageFor } from "./receipts";
 import { optionalDay, rejectUnknown, requireAccount } from "./params";
 import { BadParams, type CoverageBlock, type Db, type QuestionEntry, type TemplateContext } from "./types";
@@ -36,11 +37,9 @@ function windowLength(from: string, to: string): number {
   return Math.round((b - a) / 86_400_000) + 1;
 }
 
-/** Shift an ISO day by a whole number of days, in UTC. */
-function shift(day: string, days: number): string {
-  const t = Date.parse(`${day}T00:00:00Z`) + days * 86_400_000;
-  return new Date(t).toISOString().slice(0, 10);
-}
+/** Shift an ISO day. Eastern is the ONLY day boundary this system has, so this
+ *  is the engine's own shiftDay rather than a second, quietly different one. */
+const shift = shiftDay;
 
 /**
  * The three windows immediately before this one, each the same length, newest
@@ -130,7 +129,10 @@ export const coverage_report: QuestionEntry = {
     if (Boolean(explicitFrom) !== Boolean(explicitTo)) {
       throw new BadParams("give both date_from and date_to, or neither. Half a window is not a window.");
     }
-    const yesterday = new Date(ctx.now.getTime() - 86_400_000).toISOString().slice(0, 10);
+    // Eastern, like every other window in this system. Computing "yesterday"
+    // in UTC would introduce a second day boundary that disagrees with the tab
+    // for five hours out of every twenty four.
+    const yesterday = shiftDay(todayEt(ctx.now), -1);
     const to = explicitTo ?? yesterday;
     const from = explicitFrom ?? shift(to, -13);
     if (from > to) throw new BadParams(`date_from (${from}) cannot be after date_to (${to}).`);

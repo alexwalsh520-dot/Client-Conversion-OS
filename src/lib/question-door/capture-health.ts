@@ -32,6 +32,7 @@
 // Bridging the id spaces is Brick 5 and is deliberately not attempted here.
 // ─────────────────────────────────────────────────────────────────────────
 
+import { shiftDay, todayEt } from "@/lib/ads-v2/time";
 import { optionalInt, rejectUnknown, requireAccount } from "./params";
 import { readFreshness } from "./sources";
 import type { AsOf, Db, QuestionEntry, TemplateContext } from "./types";
@@ -334,8 +335,9 @@ export const capture_health: QuestionEntry = {
     const sample = optionalInt(params, "sample", 5, 1, 25);
     const clients = account === "all" ? [...ctx.clients] : [account];
 
-    const to = new Date(ctx.now.getTime()).toISOString().slice(0, 10);
-    const from = new Date(ctx.now.getTime() - (days - 1) * 86_400_000).toISOString().slice(0, 10);
+    // Eastern days, like every other window in this system.
+    const to = todayEt(ctx.now);
+    const from = shiftDay(to, -(days - 1));
 
     const freshness = await readFreshness(ctx.db);
 
