@@ -438,6 +438,17 @@ export interface AssembleInput {
   rosterFallback: boolean;
   exclusions: AnswerExclusion[];
   definitionKeys: readonly string[];
+  /**
+   * SIGNED registry definitions this answer APPLIED, by name.
+   *
+   * Brick 2 let a question declare these and then never read the declaration,
+   * so eight questions named the rules they leaned on and none of those names
+   * reached a receipt. Brick 3's threshold law makes that unacceptable: every
+   * threshold a kill/scale verdict applies is read from the registry, and an
+   * answer that applies a signed rule without citing it is asking to be taken
+   * on trust, which is the one thing this layer exists to stop.
+   */
+  registryDefinitions?: readonly string[];
   certainty: AnswerReceipt["certainty"];
   note?: string;
 }
@@ -456,12 +467,33 @@ export async function assembleReceipt(input: AssembleInput): Promise<AnswerRecei
   });
 
   // Every metric the answer names is a definition it cited, alongside the
-  // signed registry rules the caveats came from. Two registries, both named,
-  // so a reader can go and read the source of either.
-  const definitions_cited: AnswerReceipt["definitions_cited"] = [
+  // signed registry rules the caveats came from AND the signed rules the answer
+  // actually applied. Two registries, both named, so a reader can go and read
+  // the source of either.
+  //
+  // The applied rules are resolved to their REAL versions here rather than
+  // assumed to be v1, so the day an owner signs v2 of a rule, every answer that
+  // applied it says v2 without anyone remembering to update a citation.
+  const signed = await signedDefinitions(input.db, input.now);
+  const applied: AnswerReceipt["definitions_cited"] = (input.registryDefinitions ?? []).map((name) => {
+    const d = signed.get(name);
+    return d
+      ? { registry: "registry_definitions" as const, name, version: d.version }
+      : { registry: "registry_definitions" as const, name };
+  });
+
+  const definitions_cited: AnswerReceipt["definitions_cited"] = [];
+  const seen = new Set<string>();
+  for (const c of [
     ...input.definitionKeys.map((name) => ({ registry: "warehouse.definitions" as const, name })),
     ...cited,
-  ];
+    ...applied,
+  ]) {
+    const key = `${c.registry}|${c.name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    definitions_cited.push(c);
+  }
 
   return {
     contract_version: 2,

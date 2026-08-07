@@ -262,5 +262,22 @@ export interface QuestionEntry {
     coverageClients?: readonly string[];
     /** Anything this particular run left out, on top of the standing list. */
     exclusions?: readonly AnswerExclusion[];
+    /**
+     * Signed registry definitions this RUN applied, on top of the question's
+     * standing list. A ruleset's component definitions are only known once the
+     * ruleset has been loaded, so they cannot be declared ahead of time.
+     */
+    registryDefinitionsCited?: readonly string[];
+    /**
+     * A certainty this RUN reached, overriding the question's declared one.
+     *
+     * Brick 3 needs exactly one thing the declaration cannot express: a
+     * question whose rules all come from the signed registry has to be able to
+     * say `cannot_answer` when one of those definitions is missing or unsigned.
+     * That is a property of the run, not of the question, and the alternative
+     * is worse: falling back to a built-in threshold would return a confident
+     * number computed against a rule nobody signed.
+     */
+    certainty?: AnswerReceipt["certainty"];
   }>;
 }

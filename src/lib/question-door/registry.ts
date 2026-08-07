@@ -1,5 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────
-// THE LOCKED QUESTION LIST — version 1, twelve questions.
+// THE LOCKED QUESTION LIST — fourteen questions.
+// Build 4 opened with twelve; Brick 3 added kill_scale_read and health_check
+// and changed none of the original twelve.
 //
 // THE TEMPLATE RULE, which is the heart of Build 4: every allowed question maps
 // to exactly ONE fixed template that lives here, is unit-tested, and is the only
@@ -39,6 +41,8 @@ import {
   requireRange,
   requireText,
 } from "./params";
+import { health_check, META_LIVE_SOURCE } from "./health-check";
+import { kill_scale_read } from "./kill-scale";
 import { BadParams, type AsOf, type QuestionEntry, type TemplateContext } from "./types";
 
 // The stored places, named once so every answer spells them the same way.
@@ -51,6 +55,12 @@ const S_HEALTH = "warehouse.accuracy_checks";
 const S_DM = "adsv2_dm_facts";
 const S_BOOK = "adsv2_booking_facts";
 const S_SALE = "adsv2_sale_facts";
+// Brick 3's stored places.
+const S_INSIGHTS = "ads_meta_insights_daily";
+const S_BUDGETS = "adsv2_budget_snapshots";
+const S_REG_DEFS = "registry_definitions";
+const S_REG_ENTS = "registry_entities";
+const S_COPY = "ad_creative_copy";
 
 /** Rows arrive from the database as loose objects; this is the honest name. */
 type Row = Record<string, unknown>;
@@ -872,6 +882,18 @@ const define: QuestionEntry = {
   },
 };
 
+// ─────────────────────────────────────────────────────────────────────────
+// 13. kill_scale_read and 14. health_check — BRICK 3, the first two MONEY
+//     questions on the menu. They live in their own files because each is
+//     substantial, but they are entries on THIS list and nowhere else: the
+//     template rule is unchanged, and neither one is reachable except through
+//     the door.
+//
+//     kill_scale_read supersedes nothing. kill_scale_inputs (10) stays exactly
+//     as it is, answering from a SAVED window, because callers depend on it and
+//     Brick 3's law is that no existing template's numbers change.
+// ─────────────────────────────────────────────────────────────────────────
+
 /** THE LOCKED LIST. Order is the order a caller should read them in. */
 export const QUESTIONS: readonly QuestionEntry[] = [
   metric_value,
@@ -884,6 +906,8 @@ export const QUESTIONS: readonly QuestionEntry[] = [
   attribution_share,
   leak_map,
   kill_scale_inputs,
+  kill_scale_read,
+  health_check,
   data_health,
   define,
 ];
@@ -910,6 +934,14 @@ export const ALL_KNOWN_SOURCES: readonly string[] = [
   S_DM,
   S_BOOK,
   S_SALE,
+  // Brick 3. The insights table and the budget photos were always read by the
+  // engine; Brick 3 is the first time a QUESTION names them as its own sources.
+  S_INSIGHTS,
+  S_BUDGETS,
+  S_REG_DEFS,
+  S_REG_ENTS,
+  S_COPY,
+  META_LIVE_SOURCE,
 ];
 
 export type { AsOf };

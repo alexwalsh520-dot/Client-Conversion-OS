@@ -313,7 +313,18 @@ export async function askQuestion(input: AskInput, opts: AskOptions = {}): Promi
       rosterFallback,
       exclusions,
       definitionKeys,
-      certainty: decl.certainty ?? "machine_certain",
+      // The signed rules this answer applied: the ones the question standingly
+      // leans on, plus any the RUN resolved (a ruleset's components are only
+      // known once the ruleset has been loaded). Brick 2 declared these and
+      // never read them; Brick 3 needs them on the receipt, because a verdict
+      // that applies a signed threshold without naming it cannot be audited.
+      registryDefinitions: [
+        ...new Set([...(decl.definitionsCited ?? []), ...(result.registryDefinitionsCited ?? [])]),
+      ],
+      // A run that reached its own certainty wins over the declared one. Today
+      // that is only Brick 3's `cannot_answer`, which a question must be able
+      // to reach when a signed definition it applies is missing.
+      certainty: result.certainty ?? decl.certainty ?? "machine_certain",
       note: result.note,
     });
 
