@@ -33,9 +33,23 @@ test("every card computes a value and a point without throwing", () => {
   for (const c of CARD_DEFS) {
     const v = c.value(total);
     assert.ok(v === null || Number.isFinite(v), `${c.id} value not finite`);
+    // Null is a legal point: it means "no data that day" and the chart draws
+    // a gap there (e.g. attribution coverage on a day with no tracker cash).
     const p = c.point(sampleDay);
-    assert.ok(Number.isFinite(p), `${c.id} point not finite`);
+    assert.ok(p === null || Number.isFinite(p), `${c.id} point not finite or null`);
+    if (c.line2) {
+      const p2 = c.line2.point(sampleDay);
+      assert.ok(p2 === null || Number.isFinite(p2), `${c.id} line2 point not finite or null`);
+    }
   }
+});
+
+test("attribution coverage: a day with no tracker cash is a GAP, not 0%", () => {
+  const cov = CARD_BY_ID["attribution_coverage"];
+  assert.equal(cov.point({ ...sampleDay, trackerAllCents: 0 }), null);
+  assert.equal(cov.point(sampleDay), null); // field absent entirely
+  const day = { ...sampleDay, trackerAllCents: 200_000, adsAllCents: 100_000, organicAllCents: 0, miscChatCents: 50_000, otherOriginAllCents: 0 };
+  assert.equal(cov.point(day), 0.75);
 });
 
 test("card ids are unique and every default card exists", () => {

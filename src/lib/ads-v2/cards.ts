@@ -29,8 +29,14 @@ export interface CardDef {
    *  Revenue-category cards read the payload's revenue block instead and get
    *  null until a snapshot built after the block existed serves the window. */
   value: (t: BaseMetrics, r?: RevenueCategories) => number | null;
-  /** One chart point from one ET day (0 when undefined, for a clean line). */
-  point: (d: MetricsDay) => number;
+  /** One chart point from one ET day. Null means "no data that day" and the
+   *  chart draws a GAP there, never a fake zero (a share with an empty
+   *  denominator is not 0%, it is nothing). */
+  point: (d: MetricsDay) => number | null;
+  /** Optional second line on the same card, drawn dashed on the right axis.
+   *  Used to put the day's underlying volume behind a share, so a 0% or 100%
+   *  day can be read against how much money it actually covers. */
+  line2?: { name: string; format: CardFormat; point: (d: MetricsDay) => number | null };
   /** True for cards whose number covers the whole team tracker, not only the
    *  selected account. Hidden on client share links. */
   trackerWide?: boolean;
@@ -258,9 +264,9 @@ export const CARD_DEFS: readonly CardDef[] = [
   {
     id: "attribution_coverage",
     label: "Attribution coverage",
-    meta: "Revenue with a known origin",
+    meta: "Share of revenue with a known origin",
     sentence:
-      "The share of ALL tracker revenue in the selected days with a recorded origin: an ad keyword, an organic keyword, or a call type the team wrote that states one (Miscellaneous Chat, Follow up, Outbound Call, Closer Cold Call). Whole team on every account view; the rest has no recorded origin yet.",
+      "Of all the money the whole team collected on the tracker in these days, the share where we know where the sale came from: an ad keyword, an organic keyword, or a call type the team wrote down (Miscellaneous Chat, Follow up, Outbound Call, Closer Cold Call). Days with no collected cash show a gap in the line, not a percentage. A 0% day means cash came in that day with no recorded origin. The dashed line is that day's total collected, so you can see how much money each day's percentage covers.",
     source: "Origin-recorded revenue (ads + organic + misc chats + other written origins) divided by all tracker revenue.",
     format: "pct",
     value: (_t, r) =>
@@ -270,7 +276,9 @@ export const CARD_DEFS: readonly CardDef[] = [
         : null,
     point: (d) => {
       const denom = d.trackerAllCents ?? 0;
-      if (!denom) return 0;
+      // No collected cash that day: there is nothing to attribute, so the
+      // chart shows a gap, not a made-up 0%.
+      if (!denom) return null;
       return (
         ((d.adsAllCents ?? 0) +
           (d.organicAllCents ?? 0) +
@@ -278,6 +286,11 @@ export const CARD_DEFS: readonly CardDef[] = [
           (d.otherOriginAllCents ?? 0)) /
         denom
       );
+    },
+    line2: {
+      name: "Collected that day",
+      format: "usd",
+      point: (d) => (d.trackerAllCents ?? 0) / 100,
     },
     trackerWide: true,
   },

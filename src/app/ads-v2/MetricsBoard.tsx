@@ -76,6 +76,8 @@ function axisFormat(fmt: CardFormat) {
       if (abs >= 1000) return `$${Math.round((v / 1000) * 10) / 10}k`;
       return `$${Math.round(v)}`;
     }
+    // Whole-number percent ticks: "67%", never "66.7%".
+    if (fmt === "pct") return `${Math.round(v * 100)}%`;
     return formatValue(v, fmt);
   };
 }
@@ -497,6 +499,27 @@ function MetricChartCard({
   const values = days.map((d) => def.point(d));
   const labels = days.map((d) => fmtMD(d.day));
   const axisFmt = axisFormat(def.format);
+  const chartSeries = [
+    {
+      name: def.label,
+      values,
+      color: "var(--gold)",
+      isPrimary: true,
+      fmt: (v: number) => formatValue(v, def.format),
+    },
+    ...(def.line2
+      ? [
+          {
+            name: def.line2.name,
+            values: days.map((d) => def.line2!.point(d)),
+            color: "var(--text-3)",
+            dashed: true,
+            axis: "right" as const,
+            fmt: (v: number) => formatValue(v, def.line2!.format),
+          },
+        ]
+      : []),
+  ];
 
   return (
     <div className="panel chart-card">
@@ -527,22 +550,20 @@ function MetricChartCard({
       <LineChart
         idBase={def.id}
         labels={labels}
-        series={[
-          {
-            name: def.label,
-            values,
-            color: "var(--gold)",
-            isPrimary: true,
-            fmt: (v) => formatValue(v, def.format),
-          },
-        ]}
+        series={chartSeries}
         fmt={axisFmt}
+        fmtRight={def.line2 ? axisFormat(def.line2.format) : undefined}
+        // A share can never pass 100%: the axis stops there instead of
+        // drawing headroom above an impossible value.
+        leftMax={def.format === "pct" ? 1 : undefined}
       />
       <div className="chart-legend">
-        <span className="chart-legend-item">
-          <span className="chart-sw" style={{ background: "var(--gold)" }} />
-          {def.label}
-        </span>
+        {chartSeries.map((s) => (
+          <span key={s.name} className="chart-legend-item">
+            <span className="chart-sw" style={{ background: s.color === "var(--gold)" ? "var(--gold)" : "var(--text-3)" }} />
+            {s.name}
+          </span>
+        ))}
       </div>
     </div>
   );
