@@ -575,6 +575,25 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
   // sale facts exist for the window.
   await db.rpc("adsv2_stamp_booking_links", { p_from: factFrom, p_to: bookTo });
 
+  // Truth Layer Brick 5. Keep the identity bridge current, then let it repair
+  // what the ladder above could not reach.
+  //
+  // The drain turns evidence the live capture paths enqueued into links; the
+  // recovery resolves a booking's person from its GoHighLevel contact and reads
+  // their ManyChat id off the bridge, which is the rung 073's ladder does not
+  // have. Recovery writes linked_subscriber_id and dm_et_day and only where
+  // they are null; it touches no cash column and does not recompute `taken`.
+  //
+  // Both are wrapped: a bridge problem must never fail the money sync. The
+  // bridge is a convenience over facts that are stored anyway, and the next
+  // cycle will pick up whatever this one dropped.
+  try {
+    await db.rpc("registry_person_drain_queue");
+    await db.rpc("adsv2_booking_bridge_recovery");
+  } catch (err) {
+    console.error("[adsv2] identity bridge upkeep failed, continuing:", err);
+  }
+
   // Fill any booking setter the in-memory lookup could not see. That lookup is
   // built from keyword events inside the rolling window, so a person who first
   // messaged BEFORE the window and booked inside it would otherwise lose their

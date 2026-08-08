@@ -297,7 +297,12 @@ test("GOLDEN LIVE: both new questions are on the locked list and reachable only 
   // 21. This is the ONE assertion each later brick updates in a Brick 3 golden
   // test, and it is updated because the locked list grew on purpose: it is a
   // count of certified questions, not a behaviour.
-  assert.equal(keys.length, 21);
+  
+  // none. Brick 5 added two more and changed none, so the list is 19. This is
+  // the ONE assertion later bricks update in a Brick 3 golden test, and it is
+  // updated because the locked list grew on purpose: it is a count of certified
+  // questions, not a behaviour.
+  assert.equal(keys.length, 23); // 21 after Brick 6 + person_timeline + lead_quality_read from Brick 5
   // The pre-existing kill_scale_inputs is untouched and still answering.
   assert.ok(keys.includes("kill_scale_inputs"));
   // Brick 3's two are still here, unchanged, alongside Brick 4's three.

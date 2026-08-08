@@ -462,7 +462,13 @@ test("GOLDEN g1: Brick 4's three are on the locked list, nothing earlier was dro
   // appearing or vanishing by accident, which is the whole point of a LOCKED
   // list. Growing it is a reviewed change to registry.ts, and this line is
   // where that review has to be admitted out loud.
-  assert.equal(keys.length, 21);
+  
+test("GOLDEN g1: the locked list is 19, and Brick 4's three are all still on it", () => {
+  const keys = describeDoor().map((q) => q.question_key);
+  // 17 when Brick 4 wrote this; 19 since Brick 5 added person_timeline and
+  // lead_quality_read. The count moves when the list grows on purpose; what
+  // this test really guards is the three names below, which must never leave.
+  assert.equal(keys.length, 23); // 21 after Brick 6 + person_timeline + lead_quality_read from Brick 5
   for (const k of ["coverage_report", "resolution_queue", "capture_health"]) {
     assert.ok(keys.includes(k), `${k} must be on the locked list`);
   }

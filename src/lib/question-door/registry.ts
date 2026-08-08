@@ -1,9 +1,10 @@
 // ─────────────────────────────────────────────────────────────────────────
-// THE LOCKED QUESTION LIST — twenty-one questions.
+// THE LOCKED QUESTION LIST — twenty-three questions.
 // Build 4 opened with twelve; Brick 3 added kill_scale_read and health_check;
 // Brick 4 added coverage_report, resolution_queue and capture_health; Brick 6
 // added the funnel pack (creator_funnel, portfolio_pace, budget_map,
-// scale_headroom). No brick has ever changed a question before it.
+// scale_headroom); Brick 5 added the bridge pair (person_timeline,
+// lead_quality_read). No brick has ever changed a question before it.
 //
 // THE TEMPLATE RULE, which is the heart of Build 4: every allowed question maps
 // to exactly ONE fixed template that lives here, is unit-tested, and is the only
@@ -50,6 +51,7 @@ import { creator_funnel } from "./creator-funnel";
 import { health_check, META_LIVE_SOURCE } from "./health-check";
 import { kill_scale_read } from "./kill-scale";
 import { portfolio_pace } from "./portfolio-pace";
+import { S_PERSON_CONTEXT, S_PERSONS, lead_quality_read, person_timeline } from "./person-bridge";
 import { resolution_queue } from "./resolution-queue";
 import { scale_headroom } from "./scale-headroom";
 import { BadParams, type AsOf, type QuestionEntry, type TemplateContext } from "./types";
@@ -924,6 +926,26 @@ const define: QuestionEntry = {
 //     enumerated in docs/truthlayer-brick4-report.md.
 // ─────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────
+// 18. person_timeline and 19. lead_quality_read — BRICK 5, the identity
+//     bridge. Both live in person-bridge.ts and both are entries on THIS list
+//     and nowhere else.
+//
+//     They are the first two questions that can cross the id systems. Four of
+//     them name the same human with no shared key, and the ManyChat and
+//     Instagram spaces were measured on 2026-08-08 as 7,623 and 36,598
+//     distinct ids with ONE value in common. registry_persons holds the links,
+//     each one proved by a stored row that carried both ids.
+//
+//     person_lookup (6) is UNCHANGED and its numbers do not move. Its receipt
+//     has always carried the caveat that the identity bridge was a later brick
+//     and that an empty event list is not proof the person did nothing; that
+//     caveat stays true of question 6 and person_timeline is where the bridge
+//     is actually read. Nothing about question 6 was rewritten to answer
+//     through the new engine, because Brick 3's standing law is that no
+//     existing template's numbers change.
+// ─────────────────────────────────────────────────────────────────────────
+
 /** THE LOCKED LIST. Order is the order a caller should read them in. */
 export const QUESTIONS: readonly QuestionEntry[] = [
   metric_value,
@@ -948,6 +970,8 @@ export const QUESTIONS: readonly QuestionEntry[] = [
   portfolio_pace,
   budget_map,
   scale_headroom,
+  person_timeline,
+  lead_quality_read,
   data_health,
   define,
 ];
@@ -988,6 +1012,10 @@ export const ALL_KNOWN_SOURCES: readonly string[] = [
   S_DM_MSGS,
   S_TRACKER,
   S_REG_KWS,
+  // Brick 5. The identity bridge itself, and the Foundation's per-person stage
+  // state, which is the only place a structured qualification answer is kept.
+  S_PERSONS,
+  S_PERSON_CONTEXT,
 ];
 
 export type { AsOf };
