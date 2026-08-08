@@ -276,7 +276,12 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
   for (const r of apptRows) {
     const client = r.calendar_id ? clientForSalesCalendar(r.calendar_id) : null;
     if (!client) continue;
-    const day = r.start_time ? etDay(r.start_time) : "";
+    // The day the booking was MADE (Eastern), because Booked answers "how many
+    // calls did the team book that day", not "how many calls were on the
+    // calendar that day". The scheduled call day still drives is_upcoming and
+    // the popup's Call column via start_time. Bookings with no created_at fall
+    // back to the scheduled day rather than dropping out.
+    const day = r.created_at ? etDay(r.created_at) : r.start_time ? etDay(r.start_time) : "";
     if (!day || day < factFrom || day > bookTo) continue;
     const resolution = resolutionByAppointment.get(r.appointment_id) || null;
     const kw = normalizeKeyword(r.keyword_normalized);

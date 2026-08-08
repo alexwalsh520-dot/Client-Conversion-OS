@@ -742,7 +742,7 @@ function CallHover({
     // contradiction whenever taken ran higher than booked.
     const unbooked = rows.filter((d) => !d.bookedEtDay).length;
     if (unbooked > 0) {
-      note = `${unbooked} of ${rows.length} taken ${unbooked === 1 ? "call" : "calls"} could not be hard-key linked to a sales-calendar booking, so those DMed and Booked cells are blank. Booked only counts sales-calendar bookings scheduled inside this window, which is why Taken can run higher than Booked.`;
+      note = `${unbooked} of ${rows.length} taken ${unbooked === 1 ? "call" : "calls"} could not be hard-key linked to a sales-calendar booking, so those DMed and Booked cells are blank. Booked only counts sales-calendar bookings made inside this window, which is why Taken can run higher than Booked.`;
     }
   } else if (kind === "showRate") {
     rows = details.booked;
