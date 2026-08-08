@@ -554,10 +554,30 @@ export async function findVideoAdsNeedingTranscript(clientKey: string, limit = 5
     const chunk = rows.slice(i, i + 200).map((r) => r.ad_id);
     const { data } = await db
       .from("ad_creative_transcripts")
-      .select("ad_id, status, attempts")
+      .select("ad_id, status, attempts, audio_status, on_screen_status")
       .in("ad_id", chunk);
-    for (const r of (data || []) as Array<{ ad_id: string; status: string; attempts: number }>) {
-      if (r.status === "ok" || Number(r.attempts) >= MAX_ATTEMPTS) done.add(r.ad_id);
+    for (const r of (data || []) as Array<{
+      ad_id: string;
+      status: string;
+      attempts: number;
+      audio_status: string | null;
+      on_screen_status: string | null;
+    }>) {
+      if (Number(r.attempts) >= MAX_ATTEMPTS) {
+        done.add(r.ad_id);
+        continue;
+      }
+      // A HALF-READ AD IS NOT A FINISHED AD. Nineteen of Jake's videos came out
+      // of the first backfill with their printed words captured and their spoken
+      // words lost to a download timeout: status 'ok', and a real gap. Judging
+      // this list on the row's overall status would have left those nineteen
+      // half-known forever, which is exactly the kind of quiet incompleteness
+      // this brick exists to stop.
+      //
+      // 'no_audio' and 'no_text' are FINISHED — they are facts about the ad.
+      // Only 'failed' is unfinished.
+      const halfFailed = r.audio_status === "failed" || r.on_screen_status === "failed";
+      if (r.status === "ok" && !halfFailed) done.add(r.ad_id);
     }
   }
   return rows.filter((r) => !done.has(r.ad_id)).slice(0, limit);
