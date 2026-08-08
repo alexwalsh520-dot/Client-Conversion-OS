@@ -455,9 +455,12 @@ test("GOLDEN e5: the DM and keyword id spaces really are disjoint, which is why 
 //     question carries a receipt like every old one.
 // ─────────────────────────────────────────────────────────────────────────
 
-test("GOLDEN g1: the locked list is 17, and Brick 4 added exactly three", () => {
+test("GOLDEN g1: the locked list is 19, and Brick 4's three are all still on it", () => {
   const keys = describeDoor().map((q) => q.question_key);
-  assert.equal(keys.length, 17);
+  // 17 when Brick 4 wrote this; 19 since Brick 5 added person_timeline and
+  // lead_quality_read. The count moves when the list grows on purpose; what
+  // this test really guards is the three names below, which must never leave.
+  assert.equal(keys.length, 19);
   for (const k of ["coverage_report", "resolution_queue", "capture_health"]) {
     assert.ok(keys.includes(k), `${k} must be on the locked list`);
   }

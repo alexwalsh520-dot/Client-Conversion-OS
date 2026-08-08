@@ -1,4 +1,5 @@
 import { getServiceSupabase } from "@/lib/supabase";
+import { enqueuePersonLink } from "@/lib/person-bridge-queue";
 import { findExistingInstagramContactIdForManychatLead } from "@/lib/dm-contact-linking";
 import {
   buildDmFollowupGhlNote,
@@ -537,6 +538,24 @@ export async function syncManychatEventToGhl(event: ManychatDmEvent) {
 
   const contactId = await createContact(normalizedEvent, clientLabel, fieldIds);
   await saveContactLink(clientKey, event.subscriberId, contactId);
+
+  // Truth Layer Brick 5. THIS path is hard evidence and the one above it is
+  // not, which is why only this one tells the bridge. Here the contact is
+  // CREATED for this subscriber and stamped with their manychat_user_id, so one
+  // payload genuinely carries both ids. The earlier branch reaches its contact
+  // through findExistingInstagramContactIdForManychatLead, which scores
+  // candidates on first name, last name and how close their creation times
+  // were, and accepts anything over 70 points. That is name similarity, and
+  // name similarity never creates a hard link.
+  enqueuePersonLink({
+    systemA: "manychat",
+    idA: event.subscriberId,
+    systemB: "ghl",
+    idB: contactId,
+    source: "ghl-dm-sync: the GoHighLevel contact was created for this ManyChat subscriber and stamped with their manychat_user_id",
+    confidence: "hard",
+    clientKey,
+  });
 
   let metaInboxNote;
   try {

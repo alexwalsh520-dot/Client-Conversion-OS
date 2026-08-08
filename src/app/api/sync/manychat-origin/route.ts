@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
+import { enqueuePersonLink } from "@/lib/person-bridge-queue";
 import { getServiceSupabase } from "@/lib/supabase";
 
 // Read-only ground-truth check: ask ManyChat where a buyer came from.
@@ -225,6 +226,26 @@ async function handler(req: NextRequest) {
       results.push({ subscriber_id: c.subscriberId, from_ad: null, keyword: null, control: c.isControl });
       continue;
     }
+
+    // Truth Layer Brick 5. This payload is the ONLY place in the system where a
+    // ManyChat id and an Instagram-scoped id arrive together, so it is the only
+    // thing that can ever connect a booking to the real DM thread. It used to be
+    // stored inside `raw` and left there. Now it is handed to the bridge as it
+    // happens, instead of waiting for the next full sweep of history.
+    const igId = (info.raw as { ig_id?: unknown } | null)?.ig_id;
+    if (igId) {
+      enqueuePersonLink({
+        systemA: "manychat",
+        idA: c.subscriberId,
+        systemB: "ig_scoped",
+        idB: String(igId),
+        source: "manychat_origin_checks.raw.ig_id (live origin check)",
+        confidence: "hard",
+        displayName: c.prospectName,
+        clientKey: c.client,
+      });
+    }
+
     results.push({ subscriber_id: c.subscriberId, from_ad: fromAd, keyword, control: c.isControl });
   }
 
