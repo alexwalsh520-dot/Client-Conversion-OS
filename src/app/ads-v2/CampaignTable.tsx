@@ -54,15 +54,23 @@ const DEFAULT_WIDTHS: Record<string, number> = {
 const ALL_COL_KEYS: string[] = ["name", ...METRIC_COLUMNS.map((c) => c.key)];
 const MIN_COL_WIDTH = 60;
 
-// Name column auto-fit floor: never narrower than this. There is deliberately
-// NO max: the default width always shows the longest visible label in full
-// (the table scrolls horizontally), and dragging the handle can shrink it.
+// Name column auto-fit floor: never narrower than this.
 const NAME_MIN_WIDTH = 180;
-// Fixed chrome in the name cell (checkbox, chevron, dot, ads chip, status pill,
-// cell padding) that sits beside the name text.
-const NAME_CHROME = 132;
+// Fixed chrome in the name cell that every row carries: cell padding (20+14),
+// checkbox, chevron, dot, and their flex gaps. The ads chip and status pill
+// vary per row, so they are measured per row instead of baked in here.
+const NAME_CHROME_BASE = 112;
 // The "Campaign ·" prefix separator plus its flex gaps on flat rows.
 const FLAT_SEP_WIDTH = 18;
+// The gray campaign prefix on flat rows is context, not the text being read;
+// it stops inflating auto-fit past this (and the CSS caps it to match).
+const FLAT_PREFIX_MAX = 200;
+// The first column is STICKY: if it grew as wide as the scroll container, the
+// metric columns would scroll underneath it and become unreachable. Auto-fit
+// therefore never takes more than the container minus this reserve, and a
+// manual drag is clamped a little short of the full container.
+const METRICS_PEEK = 360;
+const MANUAL_EDGE_GAP = 80;
 
 // Measure text width with a canvas, in the PAGE'S body font (the table
 // inherits it), at the largest size a name renders at. `precise` is false on
@@ -83,34 +91,48 @@ function measureText(text: string, precise: boolean): number {
   return _measureCtx ? _measureCtx.measureText(text).width : text.length * 7;
 }
 
-// Pixel width of every label as it actually RENDERS at this level: flat top
-// rows (ad set / ad levels) show "Campaign · Name" inline, and rows expanded
-// under a parent carry their indent. Measuring the rendered label (not just
-// the node's own name) is what lets auto-fit show every row in full.
+// Pixel width of every row's name cell as it actually RENDERS at this level:
+// flat top rows (ad set / ad levels) show "Campaign · Name" inline, expanded
+// rows carry their indent, and each row's own ads chip and status pill are
+// measured from their real text (a "49 ads" chip plus a FINISHED pill is
+// ~120px wider than no chip and an Active pill). Measuring the rendered row,
+// not just the node's name, is what lets auto-fit show every row in full.
 function labelWidthsForLevel(campaigns: AdsV2Node[], level: AdsV2Level, precise: boolean): number[] {
   const out: number[] = [];
   const label = (n: AdsV2Node) => n.shortName || n.name || "";
   const m = (t: string) => measureText(t, precise);
+  // Chip/pill render at 9-9.5px; scale the 13px measurement down and add
+  // their padding, border, margin, and flex gap.
+  const chipW = (n: AdsV2Node) => {
+    const ads = childCount(n);
+    return ads > 0 ? m(`${ads} ads`) * (9.5 / 13) + 32 : 0;
+  };
+  const pillW = (n: AdsV2Node) => {
+    const text = n.status === "active" ? "ACTIVE" : n.status === "finished" ? "FINISHED" : "EMPTY";
+    return m(text) * (9 / 13) * 1.06 + 30;
+  };
+  const row = (n: AdsV2Node, prefix: number, indent: number) =>
+    indent + prefix + m(label(n)) + chipW(n) + pillW(n) + NAME_CHROME_BASE;
   if (level === "campaign") {
     for (const c of campaigns) {
-      out.push(m(label(c)));
+      out.push(row(c, 0, 0));
       for (const a of c.children) {
-        out.push(m(label(a)) + 22);
-        for (const ad of a.children) out.push(m(label(ad)) + 44);
+        out.push(row(a, 0, 22));
+        for (const ad of a.children) out.push(row(ad, 0, 44));
       }
     }
   } else if (level === "adset") {
     for (const c of campaigns) {
-      const prefix = m(label(c)) + FLAT_SEP_WIDTH;
+      const prefix = Math.min(m(label(c)), FLAT_PREFIX_MAX) + FLAT_SEP_WIDTH;
       for (const a of c.children) {
-        out.push(prefix + m(label(a)));
-        for (const ad of a.children) out.push(m(label(ad)) + 22);
+        out.push(row(a, prefix, 0));
+        for (const ad of a.children) out.push(row(ad, 0, 22));
       }
     }
   } else {
     for (const c of campaigns) {
-      const prefix = m(label(c)) + FLAT_SEP_WIDTH;
-      for (const a of c.children) for (const ad of a.children) out.push(prefix + m(label(ad)));
+      const prefix = Math.min(m(label(c)), FLAT_PREFIX_MAX) + FLAT_SEP_WIDTH;
+      for (const a of c.children) for (const ad of a.children) out.push(row(ad, prefix, 0));
     }
   }
   return out;
@@ -161,10 +183,26 @@ export default function CampaignTable({
     for (const w of labelWidthsForLevel(payload.campaigns, level, measureReady)) widest = Math.max(widest, w);
     // 4% headroom: canvas kerning differs slightly from real layout. Better a
     // hair wide than a clipped name.
-    return Math.max(NAME_MIN_WIDTH, Math.ceil(widest * 1.04) + NAME_CHROME);
+    return Math.max(NAME_MIN_WIDTH, Math.ceil(widest * 1.04));
   }, [payload.campaigns, level, measureReady]);
 
-  const nameWidth = nameWidthByLevel[level] ?? nameAutoFit;
+  // Live width of the scroll container, so the sticky name column can never
+  // swallow it (metrics would scroll underneath and be unreachable).
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [containerW, setContainerW] = useState(0);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const update = () => setContainerW(el.clientWidth);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const autoCap = containerW > 0 ? Math.max(NAME_MIN_WIDTH, containerW - METRICS_PEEK) : Number.POSITIVE_INFINITY;
+  const manualCap = containerW > 0 ? Math.max(NAME_MIN_WIDTH, containerW - MANUAL_EDGE_GAP) : Number.POSITIVE_INFINITY;
+  const nameWidth = Math.min(nameWidthByLevel[level] ?? Math.min(nameAutoFit, autoCap), manualCap);
   const widthFor = useCallback(
     (k: string) => (k === "name" ? nameWidth : widths[k] ?? DEFAULT_WIDTHS[k] ?? 120),
     [nameWidth, widths],
@@ -333,7 +371,7 @@ export default function CampaignTable({
           )}
         </div>
       </div>
-      <div className="tbl-scroll">
+      <div className="tbl-scroll" ref={scrollRef}>
         <table className="ads" style={{ width: tableWidth }}>
           <colgroup>
             {ALL_COL_KEYS.map((k) => (
