@@ -398,9 +398,11 @@ test("(e2) a geo split is refused in writing, naming what is missing", { skip },
 // The locked list grew by exactly two, and nothing before it moved.
 // ─────────────────────────────────────────────────────────────────────────
 
-test("(f) the locked list is nineteen questions and Brick 5 added exactly two", { skip: false }, async () => {
+test("(f) the locked list is twenty-three questions and Brick 5 added exactly two", { skip: false }, async () => {
   const { QUESTION_KEYS } = await import("./registry");
-  assert.equal(QUESTION_KEYS.length, 19, "Brick 5 takes the locked list from seventeen to nineteen");
+  // Written as 17 -> 19 pre-merge; Brick 6 (parallel wave) landed first with its
+  // four, so the merged list is 23. Brick 5 still added exactly two.
+  assert.equal(QUESTION_KEYS.length, 23, "Bricks 5 + 6 take the locked list from seventeen to twenty-three");
   assert.ok(QUESTION_KEYS.includes("person_timeline"));
   assert.ok(QUESTION_KEYS.includes("lead_quality_read"));
   // Question 6 is untouched: no existing template's numbers change.
