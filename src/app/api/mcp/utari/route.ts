@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
 import { dedupeSalesRows, type DedupableSaleRow } from "@/lib/ads-tracker/dedupe-sales";
 import { ADSV2_SERVED_CLIENTS } from "@/lib/ads-v2/config";
-import { askQuestion, describeDoor } from "@/lib/question-door/service";
+import { askQuestion, describeDoor, describeMisses } from "@/lib/question-door/service";
 import { canonicalAdsFromDoor, UTARI_DOOR_NOTE } from "@/lib/question-door/utari-adapter";
 
 // Attribution certainty from the stamp method. HARD keys only are machine_attributed; a prospect-name
@@ -87,6 +87,33 @@ async function factoryProxy(origin: string, method: "GET" | "POST" | "PATCH", op
   return json;
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// WHO IS ASKING (Brick 8).
+//
+// This endpoint used to stamp every receipt and every log row `utari`, because
+// Utari was the only thing on the other end of it. It is not any more: Claude
+// chat sessions reach the same door through the ccos-door MCP entry, and the
+// Monday review worker will too. Three very different callers writing the same
+// name into door_ask_log makes the usage record useless for the one question it
+// exists to answer, which is "who actually leans on which question".
+//
+// So the caller may name itself with an X-Door-Caller header. The value is
+// sanitised rather than checked against a fixed list, so a new consumer does
+// not need a deploy to become visible; and it defaults to `utari`, so every
+// existing client keeps the exact behaviour it has today.
+// ─────────────────────────────────────────────────────────────────────────
+
+const DEFAULT_CALLER = "utari";
+
+export function callerFrom(req: NextRequest): string {
+  const raw = (req.headers.get("x-door-caller") || "").trim().toLowerCase();
+  // Only the shape a log row should ever contain. An unusable value falls back
+  // to the default rather than being written through: this names a caller, it
+  // is not a free text field, and it is going into the database.
+  const safe = raw.replace(/[^a-z0-9_-]/g, "").slice(0, 32);
+  return safe || DEFAULT_CALLER;
+}
+
 function authed(req: NextRequest): boolean {
   if (!TOKEN) return false; // no token configured = locked shut
   const h = req.headers.get("authorization") || "";
@@ -127,13 +154,18 @@ const TOOLS = [
       "This is the trustworthy path: every question is answered by one fixed, tested query that reads numbers computed and saved BEFORE you asked, so asking twice gives the same answer and the Ads v2 tab shows the identical figure. " +
       "No query is composed on your behalf and there is no free-form SQL. A question that is not on the list comes back refused in writing, naming the nearest allowed question. " +
       "Call it with no question_key to get the whole list with each question's parameters. " +
-      "The fourteen questions: metric_value (any defined metric for a saved window, total or per ad), yesterday_summary (yesterday's numbers plus every ad change made yesterday), change_history (what changed on an ad, ad set or campaign, with exact times and who), why_unattributed (the written reason a booking or sale carries no ad), ad_setup (how one ad is configured), person_lookup (a person by an exact id; a name returns a candidate list only), sales_cycle (days from first keyword to close), attribution_share (where a window's cash sits), leak_map (where attribution leaks), kill_scale_inputs (the facts behind a kill-or-scale call over a SAVED window, inputs only, never a verdict), kill_scale_read (the full kill-or-scale read over any trailing window), health_check (whether the ads can actually deliver right now, read LIVE from Meta), data_health (the latest daily accuracy run), define (any number's stored meaning). " +
+      "The questions: metric_value (any defined metric for a saved window, total or per ad), yesterday_summary (yesterday's numbers plus every ad change made yesterday), change_history (what changed on an ad, ad set or campaign, with exact times and who), why_unattributed (the written reason a booking or sale carries no ad), ad_setup (how one ad is configured), person_lookup (a person by an exact id; a name returns a candidate list only), sales_cycle (days from first keyword to close), attribution_share (where a window's cash sits), leak_map (where attribution leaks), kill_scale_inputs (the facts behind a kill-or-scale call over a SAVED window, inputs only, never a verdict), kill_scale_read (the full kill-or-scale read over any trailing window), health_check (whether the ads can actually deliver right now, read LIVE from Meta), coverage_report (what share of wins and cash is classified, and what is still awaiting review), resolution_queue (the awaiting-review sales a human needs to resolve), capture_health (whether the keyword capture pipes are actually flowing), creator_funnel (the whole funnel spend to cash with the rate and cost at every stage, booked and taken always side by side), portfolio_pace (the calendar month LEVEL and the weekly TREND shape, never one without the other), budget_map (every dial holding money right now, reconciled to yesterday's real spend), scale_headroom (which ad sets have earned more budget, how much, and on what date the raise is allowed), data_health (the latest daily accuracy run), define (any number's stored meaning). " +
       "READ THIS IF YOU ARE ADVISING ON ADS. kill_scale_read has three modes and the difference matters. mode=facts returns the complete certified decision inputs with NO VERDICTS AT ALL: every ad and ad set with spend, run rate, DMs, bookings, calls taken, closes, cash, collected ROI, days live, the 72-hour fatigue measurement, prior-window history, per-creator economics, the budget map reconciled to yesterday's real spend, and the named closes. That mode exists FOR YOU: form your own judgement from the same numbers the owner uses. mode=decide returns those identical numbers plus this system's own verdicts under a named, versioned ruleset (default zakk_v1), every verdict stamped `under_ruleset` and carrying a `basis` naming the signed definitions and the numbers that earned it; a verdict is advice under a lens, never the truth. mode=watch is the daily read and returns FLAGS ONLY, with no recommendation of any kind. " +
       "MONEY IS IN CENTS in these answers, unlike the older per-ad tools which report dollars; each metric's quoted definition names its format.",
     inputSchema: { type: "object", properties: {
-      question_key: { type: "string", description: "one of the fourteen allowed questions. Leave it out to list them all." },
+      question_key: { type: "string", description: "one of the allowed questions. Leave it out to list them all." },
       params: { type: "object", description: "the named parameters that question takes, exactly as its entry describes them" },
     }, required: [] } },
+  { name: "describe_misses", description:
+      "THE CERTIFICATION BACKLOG: every question this door has been asked and could NOT answer, grouped by what was asked and ordered by how often. " +
+      "Read it to find out what the door should learn to answer next; a question asked repeatedly is one worth adding to the locked list, through a reviewed change rather than through drift. " +
+      "Rows tagged with a manual caller are ones a human or an AI answered by hand outside the door, logged deliberately so that freestyle work leaves a trace instead of vanishing.",
+    inputSchema: { type: "object", properties: { limit: { type: "number", description: "how many grouped misses to return (default 25)" } }, required: [] } },
   // ---- Factory (the /factory content workspace): full read + write ----
   { name: "factory_list_projects", description: "List every Factory project (id, name, client). Factory = the copy/content workspace where ad copy, image directions, and docs are drafted, organized into groups, and snapshotted as batches.",
     inputSchema: { type: "object", properties: {} } },
@@ -178,7 +210,23 @@ async function dmsForAd(client: string, keyword: string, limit: number, since?: 
   return { conversations, coverage };
 }
 
-async function callTool(name: string, a: Record<string, unknown>, origin: string): Promise<unknown> {
+/**
+ * The standing sentence every ask_question response carries.
+ *
+ * Brick 8's freestyle rule, said out loud on every answer rather than left in a
+ * skill file the model may or may not have loaded: an answer that did NOT come
+ * through this door is a workshop answer, and the fact that it was needed is
+ * itself information the system wants back.
+ */
+const FREESTYLE_RULE =
+  "THE FREESTYLE RULE: this answer came through the locked door, so it is certified and it carries its own receipt. Any number you produce about this business OUTSIDE the door (a query you wrote, a figure you inferred, a total you added up yourself) is a WORKSHOP answer: label it as uncertified when you report it, and log what you were trying to ask into door_miss_log so it becomes a candidate for certification. The miss log is the backlog that decides what this door learns to answer next; an unlogged workshop answer is a question the door will never learn. Ask describe_misses to see that backlog.";
+
+async function callTool(
+  name: string,
+  a: Record<string, unknown>,
+  origin: string,
+  caller: string,
+): Promise<unknown> {
   const sb = getServiceSupabase();
   const client = a.client as string;
   switch (name) {
@@ -196,16 +244,26 @@ async function callTool(name: string, a: Record<string, unknown>, origin: string
       if (!a.question_key) {
         return {
           note: "These are the only questions this door answers. Anything else comes back refused in writing, with the nearest allowed question named. Money in these answers is in CENTS.",
+          freestyle_rule: FREESTYLE_RULE,
           questions: describeDoor(),
         };
       }
-      return askQuestion(
+      const answered = await askQuestion(
         {
           question_key: a.question_key,
           params: (a.params as Record<string, unknown>) || {},
         },
-        { caller: "utari" },
+        { caller },
       );
+      // The envelope, not the answer: spreading a rule sentence into the answer
+      // object would put a field on DoorAnswer that its own type does not
+      // declare, and every consumer reading `receipt` and `answers` is
+      // unaffected by a sibling key.
+      return { ...answered, freestyle_rule: FREESTYLE_RULE };
+    }
+    case "describe_misses": {
+      const limit = typeof a.limit === "number" && a.limit > 0 ? Math.min(Math.floor(a.limit), 200) : 25;
+      return describeMisses(limit);
     }
     case "list_ads": {
       const { ads, window, refused, as_of } = await canonicalAds(client);
@@ -356,7 +414,11 @@ async function withEnvelope(name: string, args: Record<string, unknown>, result:
   return { ...(result as Record<string, unknown>), ...envelope };
 }
 
-async function handle(msg: { id?: unknown; method?: string; params?: Record<string, unknown> }, origin: string) {
+async function handle(
+  msg: { id?: unknown; method?: string; params?: Record<string, unknown> },
+  origin: string,
+  caller: string,
+) {
   const { id, method, params } = msg;
   if (method === "initialize") {
     // Echo the client's requested protocol version (it knows what it supports); fall back to a recent one.
@@ -370,7 +432,7 @@ async function handle(msg: { id?: unknown; method?: string; params?: Record<stri
     try {
       const toolName = (params?.name as string) || "";
       const toolArgs = (params?.arguments as Record<string, unknown>) || {};
-      const raw = await callTool(toolName, toolArgs, origin);
+      const raw = await callTool(toolName, toolArgs, origin, caller);
       const result = await withEnvelope(toolName, toolArgs, raw);
       return { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: JSON.stringify(result) }] } };
     } catch (e) {
@@ -387,7 +449,10 @@ async function handle(msg: { id?: unknown; method?: string; params?: Record<stri
 const CORS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept, Mcp-Session-Id, Mcp-Protocol-Version, mcp-session-id, mcp-protocol-version",
+  // X-Door-Caller is listed because a browser-based MCP client cannot send a
+  // custom header the preflight has not allowed, and a silently dropped caller
+  // tag would put chat traffic back into the usage record as "utari".
+  "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept, Mcp-Session-Id, Mcp-Protocol-Version, mcp-session-id, mcp-protocol-version, X-Door-Caller, x-door-caller",
   "Access-Control-Expose-Headers": "Mcp-Session-Id",
   "Access-Control-Max-Age": "86400",
 };
@@ -415,13 +480,14 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   if (!body) return NextResponse.json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "parse error" } }, { status: 400, headers: CORS });
   const origin = req.nextUrl.origin;
+  const caller = callerFrom(req);
   const useSse = wantsSse(req);
   if (Array.isArray(body)) {
-    const out = (await Promise.all(body.map((m) => handle(m, origin)))).filter(Boolean);
+    const out = (await Promise.all(body.map((m) => handle(m, origin, caller)))).filter(Boolean);
     if (!out.length) return new NextResponse(null, { status: 202, headers: CORS });
     return useSse ? sse(out) : NextResponse.json(out, { headers: CORS });
   }
-  const res = await handle(body, origin);
+  const res = await handle(body, origin, caller);
   if (res === null) return new NextResponse(null, { status: 202, headers: CORS }); // notification, no reply
   return useSse ? sse(res) : NextResponse.json(res, { headers: CORS });
 }

@@ -1,8 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────
-// THE LOCKED QUESTION LIST — seventeen questions.
+// THE LOCKED QUESTION LIST — twenty-one questions.
 // Build 4 opened with twelve; Brick 3 added kill_scale_read and health_check;
-// Brick 4 added coverage_report, resolution_queue and capture_health. Neither
-// brick changed a single one of the questions before it.
+// Brick 4 added coverage_report, resolution_queue and capture_health; Brick 6
+// added the funnel pack (creator_funnel, portfolio_pace, budget_map,
+// scale_headroom). No brick has ever changed a question before it.
 //
 // THE TEMPLATE RULE, which is the heart of Build 4: every allowed question maps
 // to exactly ONE fixed template that lives here, is unit-tested, and is the only
@@ -42,11 +43,15 @@ import {
   requireRange,
   requireText,
 } from "./params";
+import { budget_map } from "./budget-map";
 import { capture_health } from "./capture-health";
 import { coverage_report } from "./coverage-report";
+import { creator_funnel } from "./creator-funnel";
 import { health_check, META_LIVE_SOURCE } from "./health-check";
 import { kill_scale_read } from "./kill-scale";
+import { portfolio_pace } from "./portfolio-pace";
 import { resolution_queue } from "./resolution-queue";
+import { scale_headroom } from "./scale-headroom";
 import { BadParams, type AsOf, type QuestionEntry, type TemplateContext } from "./types";
 
 // The stored places, named once so every answer spells them the same way.
@@ -936,6 +941,13 @@ export const QUESTIONS: readonly QuestionEntry[] = [
   coverage_report,
   resolution_queue,
   capture_health,
+  // Brick 6, the funnel pack. Four read-the-business questions that complete the
+  // daily and weekly operating picture. None of them changes a question before
+  // them; all four read stores that already existed.
+  creator_funnel,
+  portfolio_pace,
+  budget_map,
+  scale_headroom,
   data_health,
   define,
 ];

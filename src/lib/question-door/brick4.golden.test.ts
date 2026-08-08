@@ -455,9 +455,14 @@ test("GOLDEN e5: the DM and keyword id spaces really are disjoint, which is why 
 //     question carries a receipt like every old one.
 // ─────────────────────────────────────────────────────────────────────────
 
-test("GOLDEN g1: the locked list is 17, and Brick 4 added exactly three", () => {
+test("GOLDEN g1: Brick 4's three are on the locked list, nothing earlier was dropped, and the list is exactly 21", () => {
   const keys = describeDoor().map((q) => q.question_key);
-  assert.equal(keys.length, 17);
+  // The count moved 17 -> 21 when Brick 6 added the funnel pack. It stays
+  // asserted rather than deleted: an exact count is what catches a question
+  // appearing or vanishing by accident, which is the whole point of a LOCKED
+  // list. Growing it is a reviewed change to registry.ts, and this line is
+  // where that review has to be admitted out loud.
+  assert.equal(keys.length, 21);
   for (const k of ["coverage_report", "resolution_queue", "capture_health"]) {
     assert.ok(keys.includes(k), `${k} must be on the locked list`);
   }
@@ -468,6 +473,11 @@ test("GOLDEN g1: the locked list is 17, and Brick 4 added exactly three", () => 
     "kill_scale_read", "health_check", "data_health", "define",
   ]) {
     assert.ok(keys.includes(k), `${k} must NOT have been dropped`);
+  }
+  // And Brick 6's four, so this test fails if the funnel pack is ever removed
+  // as quietly as it was added.
+  for (const k of ["creator_funnel", "portfolio_pace", "budget_map", "scale_headroom"]) {
+    assert.ok(keys.includes(k), `${k} must be on the locked list`);
   }
 });
 

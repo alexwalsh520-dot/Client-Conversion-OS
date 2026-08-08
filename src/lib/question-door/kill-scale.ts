@@ -30,8 +30,8 @@
 // a budget, or touch Meta in any way, not even to fix something obviously broken.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { creatorCurrency } from "@/lib/fx/rates";
 import { shiftDay, todayEt } from "@/lib/ads-v2/time";
+import { leavesFor as readLeaves, type Leaf } from "./leaves";
 import { optionalText, rejectUnknown, requireAccount, requireRange } from "./params";
 import { CannotAnswer, DEFAULT_RULESET, KNOWN_RULESETS, loadRuleset, loadWatchRules } from "./rulesets";
 import {
@@ -44,34 +44,6 @@ import {
 import { BadParams, type AnswerExclusion, type AsOf, type QuestionEntry, type TemplateContext } from "./types";
 
 type Row = Record<string, unknown>;
-
-/** One pre-aggregated leaf, exactly as adsv2_window_leaves returns it. The
- *  grain is (client, keyword): a keyword IS an ad here, and `ad_id` is the most
- *  recent ad that carried it. */
-interface Leaf {
-  client_key: string;
-  keyword: string;
-  ad_id: string;
-  ad_name: string | null;
-  campaign_id: string | null;
-  campaign_name: string | null;
-  adset_id: string | null;
-  adset_name: string | null;
-  ad_status: string | null;
-  campaign_status: string | null;
-  spend_cents: number;
-  impressions: number;
-  clicks: number;
-  messages: number;
-  booked: number;
-  upcoming: number;
-  showed_people: number;
-  taken_rows: number;
-  taken_people: number;
-  new_clients: number;
-  collected_usd_cents: number;
-  contracted_usd_cents: number;
-}
 
 interface BudgetRow {
   entity_level: "campaign" | "adset";
@@ -86,50 +58,27 @@ interface BudgetRow {
 const ACTIVE = "ACTIVE";
 const num = (v: unknown): number => Number(v) || 0;
 
-function currencyMap(clients: readonly string[]): Record<string, string> {
-  const m: Record<string, string> = {};
-  for (const c of clients) m[c] = creatorCurrency(c);
-  return m;
-}
+/** Meta's documented daily-budget flex: it may deliver up to this share above a
+ *  daily budget on one day and balance it across the week. A PLATFORM
+ *  behaviour, not an owner-signed threshold, which is why it is a constant here
+ *  and not a registry read. budget-map.ts states the same fact the same way. */
+const META_DAILY_FLEX_PCT = 25;
 
-/** One windowed read of the certified leaf aggregation. */
-async function leavesFor(
+/**
+ * One windowed read of the certified leaf aggregation.
+ *
+ * The read itself moved to leaves.ts in Brick 6, when creator_funnel,
+ * portfolio_pace and scale_headroom needed the same window. This stays as a
+ * thin ctx-shaped wrapper so every call site below is unchanged and there is
+ * still exactly ONE implementation of how a window is read.
+ */
+function leavesFor(
   ctx: TemplateContext,
   clients: readonly string[],
   from: string,
   to: string,
 ): Promise<Leaf[]> {
-  const { data, error } = await ctx.db.rpc("adsv2_window_leaves", {
-    p_clients: [...clients],
-    p_from: from,
-    p_to: to,
-    p_currency: currencyMap(clients),
-  });
-  if (error) throw new Error(`adsv2_window_leaves failed for ${from}..${to}: ${error.message}`);
-  return ((data || []) as Row[]).map((r) => ({
-    client_key: String(r.client_key),
-    keyword: String(r.keyword),
-    ad_id: String(r.ad_id ?? ""),
-    ad_name: (r.ad_name as string) ?? null,
-    campaign_id: (r.campaign_id as string) ?? null,
-    campaign_name: (r.campaign_name as string) ?? null,
-    adset_id: (r.adset_id as string) ?? null,
-    adset_name: (r.adset_name as string) ?? null,
-    ad_status: (r.ad_status as string) ?? null,
-    campaign_status: (r.campaign_status as string) ?? null,
-    spend_cents: num(r.spend_cents),
-    impressions: num(r.impressions),
-    clicks: num(r.clicks),
-    messages: num(r.messages),
-    booked: num(r.booked),
-    upcoming: num(r.upcoming),
-    showed_people: num(r.showed_people),
-    taken_rows: num(r.taken_rows),
-    taken_people: num(r.taken_people),
-    new_clients: num(r.new_clients),
-    collected_usd_cents: num(r.collected_usd_cents),
-    contracted_usd_cents: num(r.contracted_usd_cents),
-  }));
+  return readLeaves(ctx.db, clients, from, to);
 }
 
 async function budgetsAsOf(ctx: TemplateContext, clients: readonly string[], to: string): Promise<BudgetRow[]> {
@@ -611,6 +560,27 @@ async function computeShared(
         entity_id: b.entity_id,
         detail: `${b.entity_level} ${b.entity_id} holds a live daily dial but recorded no spend at all on ${yesterday}.`,
       });
+    } else if (b.daily_usd_cents && b.daily_usd_cents > 0) {
+      // BRICK 6 FIX to a Brick 3 gap. The invariant this map is supposed to
+      // keep is "every live dial either paced inside Meta's roughly 25% daily
+      // flex, or it is surfaced": nothing silently unexplained. Only the
+      // zero-spend case was ever pushed, so an entity delivering two thirds of
+      // its dial fell through the gap and was reported as if it reconciled.
+      //
+      // Found by Brick 3's OWN live golden, which had never run in an
+      // environment with database credentials, so it had never once been
+      // checked against real pacing.
+      const pacePct = (spent / b.daily_usd_cents) * 100;
+      const drift = pacePct - 100;
+      if (Math.abs(drift) > META_DAILY_FLEX_PCT) {
+        mismatches.push({
+          what: drift > 0 ? "spend_above_daily_flex" : "spend_below_daily_flex",
+          entity_id: b.entity_id,
+          detail: `${b.entity_level} ${b.entity_id} spent ${(spent / 100).toFixed(2)} USD on ${yesterday} against a ${(b.daily_usd_cents / 100).toFixed(2)} USD daily dial, ${
+            Math.round(pacePct * 10) / 10
+          }% of it. Meta may deliver up to ${META_DAILY_FLEX_PCT}% either side of a daily budget and balance across the week, so this is outside the band that reads as normal delivery.`,
+        });
+      }
     }
     return {
       level: b.entity_level,
