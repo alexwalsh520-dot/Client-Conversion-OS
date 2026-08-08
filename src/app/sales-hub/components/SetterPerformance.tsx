@@ -11,6 +11,7 @@ import { fmtDollars, fmtNumber, fmtPercent } from "@/lib/formatters";
 import { getEffectiveDates } from "./FilterBar";
 import HourlyStripTable, { type StripRow } from "./HourlyStripTable";
 import type { Filters, ManychatMetrics } from "../types";
+import { clientsFromRows, rowMatchesClientKey } from "./clientsFromRows";
 
 /* ── Types ────────────────────────────────────────────────────────── */
 
@@ -42,6 +43,8 @@ interface SetterGroup extends PerfCounts {
 
 interface OfferRow {
   client: string;
+  /** Display name straight from the tracker's Offer column. */
+  label?: string;
   newLeads: number;
   callsBooked: number;
   callsTaken: number;
@@ -114,15 +117,15 @@ function leadCountRow(group: LeadHourGroup): StripRow {
 
 /* ── Client-to-setter mapping ─────────────────────────────────────── */
 
-// Active offers shown when the filter is "All Clients". Dropped clients
-// (Keith Holland, Lucy, zoe_and_emily) are intentionally excluded.
-const ACTIVE_CLIENTS = ["tyson", "antwan"];
+// Clients are DERIVED from the tracker rows in the selected timeline (see
+// clientsFromRows) — no hardcoded roster. The maps below only enrich clients
+// we know well; unknown clients still work from the sheet alone.
 
-// Base roster per client; actual setters are also derived live from the
-// ManyChat metrics so new setters (e.g. Antwan's) appear automatically.
+// Roster seed per derived client key; actual setters are also derived from
+// the ManyChat metrics AND the sheet's Setter column, so new setters appear
+// automatically.
 const CLIENT_SETTERS: Record<string, string[]> = {
   tyson: ["Amara", "Kelechi", "Debbie", "Gideon", "Erin"],
-  antwan: [],
 };
 
 const SETTER_SHEET_KEYS: Record<string, string[]> = {
@@ -133,21 +136,8 @@ const SETTER_SHEET_KEYS: Record<string, string[]> = {
   Erin: ["ERIN"],
 };
 
-const CLIENT_BADGE_LABELS: Record<string, string> = {
-  tyson: "Tyson",
-  antwan: "Antwan Rarcus",
-};
-
-function rowMatchesClient(row: SheetRow, client: string): boolean {
-  const offer = (row.offer || "").toLowerCase();
-  if (client === "tyson") return offer.includes("tyson") || offer.includes("sonnek") || offer.includes("sonic");
-  if (client === "antwan") return offer.includes("antwan") || offer.includes("rarcus");
-  return true;
-}
-
 function clientColor(client: string): string {
-  if (client === "antwan") return "var(--accent)";
-  return "var(--tyson)";
+  return client === "tyson" ? "var(--tyson)" : "var(--accent)";
 }
 
 function formatRate(numerator: number, denominator: number): string {
@@ -212,44 +202,37 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
     setLoading(true);
     setError("");
     try {
-      const sheetPromise = fetchJSON<{ rows: SheetRow[] }>(
-        `/api/sales-hub/sheet-data?dateFrom=${dateFrom}&dateTo=${dateTo}`
-      ).catch(() => ({ rows: [] }));
-
-      let manychatPromise: Promise<Record<string, ManychatMetrics>>;
-      if (filters.client === "all") {
-        // Fetch every active client (Tyson + Antwan), not just Tyson.
-        manychatPromise = Promise.all(
-          ACTIVE_CLIENTS.map((client) =>
-            fetchJSON<ManychatMetrics>(
-              `/api/sales-hub/manychat-metrics?client=${client}&dateFrom=${dateFrom}&dateTo=${dateTo}`,
-            )
-              .then((data) => [client, data] as const)
-              .catch(() => null),
-          ),
-        ).then((entries) => {
-          const map: Record<string, ManychatMetrics> = {};
-          for (const entry of entries) if (entry) map[entry[0]] = entry[1];
-          return map;
-        });
-      } else {
-        manychatPromise = fetchJSON<ManychatMetrics>(
-          `/api/sales-hub/manychat-metrics?client=${filters.client}&dateFrom=${dateFrom}&dateTo=${dateTo}`,
-        ).then((data) => ({ [filters.client]: data }));
-      }
-
       const leadHoursPromise = fetchJSON<LeadHours>(
         `/api/sales-hub/leads-by-hour?client=${filters.client}&dateFrom=${dateFrom}&dateTo=${dateTo}`,
       ).catch(() => null);
 
-      const [manychatData, sheetData, leadHoursData] = await Promise.all([
-        manychatPromise,
-        sheetPromise,
-        leadHoursPromise,
-      ]);
+      // Sheet first: the tracker rows decide WHICH clients exist in this
+      // timeline. Then pull ManyChat metrics for exactly those clients —
+      // clients without a DM pipeline just resolve to nothing.
+      const sheetData = await fetchJSON<{ rows: SheetRow[] }>(
+        `/api/sales-hub/sheet-data?dateFrom=${dateFrom}&dateTo=${dateTo}`
+      ).catch(() => ({ rows: [] as SheetRow[] }));
+      const rows = sheetData.rows || [];
+
+      const derivedKeys = clientsFromRows(rows)
+        .map((c) => c.key)
+        .filter((key) => filters.client === "all" || key === filters.client);
+
+      const entries = await Promise.all(
+        derivedKeys.map((client) =>
+          fetchJSON<ManychatMetrics>(
+            `/api/sales-hub/manychat-metrics?client=${encodeURIComponent(client)}&dateFrom=${dateFrom}&dateTo=${dateTo}`,
+          )
+            .then((data) => [client, data] as const)
+            .catch(() => null),
+        ),
+      );
+      const manychatData: Record<string, ManychatMetrics> = {};
+      for (const entry of entries) if (entry) manychatData[entry[0]] = entry[1];
+
       setMetricsMap(manychatData);
-      setSheetRows(sheetData.rows || []);
-      setLeadHours(leadHoursData);
+      setSheetRows(rows);
+      setLeadHours(await leadHoursPromise);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -261,46 +244,63 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
     void Promise.resolve().then(fetchData);
   }, [fetchData]);
 
+  // Clients present in the tracker for this timeline — the sheet is the
+  // source of truth, so the offer/setter breakdowns follow the date range.
+  const visibleClients = useMemo(() => {
+    const derived = clientsFromRows(sheetRows);
+    return filters.client === "all"
+      ? derived
+      : derived.filter((c) => c.key === filters.client);
+  }, [filters.client, sheetRows]);
+
   const summary = useMemo((): SetterSummary => {
-    const visibleClients = filters.client === "all" ? ACTIVE_CLIENTS : [filters.client];
     const newLeads = visibleClients.reduce(
-      (sum, client) => sum + (metricsMap[client]?.dashboard?.newLeads || 0),
+      (sum, client) => sum + (metricsMap[client.key]?.dashboard?.newLeads || 0),
       0,
     );
-    // Only count rows for active clients (Tyson + Antwan), so dropped-client
-    // rows lingering on the sheet don't inflate the totals.
+    // Rows attributed to a visible client (blank-offer rows are excluded).
     const visibleRows = sheetRows.filter((row) =>
-      visibleClients.some((client) => rowMatchesClient(row, client)),
+      visibleClients.some((client) => rowMatchesClientKey(row, client.key)),
     );
 
     return {
       newLeads,
       callsBooked: visibleRows.length,
     };
-  }, [filters.client, metricsMap, sheetRows]);
+  }, [visibleClients, metricsMap, sheetRows]);
 
   const offerRows = useMemo((): OfferRow[] => {
-    const clients = filters.client === "all" ? ACTIVE_CLIENTS : [filters.client];
-    return clients.map((client) => {
-      const rows = sheetRows.filter((row) => rowMatchesClient(row, client));
-      const newLeads = metricsMap[client]?.dashboard?.newLeads || 0;
-      return buildPerformanceRow(client, newLeads, rows);
+    return visibleClients.map((client) => {
+      const rows = sheetRows.filter((row) => rowMatchesClientKey(row, client.key));
+      const newLeads = metricsMap[client.key]?.dashboard?.newLeads || 0;
+      return { ...buildPerformanceRow(client.key, newLeads, rows), label: client.name };
     });
-  }, [filters.client, metricsMap, sheetRows]);
+  }, [visibleClients, metricsMap, sheetRows]);
 
   // One group per setter, each with a per-offer breakdown underneath. The setter
-  // universe is the active clients' rosters PLUS whoever actually appears in the
-  // ManyChat metrics, so new setters (e.g. on Antwan) show up on their own.
+  // universe is the roster seed PLUS whoever appears in the ManyChat metrics
+  // PLUS whoever appears in the sheet's Setter column — so new setters (and new
+  // clients' setters) show up on their own.
   const setterGroups = useMemo((): SetterGroup[] => {
-    const clients = filters.client === "all" ? ACTIVE_CLIENTS : [filters.client];
+    const clients = visibleClients;
 
     const names = new Map<string, string>(); // lowercased -> display name
+    const addName = (raw: string) => {
+      const trimmed = raw.trim();
+      const lc = trimmed.toLowerCase();
+      if (!lc || names.has(lc)) return;
+      names.set(lc, trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase());
+    };
     for (const client of clients) {
-      for (const n of CLIENT_SETTERS[client] || []) names.set(n.toLowerCase(), n);
-      for (const key of Object.keys(metricsMap[client]?.setters || {})) {
-        const lc = key.trim().toLowerCase();
-        if (lc && !names.has(lc)) names.set(lc, key.charAt(0).toUpperCase() + key.slice(1));
-      }
+      for (const n of CLIENT_SETTERS[client.key] || []) names.set(n.toLowerCase(), n);
+      for (const key of Object.keys(metricsMap[client.key]?.setters || {})) addName(key);
+    }
+    // Setters straight from the tracker rows (source of truth) — covers
+    // clients that have no ManyChat pipeline wired up yet.
+    for (const row of sheetRows) {
+      const setter = (row.setter || "").trim();
+      if (!setter) continue;
+      if (clients.some((client) => rowMatchesClientKey(row, client.key))) addName(setter);
     }
 
     const setterNewLeads = (client: string, name: string): number => {
@@ -320,13 +320,13 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
       for (const client of clients) {
         const setterSheetRows = sheetRows.filter(
           (r) =>
-            rowMatchesClient(r, client) &&
+            rowMatchesClientKey(r, client.key) &&
             keys.some((k) => (r.setter || "").toUpperCase().includes(k)),
         );
-        const perf = buildPerformanceRow(client, setterNewLeads(client, name), setterSheetRows);
+        const perf = buildPerformanceRow(client.key, setterNewLeads(client.key, name), setterSheetRows);
         // Only list an offer the setter is actually active on.
         if (perf.newLeads > 0 || perf.callsBooked > 0) {
-          offers.push({ ...perf, label: CLIENT_BADGE_LABELS[client] ?? client });
+          offers.push({ ...perf, label: client.name });
         }
       }
       if (offers.length === 0) continue;
@@ -345,7 +345,7 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
       groups.push({ name, offers, ...agg });
     }
     return groups.sort((a, b) => b.newLeads - a.newLeads);
-  }, [filters.client, metricsMap, sheetRows]);
+  }, [visibleClients, metricsMap, sheetRows]);
 
   return (
     <div>
@@ -539,7 +539,7 @@ function OfferTable({ rows }: { rows: OfferRow[] }) {
       title="Offer Breakdown"
       firstColumnLabel="Offer"
       rows={rows.map((row) => ({
-        label: CLIENT_BADGE_LABELS[row.client] ?? row.client,
+        label: row.label ?? row.client,
         key: row.client,
         newLeads: row.newLeads,
         callsBooked: row.callsBooked,

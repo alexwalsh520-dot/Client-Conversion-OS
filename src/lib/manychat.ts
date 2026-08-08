@@ -16,7 +16,9 @@
 import { fetchSheetData } from "./google-sheets";
 import { getServiceSupabase } from "./supabase";
 
-type Client = "tyson_sonnek" | "antwan_rarcus";
+// Long-form ManyChat client key (e.g. "tyson_sonnek", "jake_divljak") — any
+// registry client works; unknown clients simply have no events and read zero.
+type Client = string;
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -193,8 +195,9 @@ function leadSourcesList(sources: Record<LeadSourceId, LeadSourceMetric>): LeadS
 }
 
 function adsClientKey(client: Client): string {
-  if (client === "tyson_sonnek") return "tyson";
-  return "antwan";
+  // Short ads key = first token of the ManyChat key ("tyson_sonnek" → "tyson",
+  // "jake_divljak" → "jake") — matches creators.ts keys.
+  return client.split("_")[0] || client;
 }
 
 function textFromPayload(value: unknown): string {
@@ -283,7 +286,8 @@ function matchesClientOffer(client: Client, offer: string | null | undefined): b
   const normalized = (offer || "").toLowerCase();
   if (client === "tyson_sonnek") return normalized.includes("tyson");
   if (client === "antwan_rarcus") return normalized.includes("antwan") || normalized.includes("rarcus");
-  return false;
+  // Generic: match any token of the ManyChat key ("jake_divljak" → jake/divljak).
+  return client.split("_").some((token) => token.length > 2 && normalized.includes(token));
 }
 
 function addDays(isoDate: string, days: number): string {
@@ -300,7 +304,7 @@ export async function getMetrics(
   dateTo: string
 ): Promise<ManychatMetrics> {
   const sb = getServiceSupabase();
-  const setters = CLIENT_SETTERS[client];
+  const setters = CLIENT_SETTERS[client] ?? [];
 
   const dashboard = { newLeads: 0, leadsEngaged: 0, callLinksSent: 0, subLinksSent: 0 };
   const leadSources = emptyLeadSources();

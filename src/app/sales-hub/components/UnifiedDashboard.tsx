@@ -6,6 +6,7 @@ import { fmtDollars, fmtNumber, fmtPercent } from "@/lib/formatters";
 import { getEffectiveDates } from "./FilterBar";
 import type { Filters, SheetRow } from "../types";
 import { CALL_CATEGORIES, rowsForCategory } from "./callType";
+import { clientsFromRows, rowMatchesClientKey } from "./clientsFromRows";
 
 /* ── Types ────────────────────────────────────────────────────────── */
 
@@ -103,13 +104,10 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
       setSheet((prev) => ({ ...prev, error: "" }));
     }
     try {
-      const clientNames: Record<string, string> = { tyson: "Tyson Sonnek", antwan: "Antwan Rarcus" };
-      const clientParam =
-        filters.client !== "all" && clientNames[filters.client]
-          ? `&client=${encodeURIComponent(clientNames[filters.client])}`
-          : "";
+      // Full range, no client param — the comparison derives its client list
+      // from whatever offers appear on the tracker rows in this timeline.
       const res = await fetchJSON<SheetApiResponse>(
-        `/api/sales-hub/sheet-data?dateFrom=${dateFrom}&dateTo=${dateTo}${clientParam}`,
+        `/api/sales-hub/sheet-data?dateFrom=${dateFrom}&dateTo=${dateTo}`,
       );
       setSheet({ data: res, loading: false, error: "" });
     } catch (err) {
@@ -134,23 +132,22 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
   }, [fetchSheet]);
 
   /* ── Per-client metrics (when "All Clients") ────────────────────── */
+  // One comparison row per client that actually has tracker rows in this
+  // timeline — the sheet is the source of truth, so the list updates itself
+  // as clients join or leave.
   const clientBreakdown = useMemo(() => {
     if (!sheet.data || filters.client !== "all") return null;
     const rows = sheet.data.rows;
 
-    const tysonRows = rows.filter((r) => {
-      const offer = r.offer?.toLowerCase() || "";
-      return offer.includes("tyson") || offer.includes("sonic");
+    const breakdown = clientsFromRows(rows).map((client) => {
+      const clientRows = rows.filter((r) => rowMatchesClientKey(r, client.key));
+      return {
+        key: client.key,
+        metrics: computeMetrics(clientRows, client.name),
+        rows: clientRows,
+      };
     });
-    const antwanRows = rows.filter((r) => {
-      const offer = r.offer?.toLowerCase() || "";
-      return offer.includes("antwan") || offer.includes("rarcus");
-    });
-
-    return {
-      tyson: { metrics: computeMetrics(tysonRows, "Tyson Sonnek"), rows: tysonRows },
-      antwan: { metrics: computeMetrics(antwanRows, "Antwan Rarcus"), rows: antwanRows },
-    };
+    return breakdown.length > 0 ? breakdown : null;
   }, [sheet.data, filters.client]);
 
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -230,7 +227,7 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
             </tr>
           </thead>
           <tbody>
-            {[clientBreakdown.tyson, clientBreakdown.antwan].map((cb) => {
+            {clientBreakdown.map((cb) => {
               const c = cb.metrics;
               const isOpen = expanded === c.label;
               return (
