@@ -263,7 +263,7 @@ All twenty half-read ads were recovered on the next pass.
 
 ---
 
-## Part B — the locked list, 17 → 19
+## Part B — the locked list, 23 → 25
 
 Neither question changes a number any earlier question returns.
 
@@ -333,30 +333,30 @@ answer time. None is written in code, and a missing one produces
 Nineteen tests, all passing, run against the live database. Verbatim:
 
 ```
-✔ (c) a still ad never reports its caption as the words on the image (0.821542ms)
-✔ (c) a video ad never reports its caption as spoken or as printed words (0.192625ms)
-✔ (c) a video ad never gets an on-image block, however full its caption is (0.115042ms)
-✔ a video with neither spoken nor printed words is NOT known, however full its caption (0.152833ms)
+✔ (c) a still ad never reports its caption as the words on the image (0.783209ms)
+✔ (c) a video ad never reports its caption as spoken or as printed words (0.178791ms)
+✔ (c) a video ad never gets an on-image block, however full its caption is (0.108209ms)
+✔ a video with neither spoken nor printed words is NOT known, however full its caption (0.144875ms)
 ✔ a still whose image carries no words is not known, and says the caption is separate (0.089875ms)
-✔ a video ad that has never been read says so, rather than reading as wordless (0.09125ms)
-✔ an ad of unknown creative type refuses to let any field answer for it (0.466667ms)
-✔ a silent video reports its silence as a fact about the ad (0.101167ms)
-✔ an unclassified ad with an empty image read says the video trap is still open (0.102ms)
-✔ (a) GOLDEN: LOADED's stored creative read carries the hand-verified servicemen callout (384.786042ms)
-✔ (a) the door itself returns LOADED's words, labelled, through ad_copy (2083.90125ms)
-✔ (b) jake's copy coverage by spend clears 90%, or names every miss (1952.629333ms)
-✔ (b) jake's video ads specifically are known, not just his stills (1702.429292ms)
-✔ (d) creative_bench shelves LOADED and STRENGTH as paused-proven with real prior windows (4433.62475ms)
-✔ (d) bench thinness fires only when the shelf behind a live winner is empty (7876.837417ms)
-✔ (d) creative_bench returns FACTS only: no verdict, no recommendation (4455.073167ms)
-✔ (e) a video that cannot be resolved writes a failed row and never throws (2897.001375ms)
-✔ (f) the locked list is nineteen questions, and the two new ones are on it (0.87475ms)
-✔ (f) an unknown creative question is refused in writing, not improvised (1.989166ms)
+✔ a video ad that has never been read says so, rather than reading as wordless (0.087375ms)
+✔ an ad of unknown creative type refuses to let any field answer for it (0.451666ms)
+✔ a silent video reports its silence as a fact about the ad (0.097916ms)
+✔ an unclassified ad with an empty image read says the video trap is still open (0.096667ms)
+✔ (a) GOLDEN: LOADED's stored creative read carries the hand-verified servicemen callout (592.636ms)
+✔ (a) the door itself returns LOADED's words, labelled, through ad_copy (2245.694166ms)
+✔ (b) jake's copy coverage by spend clears 90%, or names every miss (1618.394625ms)
+✔ (b) jake's video ads specifically are known, not just his stills (1571.770834ms)
+✔ (d) creative_bench shelves LOADED and STRENGTH as paused-proven with real prior windows (4914.129375ms)
+✔ (d) bench thinness fires only when the shelf behind a live winner is empty (7850.823375ms)
+✔ (d) creative_bench returns FACTS only: no verdict, no recommendation (4439.054375ms)
+✔ (e) a video that cannot be resolved writes a failed row and never throws (2928.572209ms)
+✔ (f) the locked list is twenty-five questions, and the two new ones are on it (0.665291ms)
+✔ (f) an unknown creative question is refused in writing, not improvised (1.946458ms)
 ℹ tests 19
 ℹ pass 19
 ℹ fail 0
 ℹ skipped 0
-ℹ duration_ms 26366.746833
+ℹ duration_ms 26758.242
 ```
 
 **(a)** The fixture phrase was human-verified. LOADED was read by hand on 31 July
@@ -393,9 +393,10 @@ which is the property warehouse law 14 actually asks for. The two fixture rows
 are removed afterwards — they are test artefacts, not facts about the business,
 and nothing real is ever deleted from this table.
 
-**(f)** Full suite: **320 tests, 318 pass, 2 fail**, and both failures are the
-pre-existing ones documented below. Every Brick 7 test passes. Production build
-compiles (`✓ Compiled successfully in 19.6s`).
+**(f)** Full suite **after rebasing onto Bricks 5 and 6**: **350 tests, 349 pass,
+1 fail**, and that one failure is the known pre-existing
+`ads-tracker-export.html` one. Every Brick 7 test passes. Production build
+compiles.
 
 ---
 
@@ -453,26 +454,41 @@ reimplementing it is not. So an ad that never carried a keyword has no spend row
 here, and where one keyword ran as several ads their spend rolls up under the
 most recent. This is stated in the answer's exclusions.
 
-### Pre-existing test failures on `origin/main`
+### Pre-existing test failures
 
-Verified by checking out clean `origin/main` into a separate worktree and running
-the suite there: **301 tests, 299 pass, 2 fail**, both before this brick exists:
+Checked against a clean `origin/main` in a separate worktree BEFORE this brick's
+code existed: **301 tests, 299 pass, 2 fail**.
 
 1. `ads-tracker-export.html inline app compiles (browser-equivalent Babel parse)`
-   — the known standing failure.
+   — the known standing failure. Still failing; untouched by this brick.
 2. `GOLDEN LIVE: the budget map reconciles, and anything that does not is
    REPORTED` — `52595863807264 paced at 67.2% of its dial, outside Meta's flex,
-   and was not reported as a mismatch`. This is live-data drift in a Brick 3
-   golden, unrelated to creative truth, and it is **not** the single known
-   failure the brief anticipated. Flagging it rather than absorbing it.
+   and was not reported as a mismatch`. Live-data drift in a Brick 3 golden,
+   unrelated to creative truth. It was failing on clean `origin/main` and it
+   passes now, on the same code, because the ad's pacing moved. Recording it
+   because a test that comes and goes with the data is worth knowing about, and
+   because it briefly looked like a second standing failure when it is not.
 
-### The locked-list count, and the other two bricks in flight
+Final state after the rebase: **350 tests, 349 pass, 1 fail**, that one being (1).
 
-Bricks 5, 6 and 7 were built concurrently. Brick 4 established the convention
-that a later brick updates the one count assertion in earlier goldens; this brick
-followed it and set both to **19**. Whichever of Bricks 5 and 6 lands after this
-one will have to bump the same two lines again and re-run. That is a rebase
-chore, not a disagreement.
+### The locked-list count, and the two bricks that landed first
+
+Bricks 5, 6 and 7 were built concurrently. Brick 6 landed first with four
+questions, then Brick 5 with two, taking the list to 23; Brick 7 rebased onto
+both and takes it to **25**.
+
+Brick 4 established the convention that a later brick updates the one count
+assertion in earlier goldens, saying so out loud. This brick did that in four
+places — the Brick 3, 4, 5 and 7 goldens — and changed nothing else in any of
+them. The name lists in those tests, which are what actually protect the locked
+list, are untouched except to add the six questions Bricks 5 and 6 contributed.
+
+One real merge, not just a number: Brick 6 had already extracted `Leaf` and
+`leavesFor` into a shared `leaves.ts`, which is exactly what this brick had done
+inside `kill-scale.ts` for the same reason. Brick 6's version won; `ad_copy` and
+`creative_bench` now read the certified aggregation from `leaves.ts`, and
+`kill-scale.ts` keeps only the fatigue measurement this brick extracted from it.
+There is still exactly one implementation of each.
 
 ---
 
