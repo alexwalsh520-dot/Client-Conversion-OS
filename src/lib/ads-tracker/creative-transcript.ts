@@ -57,7 +57,11 @@ const GRAPH = `https://graph.facebook.com/${process.env.META_GRAPH_VERSION?.trim
 /** Per-step wall-clock budgets. A step that overruns is abandoned, never left
  *  to block the ad behind it. */
 const RESOLVE_TIMEOUT_MS = 15_000;
-const DOWNLOAD_TIMEOUT_MS = 45_000;
+// 90s, not 45s. The first backfill pass timed out on Jake's two biggest videos
+// at 45s, and one of them is a $1,882 ad: a download budget that quietly fails
+// the highest-spend creatives is worse than a slower run. The real ceiling is
+// the per-run budget the caller sets, which is checked between ads.
+const DOWNLOAD_TIMEOUT_MS = 90_000;
 const TRANSCRIBE_TIMEOUT_MS = 90_000;
 
 /** Groq's upload ceiling. Bigger than this is refused BEFORE the upload rather

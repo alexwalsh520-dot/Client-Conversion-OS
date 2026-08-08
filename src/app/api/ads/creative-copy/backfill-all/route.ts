@@ -14,11 +14,13 @@ export const maxDuration = 300;
 // confused (confusing them caused real, expensive mistakes):
 //   • on_image_text  — the words OCR'd off the still image (or a video's
 //                       thumbnail frame). Empty for videos/plain photos.
-//   • primary_text   — the ad's PRIMARY TEXT (the `body` above the creative).
-//                       This is where a video ad's actual copy usually lives.
-// For a story-IMAGE ad the copy is on_image_text; for a VIDEO ad the copy is
-// primary_text. Storing both means we always have the real copy and never
-// mislabel primary text as on-image text.
+//   • primary_text   — the ad's PRIMARY TEXT (the `body` above the creative),
+//                       i.e. the CAPTION. Storing it separately means we never
+//                       mislabel it as on-image text.
+// This file used to say that for a VIDEO ad the copy IS primary_text. Brick 7
+// proved that wrong: a video ad's copy is the VIDEO — what is spoken in it and
+// what is printed on its frames — and the caption is a different thing that
+// often says something else entirely. See phase 3 below.
 //
 // The old backfill only read ads the dashboard handed an image_url for and
 // skipped videos entirely. This one pulls EVERY ad_id per creator and fetches
@@ -43,7 +45,11 @@ const CONCURRENCY = 5;
 // modest: a video is a download plus a speech-to-text round trip, so it is the
 // expensive phase, and it is the one that must never eat the function's ceiling.
 const TRANSCRIPTS_PER_CALL = 10;
-const TRANSCRIPT_BUDGET_MS = 120_000;
+// 100s, chosen against the function's 300s ceiling: the budget is checked
+// BETWEEN ads, so the worst case is this budget plus one slowest ad (a 90s
+// download and a 90s model call), which lands inside 300 with room for the two
+// OCR phases above.
+const TRANSCRIPT_BUDGET_MS = 100_000;
 
 // ad_id -> { still-image (or video thumbnail) url, primary text }.
 async function fetchCreative(adId: string, token: string): Promise<{ imageUrl: string; body: string }> {

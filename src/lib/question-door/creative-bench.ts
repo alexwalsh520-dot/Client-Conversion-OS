@@ -208,13 +208,13 @@ export const creative_bench: QuestionEntry = {
 
     // ── Who knows what these ads say ───────────────────────────────────────
     const allIds = [...new Set([...historyLeaves.map((l) => l.ad_id), ...live.map((l) => l.ad_id)].filter(Boolean))];
-    const [copy, transcripts, videos] = await Promise.all([
+    const [copy, transcripts, media] = await Promise.all([
       copyRowsFor(ctx, allIds),
       transcriptRowsFor(ctx, allIds),
       videoAdIds(ctx, allIds),
     ]);
     const creativeTypeOf = (id: string): BenchItem["creative_type"] =>
-      videos.has(id) || transcripts.has(id) ? "video" : copy.get(id)?.extracted_at ? "still" : "unknown";
+      media.videos.has(id) || transcripts.has(id) ? "video" : copy.get(id)?.extracted_at ? "still" : "unknown";
     const contentKnown = (id: string): boolean => {
       const t = transcripts.get(id);
       if (creativeTypeOf(id) === "video") return Boolean(t?.transcript_text?.trim() || t?.on_screen_text?.trim());

@@ -69,6 +69,7 @@ test("(c) a still ad never reports its caption as the words on the image", () =>
     deliveryState: "active",
     spendUsdCents: 1000,
     isVideo: false,
+    classified: true,
     copy: copyRow({ on_image_text: ON_IMAGE }),
     transcript: undefined,
   });
@@ -100,6 +101,7 @@ test("(c) a video ad never reports its caption as spoken or as printed words", (
     deliveryState: "not_active",
     spendUsdCents: 232386,
     isVideo: true,
+    classified: true,
     copy: copyRow(),
     transcript: transcriptRow({ transcript_text: SPOKEN, on_screen_text: PRINTED }),
   });
@@ -127,6 +129,7 @@ test("(c) a video ad never gets an on-image block, however full its caption is",
     deliveryState: "active",
     spendUsdCents: 98579,
     isVideo: true,
+    classified: true,
     // The exact 31 July shape: a video ad whose thumbnail OCR is empty and
     // whose caption is full. Before this brick that combination read as "this
     // ad has no copy" or, worse, as the caption being the copy.
@@ -156,6 +159,7 @@ test("a video with neither spoken nor printed words is NOT known, however full i
     deliveryState: "not_active",
     spendUsdCents: 5000,
     isVideo: true,
+    classified: true,
     copy: copyRow(),
     transcript: transcriptRow({
       audio_status: "no_audio",
@@ -178,6 +182,7 @@ test("a still whose image carries no words is not known, and says the caption is
     deliveryState: "active",
     spendUsdCents: 900,
     isVideo: false,
+    classified: true,
     copy: copyRow({ on_image_text: "" }),
     transcript: undefined,
   });
@@ -195,6 +200,7 @@ test("a video ad that has never been read says so, rather than reading as wordle
     deliveryState: "active",
     spendUsdCents: 4000,
     isVideo: true,
+    classified: true,
     copy: copyRow(),
     transcript: undefined,
   });
@@ -217,6 +223,7 @@ test("an ad of unknown creative type refuses to let any field answer for it", ()
     deliveryState: "unknown",
     spendUsdCents: null,
     isVideo: false,
+    classified: true,
     copy: undefined,
     transcript: undefined,
   });
@@ -240,6 +247,7 @@ test("a silent video reports its silence as a fact about the ad", () => {
     deliveryState: "not_active",
     spendUsdCents: 232386,
     isVideo: true,
+    classified: true,
     copy: copyRow(),
     transcript: transcriptRow({
       audio_status: "no_audio",
@@ -251,4 +259,32 @@ test("a silent video reports its silence as a fact about the ad", () => {
   assert.equal(a.content_known, true);
   assert.match(String(a.video_read?.note), /not a gap in the record/);
   assert.equal(a.video_read?.audio_status, "no_audio");
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// AN UNCLASSIFIED AD WITH AN EMPTY IMAGE OCR IS THE 31 JULY TRAP.
+//
+// Jake's PROVEN (ad 120250189750740185) looked exactly like this on 8 August:
+// an ad_creative_copy row written that morning, its OCR empty, and no row in
+// ad_creative_image to say what kind of creative it even is. Calling that "a
+// still with no words on it" is how a video quietly reads as wordless again.
+// ─────────────────────────────────────────────────────────────────────────
+
+test("an unclassified ad with an empty image read says the video trap is still open", () => {
+  const a = shapeAdCopy({
+    adId: "ad_1",
+    keyword: "proven",
+    adName: "PROVEN",
+    client: "jake",
+    deliveryState: "active",
+    spendUsdCents: 15415,
+    isVideo: false,
+    classified: false,
+    copy: copyRow({ on_image_text: "" }),
+    transcript: undefined,
+  });
+
+  assert.equal(a.content_known, false);
+  assert.match(String(a.not_known_because), /nothing has classified this ad's creative type/);
+  assert.match(String(a.not_known_because), /not evidence the ad is wordless/);
 });

@@ -141,10 +141,22 @@ export async function creativeFreshness(ctx: TemplateContext, client: string): P
   ]);
 }
 
-/** Which ad ids are video ads, from the media sync's own flag. */
-export async function videoAdIds(ctx: TemplateContext, adIds: string[]): Promise<Set<string>> {
-  const out = new Set<string>();
-  if (!adIds.length) return out;
+/**
+ * Which ad ids the media sync has classified, and which of those are videos.
+ *
+ * BOTH sets matter. An ad the media sync has never seen is not a confirmed
+ * still: it is unclassified, and a still-image OCR that came back empty on an
+ * unclassified ad is the exact 31 July signature of a video whose thumbnail was
+ * blank. Treating that as "a still with no words on it" is how the hole this
+ * brick closes reopens quietly.
+ */
+export async function videoAdIds(
+  ctx: TemplateContext,
+  adIds: string[],
+): Promise<{ videos: Set<string>; classified: Set<string> }> {
+  const videos = new Set<string>();
+  const classified = new Set<string>();
+  if (!adIds.length) return { videos, classified };
   for (let i = 0; i < adIds.length; i += 200) {
     const { data, error } = await ctx.db
       .from("ad_creative_image")
@@ -152,10 +164,11 @@ export async function videoAdIds(ctx: TemplateContext, adIds: string[]): Promise
       .in("ad_id", adIds.slice(i, i + 200));
     if (error) throw new Error(`could not read the creative types: ${error.message}`);
     for (const r of (data || []) as Array<{ ad_id: string; is_video: boolean | null }>) {
-      if (r.is_video) out.add(String(r.ad_id));
+      classified.add(String(r.ad_id));
+      if (r.is_video) videos.add(String(r.ad_id));
     }
   }
-  return out;
+  return { videos, classified };
 }
 
 export type CreativeType = "video" | "still" | "unknown";
@@ -217,6 +230,8 @@ export function shapeAdCopy(input: {
   deliveryState: AdCopyAnswer["delivery_state"];
   spendUsdCents: number | null;
   isVideo: boolean;
+  /** Whether the media sync has classified this ad's creative at all. */
+  classified: boolean;
   copy: CopyRow | undefined;
   transcript: TranscriptRow | undefined;
 }): AdCopyAnswer {
@@ -264,8 +279,9 @@ export function shapeAdCopy(input: {
     });
     known = Boolean(onImage);
     if (!known) {
-      why =
-        "the image was read and carried no printed words. The ad may still say something in its caption, which is reported separately and is never counted as the words on the image.";
+      why = input.classified
+        ? "the image was read and carried no printed words. The ad may still say something in its caption, which is reported separately and is never counted as the words on the image."
+        : "the image was read and carried no printed words, AND nothing has classified this ad's creative type. An empty image OCR on an unclassified ad is the 31 July signature of a VIDEO whose cover thumbnail was blank, so this is not evidence the ad is wordless. It resolves itself once the media sync classifies the creative and the video read runs.";
     }
   } else {
     why =
@@ -366,7 +382,7 @@ export const ad_copy: QuestionEntry = {
     const ids = namedButUnspent && adId ? [adId] : wanted.map((l) => l.ad_id).filter(Boolean);
     const uniqueIds = [...new Set(ids)];
 
-    const [copy, transcripts, videos] = await Promise.all([
+    const [copy, transcripts, media] = await Promise.all([
       copyRowsFor(ctx, uniqueIds),
       transcriptRowsFor(ctx, uniqueIds),
       videoAdIds(ctx, uniqueIds),
@@ -384,7 +400,8 @@ export const ad_copy: QuestionEntry = {
         client,
         deliveryState: l ? ((l.ad_status || "").toUpperCase() === "ACTIVE" ? "active" : "not_active") : "unknown",
         spendUsdCents: l ? l.spend_cents : null,
-        isVideo: videos.has(id),
+        isVideo: media.videos.has(id),
+        classified: media.classified.has(id),
         copy: copy.get(id),
         transcript: transcripts.get(id),
       });
