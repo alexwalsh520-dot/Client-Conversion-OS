@@ -15,13 +15,12 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Any registry client key is accepted — the lib resolves it against the live
+  // client list; an unknown key just returns empty buckets (no hardcoded roster).
   const client = (searchParams.get("client") || "all") as SalesHubClient;
   const dateFrom = searchParams.get("dateFrom");
   const dateTo = searchParams.get("dateTo");
 
-  if (!["all", "tyson", "antwan"].includes(client)) {
-    return NextResponse.json({ error: "Invalid client" }, { status: 400 });
-  }
   if (!dateFrom || !dateTo) {
     return NextResponse.json(
       { error: "dateFrom and dateTo query params are required" },

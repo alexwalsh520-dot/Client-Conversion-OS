@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, type ReactNode } from "react";
+import { useState, useEffect, useCallback, useMemo, type ReactNode } from "react";
 import {
   BarChart3,
   Users,
@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import type { Filters, SheetRow } from "./types";
 import FilterBar, { getEffectiveDates } from "./components/FilterBar";
+import { clientsFromRows, rowMatchesClientKey } from "./components/clientsFromRows";
 import UnifiedDashboard from "./components/UnifiedDashboard";
 import CloserPerformance from "./components/CloserPerformance";
 import SetterPerformance from "./components/SetterPerformance";
@@ -281,19 +282,16 @@ export default function SalesHubPage() {
   const [sheetLoading, setSheetLoading] = useState(true);
   const [sheetError, setSheetError] = useState("");
 
+  // Always fetch the FULL range (no client param): the tracker rows are the
+  // source of truth for which clients exist in this timeline, so we need them
+  // all to derive the client list; per-client views filter client-side.
+  const { dateFrom: effDateFrom, dateTo: effDateTo } = getEffectiveDates(filters);
   const fetchSheetData = useCallback(async () => {
-    const { dateFrom, dateTo } = getEffectiveDates(filters);
     setSheetLoading(true);
     setSheetError("");
     try {
-      // sheet-data matches the client key/name against the Offer column
-      // (fuzzy contains), so the registry key works for any client.
-      const clientParam =
-        filters.client !== "all"
-          ? `&client=${encodeURIComponent(filters.client)}`
-          : "";
       const res = await fetch(
-        `/api/sales-hub/sheet-data?dateFrom=${dateFrom}&dateTo=${dateTo}${clientParam}`
+        `/api/sales-hub/sheet-data?dateFrom=${effDateFrom}&dateTo=${effDateTo}`
       );
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -303,11 +301,37 @@ export default function SalesHubPage() {
     } finally {
       setSheetLoading(false);
     }
-  }, [filters]);
+  }, [effDateFrom, effDateTo]);
 
   useEffect(() => {
     fetchSheetData();
   }, [fetchSheetData]);
+
+  // Clients present in the tracker for this timeline — drives the filter
+  // dropdown and every sheet-based section.
+  const clientOptions = useMemo(
+    () => clientsFromRows(sheetData ?? []).map((c) => ({ key: c.key, name: c.name })),
+    [sheetData],
+  );
+
+  // If the selected client has no rows in the newly-selected timeline, fall
+  // back to All Clients instead of showing an empty dashboard.
+  useEffect(() => {
+    if (
+      !sheetLoading &&
+      sheetData &&
+      filters.client !== "all" &&
+      !clientOptions.some((c) => c.key === filters.client)
+    ) {
+      setFilters((prev) => ({ ...prev, client: "all" }));
+    }
+  }, [sheetLoading, sheetData, clientOptions, filters.client]);
+
+  // Rows for the selected client (or all) — feeds Closer Performance.
+  const visibleSheetData = useMemo(() => {
+    if (!sheetData || filters.client === "all") return sheetData;
+    return sheetData.filter((row) => rowMatchesClientKey(row, filters.client));
+  }, [sheetData, filters.client]);
 
   /* ---------- scroll helper ---------- */
   const scrollTo = (id: string) => {
@@ -365,7 +389,7 @@ export default function SalesHubPage() {
       </div>
 
       {/* Filter Bar */}
-      <FilterBar filters={filters} onChange={setFilters} />
+      <FilterBar filters={filters} onChange={setFilters} clientOptions={clientOptions} />
 
       {/* Section Quick Nav */}
       <nav
@@ -464,7 +488,7 @@ export default function SalesHubPage() {
       >
         <CloserPerformance
           filters={filters}
-          sheetData={sheetData}
+          sheetData={visibleSheetData}
           loading={sheetLoading}
           error={sheetError}
         />
