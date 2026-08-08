@@ -227,8 +227,9 @@ export const CARD_DEFS: readonly CardDef[] = [
   {
     id: "collected",
     label: "Collected revenue",
-    meta: "Cash collected",
-    sentence: "Cash actually collected from clients tied to an ad keyword each day.",
+    meta: "Cash tied to this view's ad keywords",
+    sentence:
+      "Cash actually collected from clients tied to one of this view's ad keywords by hard key. This is AD-ATTRIBUTED revenue for the selected accounts, not the whole sales tracker; the Attribution coverage card is where the whole tracker is accounted for.",
     source: "The sales tracker, tied to a keyword by hard key only.",
     format: "usd",
     value: (t) => t.collectedCents / 100,

@@ -88,12 +88,14 @@ export async function prepareWindow(query: AdsV2Query): Promise<void> {
 
 export async function computeAndStore(db: Db, query: AdsV2Query, version: number): Promise<AdsV2Payload> {
   const payload = await buildWindow(query, version);
-  // The Metrics slice is built and stored in the SAME row at the SAME version,
-  // so the cards and the table can never disagree. Its total is the table's
-  // total (window-distinct people), so every card's big number matches the
-  // table's TOTAL row; the day series drives only the chart shape.
+  // The Metrics slice is built and stored in the SAME row at the SAME version.
+  // Its total is the window total across ALL ad statuses (window-distinct
+  // people): the cards answer "what happened in these dates", so today's
+  // Active/Finished ad filter must never rescope their money. Overriding with
+  // the status-filtered table total here is exactly what made a June-July
+  // window under the Active view report $9.9k spend instead of $36k.
   const metrics = await buildDaySeries(query, version);
-  metrics.total = payload.total;
+  metrics.total = payload.totalAllStatuses ?? payload.total;
   await db.from("adsv2_window_snapshots").upsert(
     {
       account: query.account,

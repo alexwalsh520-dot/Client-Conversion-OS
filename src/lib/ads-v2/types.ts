@@ -99,6 +99,11 @@ export interface AdsV2Payload {
   campaigns: AdsV2Node[];
   /** Base-metric totals over the union of all displayed ads. */
   total: BaseMetrics;
+  /** Base-metric totals over EVERY ad in the window, ignoring today's
+   *  Active/Finished status. The Metrics cards read this: a historical
+   *  window's money must never shrink because an ad was paused since.
+   *  Optional so snapshots stored before this field keep deserializing. */
+  totalAllStatuses?: BaseMetrics;
   freshness: Record<string, FreshnessSource>;
   /** Per-client empty-state notes (e.g. Jake has spend but no funnel yet). */
   notices: string[];
@@ -153,8 +158,10 @@ export interface RevenueCategories {
 }
 
 /** The Metrics section's slice, stored beside the table snapshot at the SAME
- *  data_version. Fetched lazily after the table paints; its `total` equals the
- *  table payload's total by construction, so the cards and table always agree. */
+ *  data_version. Fetched lazily after the table paints. Its `total` covers the
+ *  whole window across ALL ad statuses (window-distinct people): the cards
+ *  answer "what happened in these dates", so the table's Active/Finished
+ *  filter never rescopes them. The table's TOTAL row stays status-scoped. */
 export interface AdsV2MetricsPayload {
   account: AdsV2Account;
   status: AdsV2Status;
