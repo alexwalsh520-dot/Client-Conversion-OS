@@ -54,48 +54,64 @@ const DEFAULT_WIDTHS: Record<string, number> = {
 const ALL_COL_KEYS: string[] = ["name", ...METRIC_COLUMNS.map((c) => c.key)];
 const MIN_COL_WIDTH = 60;
 
-// Name column auto-fit bounds: never narrower than this, never wider than the
-// sane max (past which we let the drag handle take over).
+// Name column auto-fit floor: never narrower than this. There is deliberately
+// NO max: the default width always shows the longest visible label in full
+// (the table scrolls horizontally), and dragging the handle can shrink it.
 const NAME_MIN_WIDTH = 180;
-const NAME_MAX_WIDTH = 560;
 // Fixed chrome in the name cell (checkbox, chevron, dot, ads chip, status pill,
-// cell padding) that sits beside the name text, plus the deepest indent.
+// cell padding) that sits beside the name text.
 const NAME_CHROME = 132;
+// The "Campaign ·" prefix separator plus its flex gaps on flat rows.
+const FLAT_SEP_WIDTH = 18;
 
-// Measure text width once, with a canvas, in the table's body font. Deterministic
-// and viewer-independent (no layout thrash), so auto-fit is stable.
+// Measure text width with a canvas, in the PAGE'S body font (the table
+// inherits it), at the largest size a name renders at. `precise` is false on
+// the server AND on the hydration render (so both produce the same estimate
+// and hydration never mismatches); it flips true once mounted and the webfont
+// is loaded, and the widths settle to the real measurement.
 let _measureCtx: CanvasRenderingContext2D | null = null;
-function measureText(text: string): number {
-  if (typeof document === "undefined") return text.length * 7;
+function measureText(text: string, precise: boolean): number {
+  if (!precise || typeof document === "undefined") return text.length * 7;
   if (!_measureCtx) {
     const c = document.createElement("canvas");
     _measureCtx = c.getContext("2d");
-    if (_measureCtx) _measureCtx.font = "500 13px Inter, system-ui, sans-serif";
+    if (_measureCtx) {
+      const family = getComputedStyle(document.body).fontFamily || "system-ui, sans-serif";
+      _measureCtx.font = `500 13px ${family}`;
+    }
   }
   return _measureCtx ? _measureCtx.measureText(text).width : text.length * 7;
 }
 
-// Every name that can appear at this level (the level's rows plus the children
-// that expand under them), so auto-fit fits the longest visible name.
-function namesForLevel(campaigns: AdsV2Node[], level: AdsV2Level): string[] {
-  const out: string[] = [];
-  const push = (n: AdsV2Node) => out.push(n.shortName || n.name || "");
+// Pixel width of every label as it actually RENDERS at this level: flat top
+// rows (ad set / ad levels) show "Campaign · Name" inline, and rows expanded
+// under a parent carry their indent. Measuring the rendered label (not just
+// the node's own name) is what lets auto-fit show every row in full.
+function labelWidthsForLevel(campaigns: AdsV2Node[], level: AdsV2Level, precise: boolean): number[] {
+  const out: number[] = [];
+  const label = (n: AdsV2Node) => n.shortName || n.name || "";
+  const m = (t: string) => measureText(t, precise);
   if (level === "campaign") {
     for (const c of campaigns) {
-      push(c);
+      out.push(m(label(c)));
       for (const a of c.children) {
-        push(a);
-        for (const ad of a.children) push(ad);
+        out.push(m(label(a)) + 22);
+        for (const ad of a.children) out.push(m(label(ad)) + 44);
       }
     }
   } else if (level === "adset") {
-    for (const c of campaigns)
+    for (const c of campaigns) {
+      const prefix = m(label(c)) + FLAT_SEP_WIDTH;
       for (const a of c.children) {
-        push(a);
-        for (const ad of a.children) push(ad);
+        out.push(prefix + m(label(a)));
+        for (const ad of a.children) out.push(m(label(ad)) + 22);
       }
+    }
   } else {
-    for (const c of campaigns) for (const a of c.children) for (const ad of a.children) push(ad);
+    for (const c of campaigns) {
+      const prefix = m(label(c)) + FLAT_SEP_WIDTH;
+      for (const a of c.children) for (const ad of a.children) out.push(prefix + m(label(ad)));
+    }
   }
   return out;
 }
@@ -122,15 +138,31 @@ export default function CampaignTable({
   // level was manually sized.
   const [nameWidthByLevel, setNameWidthByLevel] = useState<Partial<Record<AdsV2Level, number>>>({});
 
-  // Auto-fit width for the current level: the longest visible name plus chrome,
-  // clamped to sane bounds. Re-computed when the level or the data changes.
+  // Auto-fit width for the current level: the widest rendered label plus
+  // chrome, no upper clamp. Re-computed when the level or the data changes.
+  // Precise canvas measurement only after mount + webfont load; until then
+  // the estimate matches the server render, so hydration never mismatches.
+  const [measureReady, setMeasureReady] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const done = () => alive && setMeasureReady(true);
+    if (typeof document !== "undefined" && document.fonts?.ready) {
+      document.fonts.ready.then(done, done);
+    } else {
+      done();
+    }
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const nameAutoFit = useMemo(() => {
-    const names = namesForLevel(payload.campaigns, level);
-    let longest = 0;
-    for (const n of names) longest = Math.max(longest, measureText(n));
-    const indent = level === "ad" ? 44 : level === "adset" ? 22 : 0;
-    return Math.min(NAME_MAX_WIDTH, Math.max(NAME_MIN_WIDTH, Math.ceil(longest) + NAME_CHROME + indent));
-  }, [payload.campaigns, level]);
+    let widest = 0;
+    for (const w of labelWidthsForLevel(payload.campaigns, level, measureReady)) widest = Math.max(widest, w);
+    // 4% headroom: canvas kerning differs slightly from real layout. Better a
+    // hair wide than a clipped name.
+    return Math.max(NAME_MIN_WIDTH, Math.ceil(widest * 1.04) + NAME_CHROME);
+  }, [payload.campaigns, level, measureReady]);
 
   const nameWidth = nameWidthByLevel[level] ?? nameAutoFit;
   const widthFor = useCallback(

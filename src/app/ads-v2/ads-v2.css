@@ -483,7 +483,9 @@ html.light .adsv2 {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 240px;
+  /* No fixed cap: the name column auto-fits to show the full campaign prefix
+     plus the row name. Dragging the column narrower still ellipsizes via the
+     flex shrink rules below. */
 }
 .adsv2 .flat-sep {
   color: var(--text-4);
