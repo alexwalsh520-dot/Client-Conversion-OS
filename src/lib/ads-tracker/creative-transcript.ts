@@ -82,6 +82,25 @@ function wordCount(t: string): number {
   return (t.match(WORD_RE) || []).length;
 }
 
+/**
+ * WHISPER ECHOES ITS OWN PROMPT BACK ON SILENT AUDIO. Four of Tyson's video ads
+ * came back with the transcript "Spoken words only." — a fragment of the
+ * anti-hallucination prompt src/lib/transcribe.ts sends ("Instagram fitness
+ * reel. Spoken words only."). Stored unchecked, four ads would have carried
+ * that sentence as their copy.
+ *
+ * The word floor caught all four. This guard is the belt to that pair of
+ * braces: a longer prompt would echo back longer, clear the floor, and read as
+ * real speech. An echo is never the ad's words, at any length.
+ */
+const PROMPT_ECHOES = ["instagram fitness reel", "spoken words only"];
+
+function isPromptEcho(text: string): boolean {
+  const t = text.toLowerCase().replace(/[^a-z ]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!t) return false;
+  return PROMPT_ECHOES.some((e) => t === e || t.replace(e, "").trim() === "");
+}
+
 /** Abandon a step that overruns its budget. The label goes into the stored
  *  failure reason, so "which step gave up" is never a guess. */
 async function withTimeout<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
@@ -420,7 +439,11 @@ export async function transcribeOneAd(input: TranscribeAdInput): Promise<Transcr
         }
       } else {
         const text = out.text.trim();
-        if (wordCount(text) < MIN_WORDS) {
+        if (isPromptEcho(text)) {
+          spoken = text;
+          audioStatus = "no_audio";
+          audioReason = `the transcriber echoed its own prompt back ("${text}"), which it does on silent audio. Never stored as the ad's words.`;
+        } else if (wordCount(text) < MIN_WORDS) {
           // Whisper hallucinates canned filler over silence. Under the floor the
           // text is kept for inspection but never graded as the ad's words.
           spoken = text;
