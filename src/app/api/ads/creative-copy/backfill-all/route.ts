@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
 import { getOrExtractCreativeCopy, findUnreadAdIds } from "@/lib/ads-tracker/creative-copy";
+import { runTranscriptPass, type TranscriptRunResult } from "@/lib/ads-tracker/creative-transcript";
 import { CREATORS, firstEnv, type CreatorKey } from "@/lib/creators";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 // COMPREHENSIVE server-side creative-copy backfill.
 //
@@ -21,13 +23,27 @@ export const maxDuration = 60;
 // The old backfill only read ads the dashboard handed an image_url for and
 // skipped videos entirely. This one pulls EVERY ad_id per creator and fetches
 // the image (or video thumbnail) AND the primary text straight from Meta.
-// Bounded per call (60s serverless) and idempotent; call until remaining=0, and
-// the daily cron keeps it complete as new ads launch.
+// Bounded per call and idempotent; call until remaining=0, and the two-hourly
+// cron keeps it complete as new ads launch.
+//
+// BRICK 7 adds a THIRD thing, on this same cron rather than a new one:
+//   • transcript     — the SPOKEN WORDS of a video ad, from the ad's own video,
+//                       stored in ad_creative_transcripts. For a video ad this
+//                       is the copy; the thumbnail OCR above is empty by design
+//                       and primary_text is the caption, not the ad.
+// Each pass is bounded and isolated (see creative-transcript.ts): one video that
+// will not resolve or download gets a failed row with a written reason and the
+// run carries on.
 
 const GRAPH = `https://graph.facebook.com/${process.env.META_GRAPH_VERSION?.trim() || "v24.0"}`;
 const PER_CALL = 25;   // ads OCR'd per call (each = 1 Claude vision read)
 const CAP_CALL = 60;   // caption-only fills per call (cheap: 2 Meta calls, no vision)
 const CONCURRENCY = 5;
+// Videos transcribed per call, and the wall-clock they may take. Deliberately
+// modest: a video is a download plus a speech-to-text round trip, so it is the
+// expensive phase, and it is the one that must never eat the function's ceiling.
+const TRANSCRIPTS_PER_CALL = 10;
+const TRANSCRIPT_BUDGET_MS = 120_000;
 
 // ad_id -> { still-image (or video thumbnail) url, primary text }.
 async function fetchCreative(adId: string, token: string): Promise<{ imageUrl: string; body: string }> {
@@ -120,7 +136,23 @@ async function runBackfill(onlyKey: string | null) {
     if (ocrProcessed >= PER_CALL && capProcessed >= CAP_CALL) break;
   }
 
-  return { ocrProcessed, capProcessed, remaining, perCreator };
+  // ── Phase 3 (Brick 7): the words a VIDEO ad says. ──────────────────────
+  // Isolated from the two phases above on purpose: a transcription problem
+  // must never cost the OCR backfill its run, and the OCR phases must never
+  // eat the whole budget and starve the videos. Whatever this returns, the
+  // response carries it verbatim, including every failure.
+  let transcripts: TranscriptRunResult | { error: string };
+  try {
+    transcripts = await runTranscriptPass({
+      creators: creators.map((c) => ({ key: c.key, token: firstEnv(c.tokenEnv)! })),
+      perRun: TRANSCRIPTS_PER_CALL,
+      budgetMs: TRANSCRIPT_BUDGET_MS,
+    });
+  } catch (err) {
+    transcripts = { error: err instanceof Error ? err.message : String(err) };
+  }
+
+  return { ocrProcessed, capProcessed, remaining, perCreator, transcripts };
 }
 
 export async function POST(req: NextRequest) {

@@ -294,11 +294,12 @@ test("GOLDEN LIVE: both new questions are on the locked list and reachable only 
   assert.ok(keys.includes("health_check"));
   // Brick 3 added two and changed none. Brick 4 added three more, Brick 6 the
   // funnel pack's four, Brick 5 the bridge pair (person_timeline,
-  // lead_quality_read), all changing none, so the list is 23. This is the ONE
-  // assertion each later brick updates in a Brick 3 golden test, and it is
-  // updated because the locked list grew on purpose: it is a count of
-  // certified questions, not a behaviour.
-  assert.equal(keys.length, 23);
+  // lead_quality_read) and Brick 7 the creative pair (ad_copy, creative_bench),
+  // all changing none, so the list is 25. This is the ONE assertion each later
+  // brick updates in a Brick 3 golden test, and it is updated because the
+  // locked list grew on purpose: it is a count of certified questions, not a
+  // behaviour.
+  assert.equal(keys.length, 25);
   // The pre-existing kill_scale_inputs is untouched and still answering.
   assert.ok(keys.includes("kill_scale_inputs"));
   // Brick 3's two are still here, unchanged, alongside Brick 4's three.

@@ -1,10 +1,11 @@
 // ─────────────────────────────────────────────────────────────────────────
-// THE LOCKED QUESTION LIST — twenty-three questions.
+// THE LOCKED QUESTION LIST — twenty-five questions.
 // Build 4 opened with twelve; Brick 3 added kill_scale_read and health_check;
 // Brick 4 added coverage_report, resolution_queue and capture_health; Brick 6
 // added the funnel pack (creator_funnel, portfolio_pace, budget_map,
 // scale_headroom); Brick 5 added the bridge pair (person_timeline,
-// lead_quality_read). No brick has ever changed a question before it.
+// lead_quality_read); Brick 7 added creative truth (ad_copy, creative_bench).
+// No brick has ever changed a question before it.
 //
 // THE TEMPLATE RULE, which is the heart of Build 4: every allowed question maps
 // to exactly ONE fixed template that lives here, is unit-tested, and is the only
@@ -44,9 +45,11 @@ import {
   requireRange,
   requireText,
 } from "./params";
+import { ad_copy } from "./ad-copy";
 import { budget_map } from "./budget-map";
 import { capture_health } from "./capture-health";
 import { coverage_report } from "./coverage-report";
+import { creative_bench } from "./creative-bench";
 import { creator_funnel } from "./creator-funnel";
 import { health_check, META_LIVE_SOURCE } from "./health-check";
 import { kill_scale_read } from "./kill-scale";
@@ -77,6 +80,10 @@ const S_KW_EVENTS = "ads_keyword_events";
 const S_DM_MSGS = "dm_conversation_messages";
 const S_TRACKER = "sales_tracker_rows";
 const S_REG_KWS = "registry_keywords";
+// Brick 7's stored places: what an ad SAYS, and what has been produced.
+const S_TRANSCRIPTS = "ad_creative_transcripts";
+const S_CREATIVE_IMG = "ad_creative_image";
+const S_FACTORY = "factory_items";
 
 /** Rows arrive from the database as loose objects; this is the honest name. */
 type Row = Record<string, unknown>;
@@ -946,6 +953,26 @@ const define: QuestionEntry = {
 //     existing template's numbers change.
 // ─────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────
+// 24. ad_copy and 25. creative_bench — BRICK 7, creative truth.
+//
+// Both live in their own files, like Brick 3's and Brick 4's pairs, and both
+// are entries on THIS list and nowhere else. Neither changes a number any
+// earlier question returns.
+//
+// The pair goes together in this order:
+//   ad_copy         what every ad SAYS, from the field that actually holds it,
+//                   including the video ads whose words existed nowhere
+//                   queryable before this brick.
+//   creative_bench  what is on the shelf: live, paused-proven, produced but
+//                   never launched, and whether a live winner has anything
+//                   waiting behind it.
+//
+// What changed the stored facts is a separate thing and is enumerated in
+// docs/truthlayer-brick7-report.md: migrations 095 and 096 added the transcript
+// store, and the pipeline filled it.
+// ─────────────────────────────────────────────────────────────────────────
+
 /** THE LOCKED LIST. Order is the order a caller should read them in. */
 export const QUESTIONS: readonly QuestionEntry[] = [
   metric_value,
@@ -972,6 +999,9 @@ export const QUESTIONS: readonly QuestionEntry[] = [
   scale_headroom,
   person_timeline,
   lead_quality_read,
+  // Brick 7, creative truth. What every ad SAYS, and what is on the bench.
+  ad_copy,
+  creative_bench,
   data_health,
   define,
 ];
@@ -1016,6 +1046,11 @@ export const ALL_KNOWN_SOURCES: readonly string[] = [
   // state, which is the only place a structured qualification answer is kept.
   S_PERSONS,
   S_PERSON_CONTEXT,
+  // Brick 7. The transcript store is new; the creative-image flags and the
+  // production stores existed and are named by a QUESTION for the first time.
+  S_TRANSCRIPTS,
+  S_CREATIVE_IMG,
+  S_FACTORY,
 ];
 
 export type { AsOf };

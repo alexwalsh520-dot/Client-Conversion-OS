@@ -240,6 +240,83 @@ async function economicsFor(
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// THE FATIGUE MEASUREMENT, in ONE place.
+//
+// touch_floor_72h v1 fixes the comparison at 72 hours sustained: two hours of
+// bad data is not fatigue, one bad day is not fatigue. So it is measured as the
+// last 72 hours against the 72 before them, and it is a FACT, not a verdict —
+// what any ruleset makes of it is a separate question.
+//
+// Brick 7 pulled this out of computeShared and exported it so creative_bench
+// can show the same fatigue block on a live ad WITHOUT re-deriving it. Two
+// implementations of this comparison would eventually disagree, and then the
+// owner would have two fatigue readings for one ad and no way to choose.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** The 72-hour comparison, or null when either half had nothing to measure. */
+export type FatigueMeasurement = {
+  cost_per_result_rising: boolean;
+  ctr_falling: boolean;
+  sustained_hours: number;
+  cost_per_dm_before_usd_cents: number;
+  cost_per_dm_now_usd_cents: number;
+  link_ctr_before: number;
+  link_ctr_now: number;
+} | null;
+
+/** The two halves of the comparison, ending on `to` (inclusive, Eastern days). */
+export function fatigueWindows(to: string): { recent: { from: string; to: string }; prior: { from: string; to: string } } {
+  return {
+    recent: { from: shiftDay(to, -2), to },
+    prior: { from: shiftDay(to, -5), to: shiftDay(to, -3) },
+  };
+}
+
+/**
+ * The measurement itself. Null when either half had no traffic: an unmeasurable
+ * signal is reported as unmeasurable, NEVER as "no fatigue". Those are
+ * different facts and conflating them is how a tired winner gets killed.
+ */
+export function fatigueBetween(recent: Leaf | undefined, prior: Leaf | undefined): FatigueMeasurement {
+  if (!recent || !prior) return null;
+  if (recent.messages === 0 || prior.messages === 0 || recent.impressions === 0 || prior.impressions === 0) return null;
+  const cprNow = Math.round(recent.spend_cents / recent.messages);
+  const cprBefore = Math.round(prior.spend_cents / prior.messages);
+  const ctrNow = recent.clicks / recent.impressions;
+  const ctrBefore = prior.clicks / prior.impressions;
+  return {
+    cost_per_result_rising: cprNow > cprBefore,
+    ctr_falling: ctrNow < ctrBefore,
+    sustained_hours: 72,
+    cost_per_dm_before_usd_cents: cprBefore,
+    cost_per_dm_now_usd_cents: cprNow,
+    link_ctr_before: Math.round(ctrBefore * 100000) / 100000,
+    link_ctr_now: Math.round(ctrNow * 100000) / 100000,
+  };
+}
+
+/** The fatigue block per ad, read straight from the certified aggregation.
+ *  This is the entry point for anything outside kill_scale_read. */
+export async function measureFatigue(
+  ctx: TemplateContext,
+  clients: readonly string[],
+  to: string,
+): Promise<Map<string, FatigueMeasurement>> {
+  const w = fatigueWindows(to);
+  const [recent, prior] = await Promise.all([
+    leavesFor(ctx, clients, w.recent.from, w.recent.to),
+    leavesFor(ctx, clients, w.prior.from, w.prior.to),
+  ]);
+  const recentByAd = new Map(recent.map((l) => [l.ad_id, l]));
+  const priorByAd = new Map(prior.map((l) => [l.ad_id, l]));
+  const out = new Map<string, FatigueMeasurement>();
+  for (const id of new Set([...recentByAd.keys(), ...priorByAd.keys()])) {
+    out.set(id, fatigueBetween(recentByAd.get(id), priorByAd.get(id)));
+  }
+  return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // THE SHARED COMPUTATION. Every mode reads this; none of them recompute it.
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -285,15 +362,7 @@ interface AdFact {
    * 14-day window itself. Null when either side of the comparison had no
    * traffic to measure.
    */
-  fatigue: {
-    cost_per_result_rising: boolean;
-    ctr_falling: boolean;
-    sustained_hours: number;
-    cost_per_dm_before_usd_cents: number;
-    cost_per_dm_now_usd_cents: number;
-    link_ctr_before: number;
-    link_ctr_now: number;
-  } | null;
+  fatigue: FatigueMeasurement;
   history: {
     reached_kpi_line_before: boolean;
     best_prior_roi: number | null;
@@ -373,9 +442,9 @@ async function computeShared(
 
   // touch_floor_72h v1 fixes the fatigue comparison at 72 hours sustained, so
   // both halves of it are read here, for every mode. The measurement is a fact;
-  // what any ruleset makes of it is not.
-  const recentWindow = { from: shiftDay(window.to, -2), to: window.to };
-  const priorWindow = { from: shiftDay(window.to, -5), to: shiftDay(window.to, -3) };
+  // what any ruleset makes of it is not. The windows and the maths both come
+  // from the one exported implementation above.
+  const { recent: recentWindow, prior: priorWindow } = fatigueWindows(window.to);
 
   const [main, runRate, budgets, runs, econ, recent, prior] = await Promise.all([
     leavesFor(ctx, clients, window.from, window.to),
@@ -389,28 +458,10 @@ async function computeShared(
   const recentByAd = new Map(recent.map((l) => [l.ad_id, l]));
   const priorByAd = new Map(prior.map((l) => [l.ad_id, l]));
 
-  /** The 72-hour fatigue measurement for one ad, or null when either half had
-   *  nothing to measure. An unmeasurable signal is reported as unmeasurable,
-   *  never as "no fatigue": those are different facts. */
-  const fatigueFor = (adId: string): AdFact["fatigue"] => {
-    const r = recentByAd.get(adId);
-    const p = priorByAd.get(adId);
-    if (!r || !p) return null;
-    if (r.messages === 0 || p.messages === 0 || r.impressions === 0 || p.impressions === 0) return null;
-    const cprNow = Math.round(r.spend_cents / r.messages);
-    const cprBefore = Math.round(p.spend_cents / p.messages);
-    const ctrNow = r.clicks / r.impressions;
-    const ctrBefore = p.clicks / p.impressions;
-    return {
-      cost_per_result_rising: cprNow > cprBefore,
-      ctr_falling: ctrNow < ctrBefore,
-      sustained_hours: 72,
-      cost_per_dm_before_usd_cents: cprBefore,
-      cost_per_dm_now_usd_cents: cprNow,
-      link_ctr_before: Math.round(ctrBefore * 100000) / 100000,
-      link_ctr_now: Math.round(ctrNow * 100000) / 100000,
-    };
-  };
+  /** The 72-hour fatigue measurement for one ad, from the one implementation
+   *  of it. Null when either half had nothing to measure. */
+  const fatigueFor = (adId: string): FatigueMeasurement =>
+    fatigueBetween(recentByAd.get(adId), priorByAd.get(adId));
 
   // structure_rules v1: active means status ACTIVE, and paused history is out of
   // a LIVE decision unless history is explicitly asked for. Grouping is by

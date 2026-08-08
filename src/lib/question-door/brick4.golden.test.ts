@@ -455,13 +455,14 @@ test("GOLDEN e5: the DM and keyword id spaces really are disjoint, which is why 
 //     question carries a receipt like every old one.
 // ─────────────────────────────────────────────────────────────────────────
 
-test("GOLDEN g1: the locked list is exactly 23, and Brick 4's three are all still on it", () => {
+test("GOLDEN g1: the locked list is exactly 25, and Brick 4's three are all still on it", () => {
   const keys = describeDoor().map((q) => q.question_key);
   // 17 when Brick 4 wrote this; 21 after Brick 6's funnel pack; 23 since Brick 5
-  // added person_timeline and lead_quality_read. The count moves only when the
-  // list grows on purpose (a reviewed registry.ts change admitted here out
-  // loud); what this test really guards is that no earlier question vanishes.
-  assert.equal(keys.length, 23);
+  // added person_timeline and lead_quality_read; 25 since Brick 7 added ad_copy
+  // and creative_bench. The count moves only when the list grows on purpose (a
+  // reviewed registry.ts change admitted here out loud); what this test really
+  // guards is that no earlier question vanishes.
+  assert.equal(keys.length, 25);
   for (const k of ["coverage_report", "resolution_queue", "capture_health"]) {
     assert.ok(keys.includes(k), `${k} must be on the locked list`);
   }
