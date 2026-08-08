@@ -89,13 +89,13 @@ export async function prepareWindow(query: AdsV2Query): Promise<void> {
 export async function computeAndStore(db: Db, query: AdsV2Query, version: number): Promise<AdsV2Payload> {
   const payload = await buildWindow(query, version);
   // The Metrics slice is built and stored in the SAME row at the SAME version.
-  // Its total is the window total across ALL ad statuses (window-distinct
-  // people): the cards answer "what happened in these dates", so today's
-  // Active/Finished ad filter must never rescope their money. Overriding with
-  // the status-filtered table total here is exactly what made a June-July
-  // window under the Active view report $9.9k spend instead of $36k.
+  // Its total is the TABLE's total, so the cards follow the Active/Finished
+  // filter exactly like the table does. Owner call (Alex 2026-08-08): he wants
+  // one consistent scope driven by the filter he set, and the board now shows
+  // a visible "Active ads only" scope note so a historical window under a
+  // status filter can never read as missing money again.
   const metrics = await buildDaySeries(query, version);
-  metrics.total = payload.totalAllStatuses ?? payload.total;
+  metrics.total = payload.total;
   await db.from("adsv2_window_snapshots").upsert(
     {
       account: query.account,

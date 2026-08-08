@@ -1318,6 +1318,20 @@ html.light .adsv2 {
   margin: 0;
   color: var(--text);
 }
+/* Scope note beside the Metrics title when the table's status filter is on:
+   these totals follow that filter, and this says so out loud. */
+.adsv2 .metric-scope-note {
+  margin-left: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 3px 9px;
+  vertical-align: 3px;
+}
 .adsv2 .metric-board-actions {
   display: flex;
   align-items: center;

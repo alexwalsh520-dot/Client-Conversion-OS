@@ -380,7 +380,14 @@ export default function MetricsBoard({
   return (
     <>
       <div className="metric-board-head">
-        <h2 className="metric-board-title">Metrics</h2>
+        <h2 className="metric-board-title">
+          Metrics
+          {status !== "all" && (
+            <span className="metric-scope-note">
+              {status === "active" ? "Active ads only" : "Finished ads only"}
+            </span>
+          )}
+        </h2>
         <div className="metric-board-actions">
           <button className="metric-board-btn" onClick={() => setPickerOpen(true)}>
             <IcPlus /> Add

@@ -126,15 +126,6 @@ export async function buildWindow(query: AdsV2Query, dataVersion: number): Promi
   let total: BaseMetrics = EMPTY_BASE;
   for (const l of statusFiltered) total = addBase(total, leafBase(l));
 
-  // 7. TOTAL over EVERY ad in the window regardless of today's status. The
-  // Metrics cards use this one: "Active" is an ad-MANAGEMENT filter (what is
-  // running right now), and letting it scope a historical window's money
-  // silently erased every dollar spent by since-paused ads (June spend under
-  // an Active view read as ~$9.9k instead of ~$36k). The table's TOTAL row
-  // stays status-scoped; the cards report the window's business truth.
-  let totalAllStatuses: BaseMetrics = EMPTY_BASE;
-  for (const l of leaves) totalAllStatuses = addBase(totalAllStatuses, leafBase(l));
-
   const notices = buildNotices(clients, leaves);
   const freshness = await loadFreshness(db, clients);
 
@@ -147,7 +138,6 @@ export async function buildWindow(query: AdsV2Query, dataVersion: number): Promi
     dataVersion,
     campaigns,
     total,
-    totalAllStatuses,
     freshness,
     notices,
     generatedAt: new Date().toISOString(),
