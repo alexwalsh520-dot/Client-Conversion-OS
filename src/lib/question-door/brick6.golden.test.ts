@@ -735,7 +735,7 @@ test("the three money answers carry a coverage block, and budget_map correctly d
  *  over 2026-07-25..2026-08-07 (the trailing fortnight ending yesterday). */
 const GOLDEN_LEAVES = {
   fit: { spend_cents: 166_169, messages: 115, booked: 6, taken_people: 13, new_clients: 8, collected_usd_cents: 989_900 },
-  pro: { spend_cents: 136_783, messages: 68, booked: 2, taken_people: 5, new_clients: 3, collected_usd_cents: 559_900 },
+  pro: { spend_cents: 136_782, messages: 68, booked: 2, taken_people: 5, new_clients: 3, collected_usd_cents: 559_900 },
 } as const;
 
 test("GOLDEN a1: the fit and pro leaves still match the hand-verified 8/8 numbers", { skip }, async () => {

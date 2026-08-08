@@ -2116,3 +2116,10 @@ applies only signed ones. No UI. No migrations.
 3. **Run the suite with credentials in CI.** 38 tests silently skipped is how
    finding 1 survived. The live goldens are the ones that catch data drift, and
    they are exactly the ones that skip.
+
+
+---
+
+## Audit addendum (Fable, 2026-08-08 evening)
+
+Full-suite reproduction with credentials: 321 pass, 2 fail. One failure is the known pre-existing export test. The other was GOLDEN a1: Meta restated PRO's spend for the fixed window by ONE CENT after the fixture was captured (fixture 136783, database 136782, re-verified by hand with a direct sum). The fixture is updated to 136782 per the test's own remediation instruction. Everything else reproduced, including the Brick 3 budget-map defect fix and the 38-previously-skipped live goldens.
