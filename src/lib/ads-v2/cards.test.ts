@@ -44,10 +44,13 @@ test("every card computes a value and a point without throwing", () => {
   }
 });
 
-test("attribution coverage: a day with no tracker cash is a GAP, not 0%", () => {
+test("attribution coverage: a day with no tracker cash is 100%, never 0%", () => {
+  // Owner call (Alex 2026-08-08): the card answers "is attribution missing
+  // money?". A day with no cash has zero misses, so it reads 100%. A dip
+  // below 100% always means real cash came in with no recorded origin.
   const cov = CARD_BY_ID["attribution_coverage"];
-  assert.equal(cov.point({ ...sampleDay, trackerAllCents: 0 }), null);
-  assert.equal(cov.point(sampleDay), null); // field absent entirely
+  assert.equal(cov.point({ ...sampleDay, trackerAllCents: 0 }), 1);
+  assert.equal(cov.point(sampleDay), 1); // field absent entirely
   const day = { ...sampleDay, trackerAllCents: 200_000, adsAllCents: 100_000, organicAllCents: 0, miscChatCents: 50_000, otherOriginAllCents: 0 };
   assert.equal(cov.point(day), 0.75);
 });

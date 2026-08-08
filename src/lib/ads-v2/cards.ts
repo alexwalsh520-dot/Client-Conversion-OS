@@ -266,19 +266,24 @@ export const CARD_DEFS: readonly CardDef[] = [
     label: "Attribution coverage",
     meta: "Share of revenue with a known origin",
     sentence:
-      "Of all the money the whole team collected on the tracker in these days, the share where we know where the sale came from: an ad keyword, an organic keyword, or a call type the team wrote down (Miscellaneous Chat, Follow up, Outbound Call, Closer Cold Call). Days with no collected cash show a gap in the line, not a percentage. A 0% day means cash came in that day with no recorded origin. The dashed line is that day's total collected, so you can see how much money each day's percentage covers.",
+      "Of all the money the whole team collected on the tracker in these days, the share where we know where the sale came from: an ad keyword, an organic keyword, or a call type the team wrote down (Miscellaneous Chat, Follow up, Outbound Call, Closer Cold Call). A day with no collected cash counts as 100%: nothing came in, so nothing is missing an origin. Any dip below 100% is a real miss, cash collected with no recorded origin. The dashed line is that day's total collected, so you can see how much money each day covers.",
     source: "Origin-recorded revenue (ads + organic + misc chats + other written origins) divided by all tracker revenue.",
     format: "pct",
     value: (_t, r) =>
-      r && r.trackerAllCents > 0
-        ? (r.adsAllCents + r.organicAllCents + r.miscChatCents + (r.otherOriginAllCents ?? 0)) /
-          r.trackerAllCents
+      r
+        ? r.trackerAllCents > 0
+          ? (r.adsAllCents + r.organicAllCents + r.miscChatCents + (r.otherOriginAllCents ?? 0)) /
+            r.trackerAllCents
+          : 1
         : null,
     point: (d) => {
       const denom = d.trackerAllCents ?? 0;
-      // No collected cash that day: there is nothing to attribute, so the
-      // chart shows a gap, not a made-up 0%.
-      if (!denom) return null;
+      // No collected cash that day = a perfect day for this gauge: nothing
+      // came in, so nothing is missing an origin. 100%, not 0% and not a
+      // gap (owner call, Alex 2026-08-08): this card answers "is the
+      // attribution system missing money?", and on an empty day it missed
+      // nothing. The dashed $0 line shows the day carried no cash.
+      if (!denom) return 1;
       return (
         ((d.adsAllCents ?? 0) +
           (d.organicAllCents ?? 0) +
