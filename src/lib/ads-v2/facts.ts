@@ -124,11 +124,18 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
       .range(from, to),
   );
   const organicSet = new Map<string, Set<string>>();
+  // keyword -> owning client, for keywords that exist ONLY on the organic
+  // list (no paid spend row anywhere). The sale labeler needs this: its
+  // client lookup comes from the SPEND map, so a purely-organic keyword
+  // resolved by hard key used to fall through to "unprovable" without ever
+  // being checked against the organic list (Jevaughn Burns / LOCKED, 8/7).
+  const organicKeywordToClient = new Map<string, string>();
   for (const r of organicRows) {
     const kw = normalizeKeyword(r.keyword_normalized);
     if (!kw) continue;
     if (!organicSet.has(r.client_key)) organicSet.set(r.client_key, new Set());
     organicSet.get(r.client_key)!.add(kw);
+    if (!organicKeywordToClient.has(kw)) organicKeywordToClient.set(kw, r.client_key);
   }
 
   const isOrganicMarked = (client: string, kw: string) =>
@@ -468,7 +475,13 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
 
     let keyword = resolved.keyword ? normalizeKeyword(resolved.keyword) : null;
     let method: LinkMethod = resolved.method;
-    const client = keyword ? keywordToClient.get(keyword) ?? null : null;
+    // The owning client: from paid spend first, else from the organic list.
+    // A keyword can be purely organic (never a dollar of spend), and those
+    // sales are ORGANIC, not "unprovable": the DM and booking labelers
+    // already classify them that way, and the sale must agree.
+    const client = keyword
+      ? keywordToClient.get(keyword) ?? organicKeywordToClient.get(keyword) ?? null
+      : null;
     let isOrganic = false;
     let awaiting = method === "none";
 
@@ -489,7 +502,8 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
         awaiting = true;
       }
     } else if (keyword && !client) {
-      // Keyword has no paid spend anywhere -> cannot be a paid attribution.
+      // Keyword has no paid spend anywhere AND is on nobody's organic list:
+      // there is no client to credit, so it stays unprovable.
       keyword = null;
       method = "none";
       awaiting = true;

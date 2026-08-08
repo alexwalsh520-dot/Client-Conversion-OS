@@ -34,13 +34,9 @@ test("every card computes a value and a point without throwing", () => {
     const v = c.value(total);
     assert.ok(v === null || Number.isFinite(v), `${c.id} value not finite`);
     // Null is a legal point: it means "no data that day" and the chart draws
-    // a gap there (e.g. attribution coverage on a day with no tracker cash).
+    // a gap there.
     const p = c.point(sampleDay);
     assert.ok(p === null || Number.isFinite(p), `${c.id} point not finite or null`);
-    if (c.line2) {
-      const p2 = c.line2.point(sampleDay);
-      assert.ok(p2 === null || Number.isFinite(p2), `${c.id} line2 point not finite or null`);
-    }
   }
 });
 

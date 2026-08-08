@@ -33,10 +33,6 @@ export interface CardDef {
    *  chart draws a GAP there, never a fake zero (a share with an empty
    *  denominator is not 0%, it is nothing). */
   point: (d: MetricsDay) => number | null;
-  /** Optional second line on the same card, drawn dashed on the right axis.
-   *  Used to put the day's underlying volume behind a share, so a 0% or 100%
-   *  day can be read against how much money it actually covers. */
-  line2?: { name: string; format: CardFormat; point: (d: MetricsDay) => number | null };
   /** True for cards whose number covers the whole team tracker, not only the
    *  selected account. Hidden on client share links. */
   trackerWide?: boolean;
@@ -266,7 +262,7 @@ export const CARD_DEFS: readonly CardDef[] = [
     label: "Attribution coverage",
     meta: "Share of revenue with a known origin",
     sentence:
-      "Of all the money the whole team collected on the tracker in these days, the share where we know where the sale came from: an ad keyword, an organic keyword, or a call type the team wrote down (Miscellaneous Chat, Follow up, Outbound Call, Closer Cold Call). A day with no collected cash counts as 100%: nothing came in, so nothing is missing an origin. Any dip below 100% is a real miss, cash collected with no recorded origin. The dashed line is that day's total collected, so you can see how much money each day covers.",
+      "Of all the money the whole team collected on the tracker in these days, the share where we know where the sale came from: an ad keyword, an organic keyword, or a call type the team wrote down (Miscellaneous Chat, Follow up, Outbound Call, Closer Cold Call). A day with no collected cash counts as 100%: nothing came in, so nothing is missing an origin. Any dip below 100% is a real miss, cash collected with no recorded origin.",
     source: "Origin-recorded revenue (ads + organic + misc chats + other written origins) divided by all tracker revenue.",
     format: "pct",
     value: (_t, r) =>
@@ -291,11 +287,6 @@ export const CARD_DEFS: readonly CardDef[] = [
           (d.otherOriginAllCents ?? 0)) /
         denom
       );
-    },
-    line2: {
-      name: "Collected that day",
-      format: "usd",
-      point: (d) => (d.trackerAllCents ?? 0) / 100,
     },
     trackerWide: true,
   },
