@@ -41,6 +41,11 @@ function fakeDb(): { db: Db; recorded: Recorded } {
       };
     },
   };
+  // The real client can be pointed at a different schema and hands back the same
+  // query surface. The Semantic Layer consolidation moved adsv2_alerts into the
+  // warehouse schema, so production now says .schema("warehouse").from(...).
+  // The fake has to model that, or it has stopped modelling the client.
+  (db as unknown as { schema: () => unknown }).schema = () => db;
   return { db: db as unknown as Db, recorded };
 }
 

@@ -543,3 +543,134 @@ into 461 and two answers moved with the new data. That is the refusal rule
 working as intended, and the discarded pair is kept in
 `docs/fixtures/door/phase1-after-deploy` so the refusal can be checked rather
 than taken on trust.
+
+---
+
+## Phase 2: the clean facts. Complete, gate passed, with two honest asterisks.
+
+Ten tables moved into `warehouse`, each leaving a `security_invoker`
+compatibility view behind in `public`. Migration 105.
+
+Moved: `adsv2_dm_facts`, `adsv2_booking_facts`, `adsv2_sale_facts`,
+`adsv2_sale_resolutions`, `adsv2_booking_resolutions`, `adsv2_window_snapshots`,
+`adsv2_budget_snapshots`, `adsv2_alerts`, `adsv2_sync_runs`, `adsv2_meta`.
+
+### Six tables deferred, each with its blocking reference named
+
+These are all upserted by the frozen v1 Ads tab. A compatibility view cannot take
+an `INSERT ... ON CONFLICT`, so moving them would mean editing v1, which this
+build never does.
+
+| deferred table | the v1 writer that blocks it |
+| --- | --- |
+| `ad_creative_copy` | `src/lib/ads-tracker/creative-copy.ts`, `src/app/api/ads/creative-copy/backfill-all/route.ts` |
+| `ad_creative_image` | `src/lib/ads-tracker/creative-image.ts` |
+| `ad_creative_transcripts` | `src/lib/ads-tracker/creative-transcript.ts` |
+| `ad_set_targeting` | `src/app/api/sync/ads-tracker/route.ts` |
+| `ads_dashboard_snapshots` | `src/lib/ads-tracker/snapshot.ts` |
+| `sale_attribution_facts` | `src/lib/ads-tracker/sale-facts.ts` |
+
+Worth being precise about the rule, because it is narrower than it first looks. A
+table that v1 only READS could still move, because the compatibility view serves
+a read perfectly. It is specifically the upserts that make these six impossible
+without touching v1.
+
+### The gate
+
+```
+data_version in phase2-before: 461
+data_version in phase2-after:  461
+identical: 19 of 19
+GATE PASS
+```
+
+### The sync, which was the real risk in this phase
+
+Phase 1 moved tables that almost nothing writes. Phase 2 moved five that the
+hourly sync upserts every hour at 25 past. Between the migration landing and the
+repointed code deploying, a sync would have failed.
+
+The migration was applied at 10:45 UTC with the previous sync at 10:26 and the
+next due at 11:26, and the deploy followed within about three minutes. Rather
+than wait thirty minutes to find out whether the write path worked, the sync was
+triggered by hand at 10:46 and watched end to end:
+
+```
+HTTP 200 in 132s
+budget:     seen 382, written {active 10, changed 1}
+facts:      dm 1968, bookings 174, sales 318
+version:    462
+precompute: 72 windows, 0 skipped
+media:      107 thumbs stored
+activity:   fetched 36, inserted 15, resolved 15
+warehouse:  people 90352, ads 2019, definitions 21
+```
+
+That is the whole sync writing through the repointed path into the moved tables.
+It is the strongest proof in this phase, stronger than the fixture gate, because
+it exercises the upserts the views cannot serve.
+
+### Asterisk one: I broke twenty tests, then fixed them properly
+
+Straight after the move the suite went from 3 failures to 23. The cause was mine
+and it was real: production now calls `db.schema("warehouse").from(...)`, and the
+hand-written fake database objects in the tests only implemented `.from()`. The
+error was literally `db.schema is not a function`.
+
+The fix was to give those fakes a `.schema()` that hands back the same query
+surface, which is exactly what the real client does. That is modelling the client
+more faithfully, not loosening a test: every assertion is unchanged and still
+asserts the same thing. Three fakes were updated, in
+`src/lib/accuracy/run.test.ts` and `src/lib/question-door/service.test.ts`.
+
+After the fix: **346 pass, 4 fail, 0 skipped.**
+
+### Asterisk two: a fourth failing test, and it was my sync that caused it
+
+`GOLDEN a2: budget_map reproduces the hand-verified 8/8 map of $440/day` now
+fails, reading $340 where it expects $440. It is a new failure and it was not
+failing before this phase, so it needed ruling in or out properly.
+
+It was not the move. The `budget_map` fixtures captured either side of the
+migration both read the same photo, `2026-08-09`, and were identical. The move
+did not touch this answer.
+
+It was the sync I triggered. The budget photo table had **no rows at all for
+2026-08-09 or 2026-08-10** before it: the newest photo was from 8 August, which is
+why `budget_map` had been answering from a stale photo and flagging it. Every
+scheduled run from 07:25 onward had skipped both creators with `no access token`.
+The run I triggered at 10:46 did not skip them, and wrote the first fresh photo in
+two days: 7 dials totalling $646.18 a day.
+
+So the golden was pinned to a photo that had stopped moving, and refreshing it
+moved the number. I have not re-pinned it, for the same reason I did not re-pin
+the other two drifted goldens: changing what a money test asserts is your call.
+
+**And the part I cannot explain.** Every scheduled sync from 07:25 to 10:25 UTC
+reported `no access token` for both Tyson and Jake. The run I triggered by hand at
+10:46 had tokens for both and worked. Both hit the same deployed endpoint. I do
+not know why they differ, and I am not going to guess. It matters because if the
+scheduled runs keep failing that way, the budget photo goes stale again and
+`budget_map` quietly answers from an old day. The next scheduled run is the thing
+to watch.
+
+### Phase 2 gate
+
+| gate item | result |
+| --- | --- |
+| tables moved | 10 of 10, each with a compatibility view |
+| tables deferred | 6, each with its v1 upsert writer named |
+| door answers identical | 19 of 19, same sync run |
+| full sync through the new write path | proven live, HTTP 200, all sources wrote |
+| test suite | 346 pass, 4 fail, 0 skipped |
+| new failures | 1, `GOLDEN a2`, caused by the budget photo refreshing, not by the move |
+| browser key locked out | yes, 0 of the 10 readable by anon |
+| boundary credential sees them | yes, all 10 |
+| reversible | yes, one ALTER per table |
+
+### Where the browser-key exposure stands now
+
+Phase 1 closed 11 tables. Phase 2 closed 9 more, including `adsv2_sale_facts`,
+which is cash. What is left readable with the browser key is the deferred set and
+the floor 2 tables Phase 3 will move, with `ad_creative_transcripts` the notable
+one still open because v1 writes it.

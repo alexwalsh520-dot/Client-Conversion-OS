@@ -1,0 +1,365 @@
+{
+  "question_key": "capture_health",
+  "question": "Whether the pipes that feed the attribution numbers are still running: keyword events flowing per creator, webhook keyword misses, broken organic automations, misc-chat wins that are recoverable, and whether the stored sources are inside their thresholds. Each pipe gets go, degraded or no-go with the evidence behind it.",
+  "params": {
+    "client": "all",
+    "days": 14,
+    "sample": 5
+  },
+  "answers": {
+    "client": "all",
+    "date_from": "2026-07-28",
+    "date_to": "2026-08-10",
+    "days": 14,
+    "checked_at": "2026-08-10T10:43:17.953Z",
+    "overall": "no_go",
+    "pipes": [
+      {
+        "pipe": "keyword_events_flowing",
+        "verdict": "go",
+        "evidence": "every creator produced a keyword event inside the 24 hour threshold: jake 3.6h ago, tyson 3.7h ago.",
+        "detail": [
+          {
+            "client_key": "jake",
+            "last_event_at": "2026-08-10T07:04:36.604+00:00",
+            "hours_since_last": 3.6,
+            "events_7d": 91,
+            "events_30d": 138
+          },
+          {
+            "client_key": "tyson",
+            "last_event_at": "2026-08-10T06:59:48.828+00:00",
+            "hours_since_last": 3.7,
+            "events_7d": 230,
+            "events_30d": 1167
+          }
+        ]
+      },
+      {
+        "pipe": "webhook_keyword_misses",
+        "verdict": "degraded",
+        "evidence": "15 of 73 sales carrying a ManyChat subscriber id (20.5%) have NO keyword event for that subscriber at all. That is the lead_engaged flow gap: the person is in ManyChat, the sale knows their id, and the webhook never recorded them sending anything. Those sales can never be attributed to an ad by hard evidence.",
+        "detail": {
+          "rows_with_subscriber": 73,
+          "rows_with_zero_events": 15,
+          "miss_pct": 20.5,
+          "sample": [
+            {
+              "day": "2026-08-10",
+              "first_name": "Austin",
+              "subscriber_id": "1689782806"
+            },
+            {
+              "day": "2026-08-09",
+              "first_name": "Cormac",
+              "subscriber_id": "1194437907"
+            },
+            {
+              "day": "2026-08-08",
+              "first_name": "Ralph",
+              "subscriber_id": "2123191853"
+            },
+            {
+              "day": "2026-08-07",
+              "first_name": "Deep",
+              "subscriber_id": "1256606345"
+            },
+            {
+              "day": "2026-08-06",
+              "first_name": "Edward",
+              "subscriber_id": "361352483"
+            }
+          ]
+        }
+      },
+      {
+        "pipe": "organic_automation",
+        "verdict": "degraded",
+        "evidence": "16 of 27 organic keyword senders across 10 of 18 active days produced no keyword event. Events ARE flowing, so the automation is running and dropping people rather than being down.",
+        "detail": {
+          "by_day": [
+            {
+              "client_key": "tyson",
+              "keyword": "locked",
+              "et_day": "2026-08-10",
+              "dm_senders": 1,
+              "keyword_events": 0
+            },
+            {
+              "client_key": "tyson",
+              "keyword": "interested",
+              "et_day": "2026-08-09",
+              "dm_senders": 1,
+              "keyword_events": 0
+            },
+            {
+              "client_key": "tyson",
+              "keyword": "locked",
+              "et_day": "2026-08-09",
+              "dm_senders": 2,
+              "keyword_events": 2
+            },
+            {
+              "client_key": "jake",
+              "keyword": "ready",
+              "et_day": "2026-08-08",
+              "dm_senders": 1,
+              "keyword_events": 1
+            },
+            {
+              "client_key": "tyson",
+              "keyword": "locked",
+              "et_day": "2026-08-08",
+              "dm_senders": 2,
+              "keyword_events": 1
+            },
+            {
+              "client_key": "jake",
+              "keyword": "ready",
+              "et_day": "2026-08-07",
+              "dm_senders": 1,
+              "keyword_events": 2
+            },
+            {
+              "client_key": "tyson",
+              "keyword": "locked",
+              "et_day": "2026-08-07",
+              "dm_senders": 2,
+              "keyword_events": 2
+            },
+            {
+              "client_key": "jake",
+              "keyword": "ready",
+              "et_day": "2026-08-06",
+              "dm_senders": 0,
+              "keyword_events": 1
+            },
+            {
+              "client_key": "tyson",
+              "keyword": "locked",
+              "et_day": "2026-08-06",
+              "dm_senders": 1,
+              "keyword_events": 1
+            },
+            {
+              "client_key": "tyson",
+              "keyword": "locked",
+              "et_day": "2026-08-05",
+              "dm_senders": 1,
+              "keyword_events": 0
+            },
+            {
+              "client_key": "jake",
+              "keyword": "ready",
+              "et_day": "2026-08-04",
+              "dm_senders": 1,
+              "keyword_events": 1
+            },
+            {
+              "client_key": "tyson",
+              "keyword": "locked",
+              "et_day": "2026-08-04",
+              "dm_senders": 1,
+              "keyword_events": 1
+            },
+            {
+              "client_key": "tyson",
+              "keyword": "locked",
+              "et_day": "2026-08-03",
+              "dm_senders": 4,
+              "keyword_events": 0
+            },
+            {
+              "client_key": "tyson",
+              "keyword": "locked",
+              "et_day": "2026-08-02",
+              "dm_senders": 3,
+              "keyword_events": 0
+            },
+            {
+              "client_key": "jake",
+              "keyword": "ready",
+              "et_day": "2026-08-01",
+              "dm_senders": 1,
+              "keyword_events": 0
+            },
+            {
+              "client_key": "tyson",
+              "keyword": "locked",
+              "et_day": "2026-08-01",
+              "dm_senders": 1,
+              "keyword_events": 0
+            },
+            {
+              "client_key": "jake",
+              "keyword": "ready",
+              "et_day": "2026-07-30",
+              "dm_senders": 1,
+              "keyword_events": 0
+            },
+            {
+              "client_key": "tyson",
+              "keyword": "locked",
+              "et_day": "2026-07-29",
+              "dm_senders": 2,
+              "keyword_events": 0
+            },
+            {
+              "client_key": "tyson",
+              "keyword": "locked",
+              "et_day": "2026-07-28",
+              "dm_senders": 1,
+              "keyword_events": 0
+            }
+          ],
+          "method": "COHORT counts per creator, per keyword, per day: how many people sent the word in their DMs against how many keyword events were recorded. It is deliberately NOT a person-to-person join, because ads_keyword_events and dm_conversation_messages use different subscriber id spaces (1 id in common out of 7,585) and joining them would report every organic sender as a break forever. Bridging those spaces is a later brick.",
+          "what_this_cannot_say": "It cannot name WHICH people were dropped, only how many. Naming them needs the identity bridge."
+        }
+      },
+      {
+        "pipe": "misc_chat_recoverable",
+        "verdict": "go",
+        "evidence": "none of the 3 misc-chat wins belong to a subscriber with keyword events before the sale, so there is nothing here to recover by this route.",
+        "detail": {
+          "misc_chat_wins": 3,
+          "recoverable": 0,
+          "sample": [],
+          "method": "Uses the ManyChat subscriber id the sale row already carries, which is the SAME id space as ads_keyword_events, so no identity bridge is involved. It cannot see a person whose thread carries the keyword but whose sale row pasted a different ManyChat account: that is the Hunter Chapman failure mode and it needs a human, or the identity bridge."
+        }
+      },
+      {
+        "pipe": "stored_source_freshness",
+        "verdict": "no_go",
+        "evidence": "adsv2_budget_snapshots (31.3h, limit 26h) past its threshold.",
+        "detail": [
+          {
+            "source": "sales_tracker_rows",
+            "last_written_at": "2026-08-10T10:40:43.537+00:00",
+            "age_hours": 0,
+            "threshold_hours": 24,
+            "state": "fresh"
+          },
+          {
+            "source": "adsv2_dm_facts",
+            "last_written_at": "2026-08-10T10:25:22.992562+00:00",
+            "age_hours": 0.3,
+            "threshold_hours": 4,
+            "state": "fresh"
+          },
+          {
+            "source": "adsv2_budget_snapshots",
+            "last_written_at": "2026-08-09T03:25:09.081+00:00",
+            "age_hours": 31.3,
+            "threshold_hours": 26,
+            "state": "stale"
+          }
+        ]
+      }
+    ],
+    "outcome_key": {
+      "go": "this pipe is working, on the evidence stated.",
+      "degraded": "this pipe is running and losing some of what it should catch. It is its own outcome on purpose: folding it into no-go makes every partial loss look like an outage, and folding it into go throws away the only early warning there is.",
+      "no_go": "this pipe is not doing its job, or could not be checked. Either way nothing here should be read as healthy."
+    },
+    "what_this_is_not": "This says whether capture is WORKING, never whether the ads are. An account can be capturing perfectly and losing money, and every pipe here would read go. Ask kill_scale_read for the money and health_check for whether the ads can deliver.",
+    "standing_note": "certainty_buckets v1 already anticipates this question in writing: \"broken organic-keyword automations have mislabeled some real keyword leads as misc chat; capture_health watches for keyword-recoverable misc chats\". This is that watch."
+  },
+  "definitions_quoted": [],
+  "as_of": [
+    {
+      "source": "ads_keyword_events",
+      "last_written_at": "2026-08-10T07:04:36.604+00:00",
+      "note": "the last keyword event the capture webhook recorded"
+    },
+    {
+      "source": "adsv2_sale_facts",
+      "last_written_at": "2026-08-10T10:25:23.311495+00:00",
+      "note": "the newest stamped sale fact"
+    },
+    {
+      "source": "sales_tracker_rows",
+      "last_written_at": "2026-08-10T10:40:43.537+00:00",
+      "note": "the last sales tracker sync"
+    }
+  ],
+  "sources": [
+    "ads_keyword_events",
+    "dm_conversation_messages",
+    "adsv2_sale_facts",
+    "registry_keywords",
+    "sales_tracker_rows"
+  ],
+  "receipt": {
+    "contract_version": 2,
+    "question_key": "capture_health",
+    "question_version": 1,
+    "asked_at": "2026-08-10T10:43:17.953Z",
+    "caller": "utari",
+    "params_as_resolved": {
+      "client": "all",
+      "days": 14,
+      "sample": 5
+    },
+    "aliases_resolved": [],
+    "window": {
+      "from": "2026-07-28",
+      "to": "2026-08-10",
+      "kind": "explicit_range"
+    },
+    "data_version": null,
+    "freshness": [
+      {
+        "source": "ads_keyword_events",
+        "last_written_at": "2026-08-10T07:04:36.604+00:00",
+        "note": "the last keyword event the capture webhook recorded"
+      },
+      {
+        "source": "adsv2_sale_facts",
+        "last_written_at": "2026-08-10T10:25:23.311495+00:00",
+        "note": "the newest stamped sale fact"
+      },
+      {
+        "source": "sales_tracker_rows",
+        "last_written_at": "2026-08-10T10:40:43.537+00:00",
+        "note": "the last sales tracker sync"
+      }
+    ],
+    "stale": [],
+    "coverage": null,
+    "exclusions": [
+      {
+        "what": "any statement about how much money a break has cost",
+        "count": 0,
+        "why": "this question reports whether capture is working, never what the failure was worth. Sizing a break needs the identity bridge to say which people were lost, and that is a later brick. Ask coverage_report for what is currently unclassified."
+      },
+      {
+        "what": "naming the individual people an organic automation dropped",
+        "count": 0,
+        "why": "the keyword events and the DM messages use different subscriber id spaces, with one id in common out of 7,585. The organic detector therefore compares cohort counts per day and can say HOW MANY were dropped but never WHICH. Joining across those spaces would report every organic sender as a break forever."
+      }
+    ],
+    "caveats": [
+      "Nothing here was changed or fixed. This question only looks. Anything it finds is BREAKAGE rather than a performance signal, so it is acted on when it is found rather than waiting for a sustained trend."
+    ],
+    "certainty": "machine_certain",
+    "definitions_cited": [
+      {
+        "registry": "registry_definitions",
+        "name": "certainty_buckets",
+        "version": 1
+      },
+      {
+        "registry": "registry_definitions",
+        "name": "organic_keywords",
+        "version": 1
+      },
+      {
+        "registry": "registry_definitions",
+        "name": "sale_to_ad_chain",
+        "version": 1
+      }
+    ]
+  },
+  "note": "Nothing here was changed or fixed. This question only looks. Anything it finds is BREAKAGE rather than a performance signal, so it is acted on when it is found rather than waiting for a sustained trend.",
+  "freestyle_rule": "THE FREESTYLE RULE: this answer came through the locked door, so it is certified and it carries its own receipt. Any number you produce about this business OUTSIDE the door (a query you wrote, a figure you inferred, a total you added up yourself) is a WORKSHOP answer: label it as uncertified when you report it, and log what you were trying to ask into door_miss_log so it becomes a candidate for certification. The miss log is the backlog that decides what this door learns to answer next; an unlogged workshop answer is a question the door will never learn. Ask describe_misses to see that backlog."
+}

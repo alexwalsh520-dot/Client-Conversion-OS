@@ -294,6 +294,11 @@ function fakeDb(
       return chain;
     },
   };
+  // The real client can be pointed at a different schema and hands back the same
+  // query surface. The Semantic Layer consolidation moved the saved answers into
+  // the warehouse schema, so production now says .schema("warehouse").from(...).
+  // The fake has to model that, or it has stopped modelling the client.
+  (db as unknown as { schema: () => unknown }).schema = () => db;
   return { db: db as unknown as Db, calls };
 }
 
@@ -597,7 +602,7 @@ test("change_history refuses a limit outside its stated range", async () => {
 // ── The door itself ─────────────────────────────────────────────────────
 
 test("a template that throws is reported as a refusal, never as a number", async () => {
-  const brokenDb = {
+  const broken: Record<string, unknown> = {
     rpc() {
       return Promise.resolve({ data: null, error: { message: "the database said no" } });
     },
@@ -610,7 +615,9 @@ test("a template that throws is reported as a refusal, never as a number", async
       };
       return chain;
     },
-  } as unknown as Db;
+  };
+  broken.schema = () => broken;
+  const brokenDb = broken as unknown as Db;
   const r = await askQuestion({ question_key: "data_health", params: {} }, { db: brokenDb, ...OPTS });
   assert.ok(isRefusal(r));
   assert.match(r.reason, /no number is being returned/);

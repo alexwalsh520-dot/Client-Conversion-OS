@@ -1,0 +1,242 @@
+{
+  "question_key": "data_health",
+  "question": "The most recent daily accuracy run, every row exactly as recorded: what was compared, the two numbers, green, amber or red, the written tolerance, and what to do about it.",
+  "params": {},
+  "answers": {
+    "checks": 13,
+    "counts": {
+      "green": 11,
+      "amber": 0,
+      "red": 2,
+      "error": 0
+    },
+    "ran_at": "2026-08-10T08:45:44.558+00:00",
+    "et_day": "2026-08-10",
+    "rows": [
+      {
+        "check_key": "books_balance",
+        "plain_english_name": "The books balance",
+        "status": "green",
+        "left_label": "recounted from the facts",
+        "left_value": "96 of 96 numbers agree",
+        "right_label": "the saved answer",
+        "right_value": "96 numbers checked across 4 windows",
+        "diff_value": "",
+        "tolerance_note": "Every number is recounted from the fact tables and must equal the saved answer exactly. One exception, and it is evidence-based, not a fudge: if the ONLY differences are spend, impressions or clicks AND the Meta feed wrote those rows after the answer was saved (proven by comparing the two timestamps), the row is amber, because the next hourly rebuild absorbs it. Any difference at all in DMs, bookings, calls taken, closes or cash is red, always. A window with no saved answer yet is amber.",
+        "what_to_do": null,
+        "et_day": "2026-08-10",
+        "ran_at": "2026-08-10T08:45:33.375+00:00"
+      },
+      {
+        "check_key": "spend_vs_meta",
+        "plain_english_name": "Our spend matches Meta",
+        "status": "green",
+        "left_label": "our copy of Meta spend",
+        "left_value": "$5,247.91",
+        "right_label": "Meta, read fresh",
+        "right_value": "$5,248.16",
+        "diff_value": "-$0.25",
+        "tolerance_note": "Our stored copy of Meta spend is compared against a fresh read from Meta. Green needs the two within ONE DOLLAR and within 0.1 percent, both. That dollar is not a fudge, it is penny rounding: we store each ad's spend hour by hour rounded to the nearest cent and add those up, while Meta totals the whole account in full precision, so thousands of roundings leave a few cents behind (measured: 1 to 10 cents on 3,000 dollars). A gap under a dollar cannot change any decision, and anything that could would be far larger. Beyond that and within 1 percent is amber, because Meta restates the most recent days for hours after they end. More than 1 percent is red. A creator with no Meta key configured is amber, never red, because that is a missing connection, not a wrong number.",
+        "what_to_do": null,
+        "et_day": "2026-08-10",
+        "ran_at": "2026-08-10T08:45:34.712+00:00"
+      },
+      {
+        "check_key": "cash_vs_sheet",
+        "plain_english_name": "Our cash matches the sales sheet",
+        "status": "green",
+        "left_label": "our sale rows",
+        "left_value": "$65,220.00 over 191 calls",
+        "right_label": "the sales sheet",
+        "right_value": "$65,220.00 over 191 calls",
+        "diff_value": "",
+        "tolerance_note": "The sale rows are built from the sales tracker sheet, so the totals must be identical to the penny and the row counts must match. Any difference in the MONEY is red, always. One exception on the row COUNT, and it is evidence-based, not a fudge: the sheet syncs every 10 minutes while the sale rows rebuild hourly, so a call typed in between the two shows up as an extra sheet row with no money attached. When the money matches exactly, the sheet has MORE rows than we do, and the sheet synced after our last rebuild (proven by the two timestamps), the row is amber. Anything else, including us holding more rows than the sheet, is red. Note this is cash on calls by CALL date; payments landing this month is a different question.",
+        "what_to_do": null,
+        "et_day": "2026-08-10",
+        "ran_at": "2026-08-10T08:45:34.754+00:00"
+      },
+      {
+        "check_key": "freshness",
+        "plain_english_name": "Every feed is still arriving",
+        "status": "red",
+        "left_label": "feeds on time",
+        "left_value": "10 of 11",
+        "right_label": "oldest feed",
+        "right_value": "recorded calls 38.6h ago",
+        "diff_value": "",
+        "tolerance_note": "Each feed has an expected gap between writes. Older than that is red, with the age shown. A feed that has never written is red. There is no amber here on purpose: a feed is either arriving on time or it is not.",
+        "what_to_do": "These feeds have stopped arriving: budget photos (29.3h). Check that feed's sync before trusting today's numbers.",
+        "et_day": "2026-08-10",
+        "ran_at": "2026-08-10T08:45:35.074+00:00"
+      },
+      {
+        "check_key": "stamp_or_reason",
+        "plain_english_name": "Every row explains itself",
+        "status": "green",
+        "left_label": "rows with neither a stamp nor a reason",
+        "left_value": "0",
+        "right_label": "allowed",
+        "right_value": "0",
+        "diff_value": "",
+        "tolerance_note": "Every DM, booking and sale row must carry either the hard key that proved its match or the written reason there is none. The answer must be zero rows with neither. Anything above zero is red and the row ids are listed. No amber: a silent blank is exactly what this system exists to abolish.",
+        "what_to_do": null,
+        "et_day": "2026-08-10",
+        "ran_at": "2026-08-10T08:45:35.119+00:00"
+      },
+      {
+        "check_key": "unknown_purity",
+        "plain_english_name": "No sale is hiding in the unknown bucket",
+        "status": "green",
+        "left_label": "explainable sales still marked unknown",
+        "left_value": "0",
+        "right_label": "allowed",
+        "right_value": "0",
+        "diff_value": "",
+        "tolerance_note": "No sale may sit in 'unknown' when one of the two honest origin rules could explain it: either every pre-sale keyword came from a creator no longer on the roster (label it 'former creator ad') or exactly one keyword from one active creator came before the sale (stamp it). Zero missed. Above zero is red. A sale that stays unknown because the person answered two different ads is correctly unknown under the never-guess rule and is not counted here.",
+        "what_to_do": null,
+        "et_day": "2026-08-10",
+        "ran_at": "2026-08-10T08:45:35.167+00:00"
+      },
+      {
+        "check_key": "setter_coverage",
+        "plain_english_name": "No setter was dropped",
+        "status": "green",
+        "left_label": "rows missing a setter the source knows",
+        "left_value": "0",
+        "right_label": "allowed",
+        "right_value": "0",
+        "diff_value": "",
+        "tolerance_note": "If the keyword event names who set the appointment, the fact row must carry that name too. Zero dropped. Above zero is red. Rows whose source genuinely has no setter are not counted: that is a gap in ManyChat, not something we lost.",
+        "what_to_do": null,
+        "et_day": "2026-08-10",
+        "ran_at": "2026-08-10T08:45:35.213+00:00"
+      },
+      {
+        "check_key": "change_log_continuity",
+        "plain_english_name": "The ad change log is being kept",
+        "status": "green",
+        "left_label": "last successful capture",
+        "left_value": "0.3 hours ago",
+        "right_label": "duplicate change ids",
+        "right_value": "0",
+        "diff_value": "",
+        "tolerance_note": "The ad change capture must have succeeded within the last 25 hours (it runs hourly, so 25 gives one missed run of slack), and the change log must hold zero duplicate change ids. Either failing is red. No amber: the log is either being kept or it is not.",
+        "what_to_do": null,
+        "et_day": "2026-08-10",
+        "ran_at": "2026-08-10T08:45:35.483+00:00"
+      },
+      {
+        "check_key": "budget_photos",
+        "plain_english_name": "Every live dial was photographed today",
+        "status": "red",
+        "left_label": "live dials",
+        "left_value": "11",
+        "right_label": "photographed today",
+        "right_value": "0",
+        "diff_value": "11",
+        "tolerance_note": "Every campaign and ad set that is currently live must have a budget photo taken today. Any live dial missing today's photo is red. No amber: since Build 2 only live dials are photographed daily, so a missing one means the photo job did not run.",
+        "what_to_do": "11 live dial(s) have no photo today. Check the hourly Ads v2 sync ran; budget history for today is incomplete until it does.",
+        "et_day": "2026-08-10",
+        "ran_at": "2026-08-10T08:45:35.526+00:00"
+      },
+      {
+        "check_key": "two_thermometers",
+        "plain_english_name": "The old tab agrees on spend",
+        "status": "green",
+        "left_label": "the new numbers",
+        "left_value": "$15,571.22",
+        "right_label": "the old tab",
+        "right_value": "$15,543.57",
+        "diff_value": "$27.65",
+        "tolerance_note": "The frozen v1 tab is read (never written) as a second opinion on spend, over the 30 days ending yesterday. Within 1 percent is green. More is red. Why 30 days and not one: v1 photographs a day at about 23:10 Eastern, before the day has closed, so it is always short by the last hour. Over one day that is about 4 percent; over 30 days the same missing hour is about 0.14 percent, comfortably inside 1 percent. If the v1 photo is missing or older than 30 hours the row is amber ('v1 thermometer stale'), never red, because v1 is frozen and may simply have stopped.",
+        "what_to_do": null,
+        "et_day": "2026-08-10",
+        "ran_at": "2026-08-10T08:45:36.241+00:00"
+      },
+      {
+        "check_key": "ask_twice",
+        "plain_english_name": "Ask twice, same answer",
+        "status": "green",
+        "left_label": "tyson, trailing 7 days, asked once",
+        "left_value": "{\"spendCents\":265291,\"collectedCents\":910000}",
+        "right_label": "asked again, and through the warehouse shortcut",
+        "right_value": "{\"spendCents\":265291,\"collectedCents\":910000}",
+        "diff_value": "",
+        "tolerance_note": "The same question, asked twice through the saved path, must come back byte for byte identical, and the warehouse shortcut must return the same row as the table it points at. Any difference at all is red. This is the promise that computing once and saving actually holds.",
+        "what_to_do": null,
+        "et_day": "2026-08-10",
+        "ran_at": "2026-08-10T08:45:36.299+00:00"
+      },
+      {
+        "check_key": "leak_watch",
+        "plain_english_name": "Bookings arriving with no keyword",
+        "status": "green",
+        "left_label": "last 7 days",
+        "left_value": "7",
+        "right_label": "the 7 days before",
+        "right_value": "11",
+        "diff_value": "-4",
+        "tolerance_note": "Informational only, never red. Counts bookings in the last 7 days that arrived through a link carrying no keyword, with the trend against the 7 days before. This is the biggest fixable attribution leak and it is fixed at the source (the booking link), not here.",
+        "what_to_do": "7 keywordless booking(s) in the last 7 days, down 4 on the 7 before. Fix at the booking link, not here.",
+        "et_day": "2026-08-10",
+        "ran_at": "2026-08-10T08:45:36.388+00:00"
+      },
+      {
+        "check_key": "one_front_door",
+        "plain_english_name": "The AI's answer equals the screen's",
+        "status": "green",
+        "left_label": "numbers the AI door returned",
+        "left_value": "576",
+        "right_label": "of those, equal to the screen's saved answer",
+        "right_value": "576",
+        "diff_value": "",
+        "tolerance_note": "The question door and the Ads v2 tab must return the identical number, because they read the identical saved row. There is NO tolerance here and there is no honest lag to allow: both sides read the same snapshot at the same data version, so a difference cannot be timing and can only be a fault in the door. Any difference at all is red. A window the door refuses to serve is also red, because the tab would have served it.",
+        "what_to_do": null,
+        "et_day": "2026-08-10",
+        "ran_at": "2026-08-10T08:45:44.558+00:00"
+      }
+    ],
+    "status_key": {
+      "green": "the numbers agree.",
+      "amber": "they differ for a written, understood reason.",
+      "red": "a real disagreement. Any difference in actual money is red, always.",
+      "error": "the check itself could not run, so it proved nothing today."
+    }
+  },
+  "definitions_quoted": [],
+  "as_of": [
+    {
+      "source": "warehouse.accuracy_checks",
+      "last_written_at": "2026-08-10T08:45:44.558+00:00",
+      "note": "the last daily accuracy run"
+    }
+  ],
+  "sources": [
+    "warehouse.accuracy_checks"
+  ],
+  "receipt": {
+    "contract_version": 2,
+    "question_key": "data_health",
+    "question_version": 1,
+    "asked_at": "2026-08-10T10:44:12.129Z",
+    "caller": "utari",
+    "params_as_resolved": {},
+    "aliases_resolved": [],
+    "window": null,
+    "data_version": null,
+    "freshness": [
+      {
+        "source": "warehouse.accuracy_checks",
+        "last_written_at": "2026-08-10T08:45:44.558+00:00",
+        "note": "the last daily accuracy run"
+      }
+    ],
+    "stale": [],
+    "coverage": null,
+    "exclusions": [],
+    "caveats": [],
+    "certainty": "machine_certain",
+    "definitions_cited": []
+  },
+  "freestyle_rule": "THE FREESTYLE RULE: this answer came through the locked door, so it is certified and it carries its own receipt. Any number you produce about this business OUTSIDE the door (a query you wrote, a figure you inferred, a total you added up yourself) is a WORKSHOP answer: label it as uncertified when you report it, and log what you were trying to ask into door_miss_log so it becomes a candidate for certification. The miss log is the backlog that decides what this door learns to answer next; an unlogged workshop answer is a question the door will never learn. Ask describe_misses to see that backlog."
+}

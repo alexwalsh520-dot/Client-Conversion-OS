@@ -1,0 +1,261 @@
+{
+  "question_key": "define",
+  "question": "The stored meaning of any number this system reports, quoted exactly as written, or all twenty-one of them.",
+  "params": {
+    "metric": null
+  },
+  "answers": {
+    "asked_for": "everything",
+    "count": 21,
+    "definitions": [
+      {
+        "key": "name",
+        "label": "Campaign / Ad set / Ad",
+        "meaning": "The campaign, ad set, or ad this row describes.",
+        "source": "Meta. An ad's name is also its keyword.",
+        "format": "text",
+        "is_calculated": false,
+        "sort_order": 0,
+        "refreshed_at": "2026-08-10T10:26:07.627942+00:00"
+      },
+      {
+        "key": "budget",
+        "label": "Daily budget",
+        "meaning": "The daily budget set in Meta at that time. Ad sets hold budgets in ABO; campaigns only when CBO; ads never do.",
+        "source": "Meta budget settings, saved once per Eastern-time day.",
+        "format": "budget",
+        "is_calculated": false,
+        "sort_order": 1,
+        "refreshed_at": "2026-08-10T10:26:07.627942+00:00"
+      },
+      {
+        "key": "spend",
+        "label": "Ad spend",
+        "meaning": "How much Meta charged to run this ad across the selected days.",
+        "source": "Meta, bucketed to Eastern-time days.",
+        "format": "usd",
+        "is_calculated": false,
+        "sort_order": 2,
+        "refreshed_at": "2026-08-10T10:26:07.627942+00:00"
+      },
+      {
+        "key": "impressions",
+        "label": "Impressions",
+        "meaning": "How many times the ad was shown.",
+        "source": "Meta.",
+        "format": "int",
+        "is_calculated": false,
+        "sort_order": 3,
+        "refreshed_at": "2026-08-10T10:26:07.627942+00:00"
+      },
+      {
+        "key": "cpm",
+        "label": "CPM",
+        "meaning": "The cost for every one thousand times the ad was shown.",
+        "source": "Ad spend divided by impressions, times one thousand.",
+        "format": "cpm",
+        "is_calculated": true,
+        "sort_order": 4,
+        "refreshed_at": "2026-08-10T10:26:07.627942+00:00"
+      },
+      {
+        "key": "clicks",
+        "label": "Link clicks",
+        "meaning": "How many times people clicked the ad's link.",
+        "source": "Meta.",
+        "format": "int",
+        "is_calculated": false,
+        "sort_order": 5,
+        "refreshed_at": "2026-08-10T10:26:07.627942+00:00"
+      },
+      {
+        "key": "ctr",
+        "label": "CTR",
+        "meaning": "The share of times the ad was shown that led to a link click.",
+        "source": "Link clicks divided by impressions.",
+        "format": "pct",
+        "is_calculated": true,
+        "sort_order": 6,
+        "refreshed_at": "2026-08-10T10:26:07.627942+00:00"
+      },
+      {
+        "key": "cpc",
+        "label": "CPC",
+        "meaning": "The average cost of one link click.",
+        "source": "Ad spend divided by link clicks.",
+        "format": "usd2",
+        "is_calculated": true,
+        "sort_order": 7,
+        "refreshed_at": "2026-08-10T10:26:07.627942+00:00"
+      },
+      {
+        "key": "messages",
+        "label": "DMs",
+        "meaning": "How many different people sent this ad's keyword in a DM.",
+        "source": "ManyChat keyword events, counted as distinct people.",
+        "format": "int",
+        "is_calculated": false,
+        "sort_order": 8,
+        "refreshed_at": "2026-08-10T10:26:07.627942+00:00"
+      },
+      {
+        "key": "costPerMessage",
+        "label": "Cost / DM",
+        "meaning": "The average ad spend behind one DM.",
+        "source": "Ad spend divided by DMs.",
+        "format": "usd2",
+        "is_calculated": true,
+        "sort_order": 9,
+        "refreshed_at": "2026-08-10T10:26:07.627942+00:00"
+      },
+      {
+        "key": "booked",
+        "label": "Calls booked",
+        "meaning": "How many different people booked a strategy call from this ad's keyword in this window, counted on the day they booked it.",
+        "source": "GoHighLevel sales-calendar bookings that carry the keyword, counted as distinct people on the day the booking was made (not the day the call is scheduled for), with reschedules grouped under one person.",
+        "format": "int",
+        "is_calculated": false,
+        "sort_order": 10,
+        "refreshed_at": "2026-08-10T10:26:07.627942+00:00"
+      },
+      {
+        "key": "costPerBooked",
+        "label": "Cost / booked",
+        "meaning": "The average ad spend behind one booked call.",
+        "source": "Ad spend divided by calls booked.",
+        "format": "usd2",
+        "is_calculated": true,
+        "sort_order": 11,
+        "refreshed_at": "2026-08-10T10:26:07.627942+00:00"
+      },
+      {
+        "key": "taken",
+        "label": "Calls taken",
+        "meaning": "How many strategy calls took place in this window, counted on the day the call happened, including ones booked earlier.",
+        "source": "The sales tracker, which only lists calls that took place. Counted by call day, so this can differ from the show-rate group, which counts people booked in this window.",
+        "format": "int",
+        "is_calculated": false,
+        "sort_order": 12,
+        "refreshed_at": "2026-08-10T10:26:07.627942+00:00"
+      },
+      {
+        "key": "costPerTaken",
+        "label": "Cost / call taken",
+        "meaning": "The average ad spend behind one call taken.",
+        "source": "Ad spend divided by calls taken.",
+        "format": "usd2",
+        "is_calculated": true,
+        "sort_order": 13,
+        "refreshed_at": "2026-08-10T10:26:07.627942+00:00"
+      },
+      {
+        "key": "showRate",
+        "label": "Show rate",
+        "meaning": "Of the people who booked a call in this window, the share who actually showed up. Upcoming calls are set aside, not counted for or against it.",
+        "source": "People booked in this window who have a matching taken record, divided by people booked in this window minus upcoming. The same people the popup lists, so the cell and the popup always agree. It never passes 100%.",
+        "format": "pct",
+        "is_calculated": true,
+        "sort_order": 14,
+        "refreshed_at": "2026-08-10T10:26:07.627942+00:00"
+      },
+      {
+        "key": "newClients",
+        "label": "New clients",
+        "meaning": "How many of those calls became a paying client.",
+        "source": "The sales tracker wins.",
+        "format": "int",
+        "is_calculated": false,
+        "sort_order": 15,
+        "refreshed_at": "2026-08-10T10:26:07.627942+00:00"
+      },
+      {
+        "key": "closeRate",
+        "label": "Close rate",
+        "meaning": "The share of calls taken that became a client.",
+        "source": "New clients divided by calls taken.",
+        "format": "pct",
+        "is_calculated": true,
+        "sort_order": 16,
+        "refreshed_at": "2026-08-10T10:26:07.627942+00:00"
+      },
+      {
+        "key": "msgToCall",
+        "label": "DM to call",
+        "meaning": "The share of DMs that became a booked call.",
+        "source": "Calls booked divided by DMs.",
+        "format": "pct",
+        "is_calculated": true,
+        "sort_order": 17,
+        "refreshed_at": "2026-08-10T10:26:07.627942+00:00"
+      },
+      {
+        "key": "collected",
+        "label": "Collected revenue",
+        "meaning": "Cash actually collected from clients tied to this ad's keyword.",
+        "source": "The sales tracker, tied to a keyword by hard key only.",
+        "format": "usd",
+        "is_calculated": false,
+        "sort_order": 18,
+        "refreshed_at": "2026-08-10T10:26:07.627942+00:00"
+      },
+      {
+        "key": "costPerClient",
+        "label": "Cost / client",
+        "meaning": "The average ad spend behind one new client.",
+        "source": "Ad spend divided by new clients.",
+        "format": "usd",
+        "is_calculated": true,
+        "sort_order": 19,
+        "refreshed_at": "2026-08-10T10:26:07.627942+00:00"
+      },
+      {
+        "key": "collectedRoi",
+        "label": "Collected ROAS",
+        "meaning": "The cash collected for every dollar of ad spend, shown as a multiple.",
+        "source": "Collected revenue divided by ad spend.",
+        "format": "ratio2",
+        "is_calculated": true,
+        "sort_order": 20,
+        "refreshed_at": "2026-08-10T10:26:07.627942+00:00"
+      }
+    ]
+  },
+  "definitions_quoted": [],
+  "as_of": [
+    {
+      "source": "warehouse.definitions",
+      "last_written_at": "2026-08-10T10:26:07.627942+00:00",
+      "note": "the last time the definitions were rewritten from the code registry"
+    }
+  ],
+  "sources": [
+    "warehouse.definitions"
+  ],
+  "receipt": {
+    "contract_version": 2,
+    "question_key": "define",
+    "question_version": 1,
+    "asked_at": "2026-08-10T10:45:40.875Z",
+    "caller": "utari",
+    "params_as_resolved": {
+      "metric": null
+    },
+    "aliases_resolved": [],
+    "window": null,
+    "data_version": null,
+    "freshness": [
+      {
+        "source": "warehouse.definitions",
+        "last_written_at": "2026-08-10T10:26:07.627942+00:00",
+        "note": "the last time the definitions were rewritten from the code registry"
+      }
+    ],
+    "stale": [],
+    "coverage": null,
+    "exclusions": [],
+    "caveats": [],
+    "certainty": "machine_certain",
+    "definitions_cited": []
+  },
+  "freestyle_rule": "THE FREESTYLE RULE: this answer came through the locked door, so it is certified and it carries its own receipt. Any number you produce about this business OUTSIDE the door (a query you wrote, a figure you inferred, a total you added up yourself) is a WORKSHOP answer: label it as uncertified when you report it, and log what you were trying to ask into door_miss_log so it becomes a candidate for certification. The miss log is the backlog that decides what this door learns to answer next; an unlogged workshop answer is a question the door will never learn. Ask describe_misses to see that backlog."
+}
