@@ -1,0 +1,253 @@
+{
+  "question_key": "person_timeline",
+  "question": "One person's whole story in the order it happened, across every id system: their first DM from the real thread, the keywords they sent, what they booked, whether they showed, what the tracker recorded and what they paid. Says which links are hard evidence and what could not be bridged at all.",
+  "params": {
+    "person": "00012017-7324-4a2f-ac99-91113c1baf81",
+    "person_id": "00012017-7324-4a2f-ac99-91113c1baf81"
+  },
+  "answers": {
+    "ids": {
+      "ghl": [
+        "56zAWxTRNHQZTN5GGWEx"
+      ],
+      "manychat": [
+        "992094300"
+      ],
+      "ig_scoped": [
+        "2047860089431589"
+      ],
+      "tracker_names": [
+        "gavin eason",
+        "gavin chitty"
+      ]
+    },
+    "events": [
+      {
+        "at": "2026-06-04T07:10:17.52+00:00",
+        "kind": "keyword_event",
+        "detail": {
+          "setter": null,
+          "creator": "tyson",
+          "keyword": "strong",
+          "contact_id": "56zAWxTRNHQZTN5GGWEx",
+          "event_type": "booked_call",
+          "subscriber_id": null
+        },
+        "source": "ads_keyword_events"
+      },
+      {
+        "at": "2026-06-04T07:10:19.756978+00:00",
+        "kind": "booking",
+        "detail": {
+          "taken": false,
+          "status": "booked",
+          "creator": "tyson",
+          "keyword": "strong",
+          "calendar": "Strategy Session (TS)",
+          "dm_et_day": "2026-06-14",
+          "contact_id": "56zAWxTRNHQZTN5GGWEx",
+          "dm_day_gap": null,
+          "start_time": "2026-06-05T14:45:00+00:00",
+          "blank_reason": null,
+          "evidence_key": "utm_content",
+          "booked_et_day": "2026-06-04",
+          "appointment_key": "wxXkVRAodlPzCeZ9M7eW"
+        },
+        "source": "adsv2_booking_facts"
+      },
+      {
+        "at": "2026-06-15T03:40:49.049+00:00",
+        "kind": "keyword_event",
+        "detail": {
+          "setter": "amara",
+          "creator": "tyson",
+          "keyword": "focus",
+          "contact_id": null,
+          "event_type": "dm_keyword",
+          "subscriber_id": "992094300"
+        },
+        "source": "ads_keyword_events"
+      },
+      {
+        "at": "2026-06-15T03:40:51.466+00:00",
+        "kind": "dm_thread_started",
+        "detail": {
+          "creator": "tyson_sonnek",
+          "inbound": 16,
+          "id_space": "ig_scoped",
+          "messages": 48,
+          "outbound": 32,
+          "subscriber_id": "2047860089431589",
+          "last_message_at": "2026-06-18T21:24:37.577+00:00",
+          "first_message_at": "2026-06-15T03:40:51.466+00:00"
+        },
+        "source": "dm_conversation_messages"
+      },
+      {
+        "at": "2026-06-18T00:00:00+00:00",
+        "kind": "tracker_row",
+        "detail": {
+          "closer": "WILL",
+          "setter": "Amara",
+          "outcome": null,
+          "objection": null,
+          "call_taken": false,
+          "call_number": "Call 134",
+          "prospect_name": "Gavin Eason",
+          "collected_cents": 0,
+          "contracted_cents": 0,
+          "manychat_subscriber_id": "992094300"
+        },
+        "source": "sales_tracker_rows"
+      },
+      {
+        "at": "2026-06-18T00:00:00+00:00",
+        "kind": "sale",
+        "detail": {
+          "closer": "WILL",
+          "is_win": false,
+          "creator": "tyson",
+          "keyword": "focus",
+          "sale_key": "2026-06-18:call-134:gavin-eason",
+          "call_type": "Strategy Session",
+          "call_taken": false,
+          "blank_reason": null,
+          "evidence_key": "subscriber_id",
+          "awaiting_review": false,
+          "collected_usd_cents": 0,
+          "contracted_usd_cents": 0
+        },
+        "source": "adsv2_sale_facts"
+      }
+    ],
+    "creators": [
+      "tyson"
+    ],
+    "evidence": [
+      {
+        "id": "992094300",
+        "source": "manychat_origin_checks.raw.ig_id",
+        "system": "manychat",
+        "linked_at": "2026-08-08T09:43:47.565859+00:00",
+        "confidence": "hard"
+      },
+      {
+        "id": "2047860089431589",
+        "source": "manychat_origin_checks.raw.ig_id",
+        "system": "ig_scoped",
+        "linked_at": "2026-08-08T09:43:47.565859+00:00",
+        "confidence": "hard"
+      },
+      {
+        "id": "gavin eason",
+        "source": "manychat_origin_checks.prospect_name (same row as the subscriber id)",
+        "system": "tracker_name",
+        "linked_at": "2026-08-08T09:43:47.565859+00:00",
+        "confidence": "hard"
+      },
+      {
+        "id": "56zAWxTRNHQZTN5GGWEx",
+        "source": "adsv2_booking_facts.linked_subscriber_id (migration 073 hard-key ladder)",
+        "system": "ghl",
+        "linked_at": "2026-08-08T09:43:47.565859+00:00",
+        "confidence": "hard"
+      },
+      {
+        "id": "gavin chitty",
+        "source": "adsv2_booking_facts (the contact and the name on one row)",
+        "system": "tracker_name",
+        "linked_at": "2026-08-08T09:43:47.565859+00:00",
+        "confidence": "hard"
+      }
+    ],
+    "person_id": "00012017-7324-4a2f-ac99-91113c1baf81",
+    "event_count": 6,
+    "display_name": "Gavin Eason",
+    "link_summary": {
+      "hard_links": 5,
+      "bridged_to_ghl": true,
+      "name_match_links": 0,
+      "bridged_to_instagram": true
+    },
+    "could_not_bridge": null,
+    "duplicate_contact_note": null,
+    "units": "Money is in CENTS.",
+    "reading_note": "Events are in the order they happened. A booking with a dm_day_gap is a booking whose first-DM day is unknown, not a booking that came from nowhere."
+  },
+  "definitions_quoted": [],
+  "as_of": [
+    {
+      "source": "adsv2_booking_facts",
+      "last_written_at": "2026-08-10T05:25:10.604832+00:00",
+      "note": "the newest stamped booking fact"
+    },
+    {
+      "source": "adsv2_sale_facts",
+      "last_written_at": "2026-08-10T05:25:10.745567+00:00",
+      "note": "the newest stamped sale fact"
+    },
+    {
+      "source": "dm_conversation_messages",
+      "last_written_at": "2026-08-10T05:29:10.478977+00:00",
+      "note": "the last DM message captured"
+    }
+  ],
+  "sources": [
+    "registry_persons",
+    "ads_keyword_events",
+    "dm_conversation_messages",
+    "adsv2_booking_facts",
+    "adsv2_sale_facts",
+    "sales_tracker_rows"
+  ],
+  "receipt": {
+    "contract_version": 2,
+    "question_key": "person_timeline",
+    "question_version": 1,
+    "asked_at": "2026-08-10T05:29:21.952Z",
+    "caller": "utari",
+    "params_as_resolved": {
+      "person": "00012017-7324-4a2f-ac99-91113c1baf81",
+      "person_id": "00012017-7324-4a2f-ac99-91113c1baf81"
+    },
+    "aliases_resolved": [],
+    "window": null,
+    "data_version": null,
+    "freshness": [
+      {
+        "source": "adsv2_booking_facts",
+        "last_written_at": "2026-08-10T05:25:10.604832+00:00",
+        "note": "the newest stamped booking fact"
+      },
+      {
+        "source": "adsv2_sale_facts",
+        "last_written_at": "2026-08-10T05:25:10.745567+00:00",
+        "note": "the newest stamped sale fact"
+      },
+      {
+        "source": "dm_conversation_messages",
+        "last_written_at": "2026-08-10T05:29:10.478977+00:00",
+        "note": "the last DM message captured"
+      }
+    ],
+    "stale": [],
+    "coverage": null,
+    "exclusions": [
+      {
+        "what": "events keyed in an id system this person is not bridged to",
+        "count": 0,
+        "why": "A link exists only where one stored row carried both ids. Where no such row exists, the events on the far side are unreachable and are reported as unbridged rather than left out silently. Under person_identity v1 an empty list is never evidence that nothing happened."
+      }
+    ],
+    "caveats": [],
+    "certainty": "machine_certain",
+    "definitions_cited": [
+      {
+        "registry": "registry_definitions",
+        "name": "person_identity",
+        "version": 1
+      }
+    ]
+  },
+  "freestyle_rule": "THE FREESTYLE RULE: this answer came through the locked door, so it is certified and it carries its own receipt. Any number you produce about this business OUTSIDE the door (a query you wrote, a figure you inferred, a total you added up yourself) is a WORKSHOP answer: label it as uncertified when you report it, and log what you were trying to ask into door_miss_log so it becomes a candidate for certification. The miss log is the backlog that decides what this door learns to answer next; an unlogged workshop answer is a question the door will never learn. Ask describe_misses to see that backlog."
+}

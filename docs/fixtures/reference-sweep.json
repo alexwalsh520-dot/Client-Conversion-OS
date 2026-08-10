@@ -1,0 +1,1147 @@
+{
+  "scanned_files": 1056,
+  "tables": {
+    "ads_meta_insights_daily": {
+      "floor": "floor2",
+      "files_total": 51,
+      "files_excluding_migrations": 31,
+      "supabase_writers": 7,
+      "upsert_writers": 2,
+      "supabase_readers": 23,
+      "sql_text_refs": 5,
+      "writer_files": [
+        "src/app/api/sync/ads-tracker/route.ts"
+      ],
+      "reader_files": [
+        "src/app/api/ads/creative-copy/backfill-all/route.ts",
+        "src/app/api/ads/launcher/keywords/route.ts",
+        "src/app/api/dms/conversations/route.ts",
+        "src/lib/ads-leaderboard/metrics.ts",
+        "src/lib/ads-tracker/money-model.ts",
+        "src/lib/ads-tracker/server.ts",
+        "src/lib/ads-tracker/snapshot.ts",
+        "src/lib/ads-v2/facts.ts",
+        "src/lib/ads-v2/windows.ts",
+        "src/lib/ads-variations/auto.ts",
+        "src/lib/buyer-dna/core.ts",
+        "src/lib/buyer-dna/playbook.ts",
+        "src/lib/cmo-agent/propose.ts",
+        "src/lib/daily-report/metrics.ts",
+        "src/lib/manychat.ts",
+        "src/lib/question-door/health-check.ts",
+        "src/lib/utari/foundation.ts"
+      ],
+      "other_mention_files": [
+        "src/lib/ads-v2/activity-sync.ts",
+        "src/lib/question-door/ad-copy.ts",
+        "src/lib/question-door/brick6.golden.test.ts",
+        "src/lib/question-door/budget-map.ts",
+        "src/lib/question-door/creative-bench.ts",
+        "src/lib/question-door/creator-funnel.ts",
+        "src/lib/question-door/health-check.test.ts",
+        "src/lib/question-door/kill-scale.test.ts",
+        "src/lib/question-door/kill-scale.ts",
+        "src/lib/question-door/portfolio-pace.ts",
+        "src/lib/question-door/registry.ts",
+        "src/lib/question-door/scale-headroom.ts",
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "ads_keyword_events": {
+      "floor": "floor2",
+      "files_total": 44,
+      "files_excluding_migrations": 26,
+      "supabase_writers": 10,
+      "upsert_writers": 3,
+      "supabase_readers": 15,
+      "sql_text_refs": 2,
+      "writer_files": [
+        "src/app/api/ads-tracker/attribution-alerts/route.ts",
+        "src/app/api/ads-tracker/manual-event/route.ts",
+        "src/app/api/sales-hub/ghl-appointment-webhook/route.ts",
+        "src/app/api/sales-hub/manychat-webhook/route.ts"
+      ],
+      "reader_files": [
+        "src/app/api/ads/attribution-coverage/route.ts",
+        "src/app/api/content/ideas/route.ts",
+        "src/app/api/content/voc/route.ts",
+        "src/app/api/dms/conversations/route.ts",
+        "src/app/api/sync/manychat-origin/route.ts",
+        "src/lib/ads-leaderboard/metrics.ts",
+        "src/lib/ads-tracker/server.ts",
+        "src/lib/ads-v2/facts.ts",
+        "src/lib/buyer-dna/core.ts",
+        "src/lib/buyer-dna/playbook.ts",
+        "src/lib/utari/foundation.ts"
+      ],
+      "other_mention_files": [
+        "src/app/api/foundation/context/route.ts",
+        "src/app/api/foundation/sync/route.ts",
+        "src/lib/ads-v2/attribution.ts",
+        "src/lib/foundation/resolve.ts",
+        "src/lib/foundation/stitch.ts",
+        "src/lib/question-door/capture-health.ts",
+        "src/lib/question-door/person-bridge.ts",
+        "src/lib/question-door/registry.ts",
+        "src/lib/question-door/resolution-queue.ts",
+        "scripts/build-keyword-tool.mjs",
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "dm_conversation_messages": {
+      "floor": "floor2",
+      "files_total": 34,
+      "files_excluding_migrations": 24,
+      "supabase_writers": 4,
+      "upsert_writers": 4,
+      "supabase_readers": 18,
+      "sql_text_refs": 1,
+      "writer_files": [
+        "src/app/api/sales-hub/ghl-conversation-webhook/route.ts",
+        "src/lib/followup/send.ts",
+        "src/lib/instagram-dm-send.ts",
+        "src/lib/instagram-dm.ts"
+      ],
+      "reader_files": [
+        "src/app/api/dms/conversations/route.ts",
+        "src/app/api/external/content/context/route.ts",
+        "src/app/api/sales-hub/ask-ai/route.ts",
+        "src/app/api/sales-hub/backfill-lead-links/route.ts",
+        "src/app/api/sales-hub/time-to-eat/route.ts",
+        "src/lib/buyer-dna/core.ts",
+        "src/lib/question-door/brick4.golden.test.ts",
+        "src/lib/sales-hub/response-times.ts",
+        "src/lib/setter-report-data.ts",
+        "src/lib/utari/foundation.ts",
+        "mcp-utari/index.mjs"
+      ],
+      "other_mention_files": [
+        "src/app/api/foundation/context/route.ts",
+        "src/app/api/foundation/sync/route.ts",
+        "src/app/api/setup/init-tables/route.ts",
+        "src/lib/foundation/stitch.ts",
+        "src/lib/question-door/capture-health.ts",
+        "src/lib/question-door/person-bridge.ts",
+        "src/lib/question-door/registry.ts",
+        "src/lib/sales-agent.ts",
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "ghl_appointments": {
+      "floor": "floor2",
+      "files_total": 23,
+      "files_excluding_migrations": 17,
+      "supabase_writers": 1,
+      "upsert_writers": 1,
+      "supabase_readers": 10,
+      "sql_text_refs": 0,
+      "writer_files": [
+        "src/app/api/sales-hub/ghl-appointment-webhook/route.ts"
+      ],
+      "reader_files": [
+        "src/app/api/dms/conversations/route.ts",
+        "src/app/api/lab/closer-calendar/route.ts",
+        "src/lib/ads-tracker/server.ts",
+        "src/lib/ads-v2/facts.ts",
+        "src/lib/content-pipeline/fathom-links.ts",
+        "src/lib/daily-report/metrics.ts",
+        "src/lib/manychat.ts",
+        "src/lib/setter-report-data.ts"
+      ],
+      "other_mention_files": [
+        "src/app/api/cron/daily-briefs/route.ts",
+        "src/app/api/foundation/context/route.ts",
+        "src/app/api/foundation/sync/route.ts",
+        "src/lib/ads-v2/attribution.ts",
+        "src/lib/foundation/resolve.ts",
+        "src/lib/foundation/stitch.ts",
+        "src/lib/utari/foundation.ts",
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "sales_tracker_rows": {
+      "floor": "floor2",
+      "files_total": 45,
+      "files_excluding_migrations": 31,
+      "supabase_writers": 1,
+      "upsert_writers": 1,
+      "supabase_readers": 24,
+      "sql_text_refs": 1,
+      "writer_files": [
+        "src/app/api/sync/sales-tracker-rows/route.ts"
+      ],
+      "reader_files": [
+        "src/app/api/ads/attribution-coverage/route.ts",
+        "src/app/api/content/ideas/route.ts",
+        "src/app/api/content/voc/route.ts",
+        "src/app/api/cron/morning-cmo-report/route.ts",
+        "src/app/api/dms/conversations/route.ts",
+        "src/app/api/mcp/utari/route.ts",
+        "src/app/api/sync/manychat-origin/route.ts",
+        "src/lib/ads-leaderboard/metrics.ts",
+        "src/lib/ads-tracker/money-model.ts",
+        "src/lib/ads-tracker/server.ts",
+        "src/lib/ads-tracker/snapshot.ts",
+        "src/lib/ads-v2/facts.ts",
+        "src/lib/ads-v2/selfcheck.ts",
+        "src/lib/buyer-dna/core.ts",
+        "src/lib/content-pipeline/fathom-links.ts",
+        "src/lib/invoicing/compute.ts",
+        "src/lib/manager-ads/metrics.ts",
+        "src/lib/question-door/brick4.golden.test.ts",
+        "src/lib/utari/foundation.ts",
+        "mcp-utari/index.mjs"
+      ],
+      "other_mention_files": [
+        "src/app/api/foundation/context/route.ts",
+        "src/app/api/foundation/sync/route.ts",
+        "src/lib/ads-tracker/dedupe-sales.ts",
+        "src/lib/foundation/stitch.ts",
+        "src/lib/question-door/capture-health.ts",
+        "src/lib/question-door/coverage-report.ts",
+        "src/lib/question-door/person-bridge.ts",
+        "src/lib/question-door/registry.ts",
+        "src/lib/question-door/resolution-queue.ts",
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "manychat_origin_checks": {
+      "floor": "floor2",
+      "files_total": 7,
+      "files_excluding_migrations": 4,
+      "supabase_writers": 1,
+      "upsert_writers": 1,
+      "supabase_readers": 3,
+      "sql_text_refs": 0,
+      "writer_files": [
+        "src/app/api/sync/manychat-origin/route.ts"
+      ],
+      "reader_files": [
+        "src/lib/ads-tracker/server.ts",
+        "src/lib/ads-v2/facts.ts"
+      ],
+      "other_mention_files": [
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "manychat_tag_events": {
+      "floor": "floor2",
+      "files_total": 15,
+      "files_excluding_migrations": 13,
+      "supabase_writers": 3,
+      "upsert_writers": 0,
+      "supabase_readers": 11,
+      "sql_text_refs": 2,
+      "writer_files": [
+        "src/app/api/sales-hub/manychat-webhook/route.ts",
+        "src/lib/dm-link-tracking.ts"
+      ],
+      "reader_files": [
+        "src/app/api/cron/dm-link-sync/route.ts",
+        "src/app/api/lab/setter-load/route.ts",
+        "src/app/api/sales-hub/ghl-conversation-webhook/route.ts",
+        "src/app/api/sales-hub/time-to-eat/route.ts",
+        "src/lib/ads-tracker/server.ts",
+        "src/lib/manychat.ts",
+        "src/lib/sales-hub/lead-hours.ts",
+        "src/lib/sales-hub/response-times.ts",
+        "src/lib/setter-report-data.ts"
+      ],
+      "other_mention_files": [
+        "src/app/api/setup/init-tables/route.ts",
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "instagram_lead_links": {
+      "floor": "floor2",
+      "files_total": 11,
+      "files_excluding_migrations": 10,
+      "supabase_writers": 6,
+      "upsert_writers": 0,
+      "supabase_readers": 9,
+      "sql_text_refs": 1,
+      "writer_files": [
+        "src/lib/instagram-connections.ts"
+      ],
+      "reader_files": [
+        "src/app/api/dms/conversations/route.ts",
+        "src/app/api/sales-hub/backfill-lead-links/route.ts",
+        "src/app/api/sales-hub/time-to-eat/route.ts",
+        "src/lib/buyer-dna/core.ts",
+        "src/lib/sales-hub/response-times.ts",
+        "src/lib/utari/foundation.ts"
+      ],
+      "other_mention_files": [
+        "src/app/api/mcp/utari/route.ts",
+        "src/app/api/setup/init-tables/route.ts",
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "fx_rates": {
+      "floor": "floor2",
+      "files_total": 11,
+      "files_excluding_migrations": 4,
+      "supabase_writers": 1,
+      "upsert_writers": 1,
+      "supabase_readers": 1,
+      "sql_text_refs": 0,
+      "writer_files": [
+        "src/lib/fx/sync.ts"
+      ],
+      "reader_files": [
+        "src/lib/fx/rates.ts"
+      ],
+      "other_mention_files": [
+        "src/app/api/cron/fx-sync/route.ts",
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "fathom_calls": {
+      "floor": "floor2",
+      "files_total": 14,
+      "files_excluding_migrations": 14,
+      "supabase_writers": 5,
+      "upsert_writers": 3,
+      "supabase_readers": 11,
+      "sql_text_refs": 0,
+      "writer_files": [
+        "src/app/api/content/calls/attach/route.ts",
+        "src/app/api/content/fathom-backfill/route.ts",
+        "src/app/api/webhooks/fathom/route.ts"
+      ],
+      "reader_files": [
+        "src/app/api/content/analyze-calls/route.ts",
+        "src/app/api/content/mine/route.ts",
+        "src/app/api/content/voc/route.ts",
+        "src/app/api/external/content/context/route.ts",
+        "src/lib/buyer-dna/core.ts",
+        "src/lib/content-pipeline/fathom-links.ts",
+        "src/lib/content-pipeline/run-steps.ts",
+        "src/lib/utari/foundation.ts"
+      ],
+      "other_mention_files": [
+        "src/app/api/foundation/sync/route.ts",
+        "src/lib/foundation/stitch.ts",
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "fathom_call_links": {
+      "floor": "floor2",
+      "files_total": 3,
+      "files_excluding_migrations": 3,
+      "supabase_writers": 1,
+      "upsert_writers": 1,
+      "supabase_readers": 2,
+      "sql_text_refs": 0,
+      "writer_files": [
+        "src/lib/content-pipeline/fathom-links.ts"
+      ],
+      "reader_files": [
+        "src/lib/utari/foundation.ts"
+      ],
+      "other_mention_files": [
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "creator_content": {
+      "floor": "floor2",
+      "files_total": 19,
+      "files_excluding_migrations": 19,
+      "supabase_writers": 3,
+      "upsert_writers": 2,
+      "supabase_readers": 15,
+      "sql_text_refs": 2,
+      "writer_files": [
+        "src/app/api/content/transcribe/route.ts",
+        "src/lib/apify-instagram.ts",
+        "src/lib/instagram-content.ts"
+      ],
+      "reader_files": [
+        "src/app/api/buyer-dna/grade/run/route.ts",
+        "src/app/api/buyer-dna/route.ts",
+        "src/app/api/content/calendar/route.ts",
+        "src/app/api/content/coach/route.ts",
+        "src/app/api/content/studio/route.ts",
+        "src/app/api/factory/ig-preview/route.ts",
+        "src/lib/buyer-dna/shift.ts",
+        "src/lib/content/calendar-build.ts",
+        "src/lib/content-data.ts",
+        "src/lib/utari/foundation.ts"
+      ],
+      "other_mention_files": [
+        "src/app/api/content/ingest/route.ts",
+        "src/lib/content/calendar-reconcile.ts",
+        "src/lib/content/calendar.ts",
+        "src/lib/content/ingest-heartbeat.ts",
+        "src/lib/content-pipeline/run-steps.ts",
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "creator_account_snapshots": {
+      "floor": "floor2",
+      "files_total": 4,
+      "files_excluding_migrations": 4,
+      "supabase_writers": 1,
+      "upsert_writers": 1,
+      "supabase_readers": 2,
+      "sql_text_refs": 1,
+      "writer_files": [
+        "src/app/api/content/snapshot-account/route.ts"
+      ],
+      "reader_files": [
+        "src/app/api/content/studio/route.ts",
+        "src/lib/utari/foundation.ts"
+      ],
+      "other_mention_files": [
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "adsv2_dm_facts": {
+      "floor": "floor3",
+      "files_total": 22,
+      "files_excluding_migrations": 10,
+      "supabase_writers": 0,
+      "upsert_writers": 0,
+      "supabase_readers": 0,
+      "sql_text_refs": 0,
+      "writer_files": [],
+      "reader_files": [],
+      "other_mention_files": [
+        "src/lib/ads-v2/facts.ts",
+        "src/lib/ads-v2/selfcheck.ts",
+        "src/lib/question-door/capture-health.ts",
+        "src/lib/question-door/creative-bench.ts",
+        "src/lib/question-door/creator-funnel.ts",
+        "src/lib/question-door/kill-scale.ts",
+        "src/lib/question-door/portfolio-pace.ts",
+        "src/lib/question-door/registry.ts",
+        "src/lib/question-door/scale-headroom.ts",
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "adsv2_booking_facts": {
+      "floor": "floor3",
+      "files_total": 29,
+      "files_excluding_migrations": 12,
+      "supabase_writers": 0,
+      "upsert_writers": 0,
+      "supabase_readers": 4,
+      "sql_text_refs": 0,
+      "writer_files": [],
+      "reader_files": [
+        "src/lib/accuracy/checks.ts",
+        "src/lib/ads-v2/selfcheck.ts",
+        "src/lib/ads-v2/windows.ts"
+      ],
+      "other_mention_files": [
+        "src/lib/ads-v2/facts.ts",
+        "src/lib/question-door/creative-bench.ts",
+        "src/lib/question-door/creator-funnel.ts",
+        "src/lib/question-door/kill-scale.ts",
+        "src/lib/question-door/person-bridge.ts",
+        "src/lib/question-door/portfolio-pace.ts",
+        "src/lib/question-door/registry.ts",
+        "src/lib/question-door/scale-headroom.ts",
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "adsv2_sale_facts": {
+      "floor": "floor3",
+      "files_total": 36,
+      "files_excluding_migrations": 20,
+      "supabase_writers": 0,
+      "upsert_writers": 0,
+      "supabase_readers": 8,
+      "sql_text_refs": 1,
+      "writer_files": [],
+      "reader_files": [
+        "src/app/api/cron/attribution-ping/route.ts",
+        "src/lib/ads-v2/selfcheck.ts",
+        "src/lib/ads-v2/windows.ts",
+        "src/lib/question-door/brick4.golden.test.ts",
+        "src/lib/question-door/kill-scale.ts"
+      ],
+      "other_mention_files": [
+        "src/lib/ads-v2/facts.ts",
+        "src/lib/question-door/brick6.golden.test.ts",
+        "src/lib/question-door/capture-health.ts",
+        "src/lib/question-door/coverage-report.ts",
+        "src/lib/question-door/coverage.golden.test.ts",
+        "src/lib/question-door/creative-bench.ts",
+        "src/lib/question-door/creator-funnel.ts",
+        "src/lib/question-door/kill-scale.test.ts",
+        "src/lib/question-door/person-bridge.ts",
+        "src/lib/question-door/portfolio-pace.ts",
+        "src/lib/question-door/registry.ts",
+        "src/lib/question-door/resolution-queue.ts",
+        "src/lib/question-door/scale-headroom.ts",
+        "src/lib/question-door/types.ts",
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "adsv2_sale_resolutions": {
+      "floor": "floor3",
+      "files_total": 6,
+      "files_excluding_migrations": 2,
+      "supabase_writers": 0,
+      "upsert_writers": 0,
+      "supabase_readers": 0,
+      "sql_text_refs": 1,
+      "writer_files": [],
+      "reader_files": [],
+      "other_mention_files": [
+        "src/lib/question-door/resolution-queue.ts",
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "adsv2_booking_resolutions": {
+      "floor": "floor3",
+      "files_total": 4,
+      "files_excluding_migrations": 3,
+      "supabase_writers": 0,
+      "upsert_writers": 0,
+      "supabase_readers": 2,
+      "sql_text_refs": 0,
+      "writer_files": [],
+      "reader_files": [
+        "src/app/api/sales-hub/ghl-appointment-webhook/route.ts",
+        "src/lib/ads-v2/facts.ts"
+      ],
+      "other_mention_files": [
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "adsv2_window_snapshots": {
+      "floor": "floor3",
+      "files_total": 9,
+      "files_excluding_migrations": 6,
+      "supabase_writers": 1,
+      "upsert_writers": 1,
+      "supabase_readers": 9,
+      "sql_text_refs": 0,
+      "writer_files": [
+        "src/lib/ads-v2/serve.ts"
+      ],
+      "reader_files": [
+        "src/lib/accuracy/checks.ts",
+        "src/lib/ads-v2/protections.ts",
+        "src/lib/ads-v2/selfcheck.ts",
+        "src/lib/question-door/answers.ts"
+      ],
+      "other_mention_files": [
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "adsv2_budget_snapshots": {
+      "floor": "floor3",
+      "files_total": 15,
+      "files_excluding_migrations": 11,
+      "supabase_writers": 1,
+      "upsert_writers": 1,
+      "supabase_readers": 4,
+      "sql_text_refs": 0,
+      "writer_files": [
+        "src/lib/ads-v2/budget-sync.ts"
+      ],
+      "reader_files": [
+        "src/lib/ads-v2/windows.ts",
+        "src/lib/question-door/budget-map.ts",
+        "src/lib/question-door/scale-headroom.ts"
+      ],
+      "other_mention_files": [
+        "src/lib/question-door/brick6.golden.test.ts",
+        "src/lib/question-door/capture-health.ts",
+        "src/lib/question-door/health-check.test.ts",
+        "src/lib/question-door/health-check.ts",
+        "src/lib/question-door/kill-scale.ts",
+        "src/lib/question-door/registry.ts",
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "adsv2_targeting_snapshots": {
+      "floor": "floor3",
+      "files_total": 1,
+      "files_excluding_migrations": 1,
+      "supabase_writers": 0,
+      "upsert_writers": 0,
+      "supabase_readers": 0,
+      "sql_text_refs": 0,
+      "writer_files": [],
+      "reader_files": [],
+      "other_mention_files": [
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "adsv2_alerts": {
+      "floor": "floor3",
+      "files_total": 8,
+      "files_excluding_migrations": 7,
+      "supabase_writers": 3,
+      "upsert_writers": 3,
+      "supabase_readers": 1,
+      "sql_text_refs": 0,
+      "writer_files": [
+        "src/lib/accuracy/run.ts",
+        "src/lib/ads-v2/selfcheck.ts",
+        "src/lib/ads-v2/sync.ts"
+      ],
+      "reader_files": [
+        "src/lib/ads-v2/protections.ts"
+      ],
+      "other_mention_files": [
+        "src/app/api/cron/ads-v2-selfcheck/route.ts",
+        "src/lib/accuracy/run.test.ts",
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "adsv2_sync_runs": {
+      "floor": "floor3",
+      "files_total": 5,
+      "files_excluding_migrations": 4,
+      "supabase_writers": 2,
+      "upsert_writers": 0,
+      "supabase_readers": 2,
+      "sql_text_refs": 1,
+      "writer_files": [
+        "src/lib/ads-v2/db.ts"
+      ],
+      "reader_files": [
+        "src/lib/ads-v2/protections.ts"
+      ],
+      "other_mention_files": [
+        "src/lib/ads-v2/sync.ts",
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "adsv2_meta": {
+      "floor": "floor3",
+      "files_total": 12,
+      "files_excluding_migrations": 9,
+      "supabase_writers": 4,
+      "upsert_writers": 4,
+      "supabase_readers": 6,
+      "sql_text_refs": 0,
+      "writer_files": [
+        "src/app/api/cron/attribution-ping/route.ts",
+        "src/lib/ads-v2/activity-sync.ts",
+        "src/lib/ads-v2/db.ts"
+      ],
+      "reader_files": [
+        "src/lib/accuracy/checks.ts",
+        "src/lib/ads-v2/sync-lock.test.ts"
+      ],
+      "other_mention_files": [
+        "src/lib/question-door/brick6.golden.test.ts",
+        "src/lib/question-door/kill-scale.test.ts",
+        "src/lib/question-door/service.test.ts",
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "ad_creative_copy": {
+      "floor": "floor3",
+      "files_total": 20,
+      "files_excluding_migrations": 18,
+      "supabase_writers": 4,
+      "upsert_writers": 3,
+      "supabase_readers": 10,
+      "sql_text_refs": 2,
+      "writer_files": [
+        "src/app/api/ads/creative-copy/backfill-all/route.ts",
+        "src/lib/ads-tracker/creative-copy.ts"
+      ],
+      "reader_files": [
+        "src/app/api/ads/messaging-insights/route.ts",
+        "src/lib/ads-tracker/server.ts",
+        "src/lib/ads-variations/generate.ts",
+        "src/lib/buyer-dna/core.ts",
+        "src/lib/buyer-dna/playbook.ts",
+        "src/lib/question-door/ad-copy.ts",
+        "src/lib/question-door/kill-scale.ts",
+        "src/lib/utari/foundation.ts"
+      ],
+      "other_mention_files": [
+        "src/lib/ads-tracker/creative-transcript.ts",
+        "src/lib/ads-variations/prompts.ts",
+        "src/lib/question-door/ad-copy.test.ts",
+        "src/lib/question-door/brick6.golden.test.ts",
+        "src/lib/question-door/creative-bench.ts",
+        "src/lib/question-door/kill-scale.test.ts",
+        "src/lib/question-door/registry.ts",
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "ad_creative_image": {
+      "floor": "floor3",
+      "files_total": 16,
+      "files_excluding_migrations": 11,
+      "supabase_writers": 2,
+      "upsert_writers": 2,
+      "supabase_readers": 8,
+      "sql_text_refs": 0,
+      "writer_files": [
+        "src/lib/ads-tracker/creative-image.ts",
+        "src/lib/ads-v2/media-sync.ts"
+      ],
+      "reader_files": [
+        "src/lib/ads-tracker/creative-transcript.ts",
+        "src/lib/ads-tracker/server.ts",
+        "src/lib/ads-variations/auto.ts",
+        "src/lib/ads-variations/generate.ts",
+        "src/lib/question-door/ad-copy.ts"
+      ],
+      "other_mention_files": [
+        "src/lib/question-door/ad-copy.test.ts",
+        "src/lib/question-door/creative-bench.ts",
+        "src/lib/question-door/registry.ts",
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "ad_creative_transcripts": {
+      "floor": "floor3",
+      "files_total": 10,
+      "files_excluding_migrations": 7,
+      "supabase_writers": 2,
+      "upsert_writers": 1,
+      "supabase_readers": 5,
+      "sql_text_refs": 0,
+      "writer_files": [
+        "src/lib/ads-tracker/creative-transcript.ts",
+        "src/lib/question-door/brick7.golden.test.ts"
+      ],
+      "reader_files": [
+        "src/lib/question-door/ad-copy.ts"
+      ],
+      "other_mention_files": [
+        "src/app/api/ads/creative-copy/backfill-all/route.ts",
+        "src/lib/question-door/creative-bench.ts",
+        "src/lib/question-door/registry.ts",
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "ad_set_targeting": {
+      "floor": "floor3",
+      "files_total": 3,
+      "files_excluding_migrations": 3,
+      "supabase_writers": 1,
+      "upsert_writers": 1,
+      "supabase_readers": 1,
+      "sql_text_refs": 0,
+      "writer_files": [
+        "src/app/api/sync/ads-tracker/route.ts"
+      ],
+      "reader_files": [
+        "src/lib/ads-tracker/server.ts"
+      ],
+      "other_mention_files": [
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "ads_dashboard_snapshots": {
+      "floor": "floor3",
+      "files_total": 4,
+      "files_excluding_migrations": 4,
+      "supabase_writers": 1,
+      "upsert_writers": 1,
+      "supabase_readers": 4,
+      "sql_text_refs": 0,
+      "writer_files": [
+        "src/lib/ads-tracker/snapshot.ts"
+      ],
+      "reader_files": [
+        "src/lib/accuracy/checks.ts",
+        "src/lib/utari/foundation.ts"
+      ],
+      "other_mention_files": [
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "sale_attribution_facts": {
+      "floor": "floor3",
+      "files_total": 5,
+      "files_excluding_migrations": 5,
+      "supabase_writers": 1,
+      "upsert_writers": 1,
+      "supabase_readers": 4,
+      "sql_text_refs": 1,
+      "writer_files": [
+        "src/lib/ads-tracker/sale-facts.ts"
+      ],
+      "reader_files": [
+        "src/app/api/mcp/utari/route.ts",
+        "src/lib/content-pipeline/fathom-links.ts",
+        "src/lib/utari/foundation.ts"
+      ],
+      "other_mention_files": [
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "registry_entities": {
+      "floor": "floor4",
+      "files_total": 20,
+      "files_excluding_migrations": 15,
+      "supabase_writers": 0,
+      "upsert_writers": 0,
+      "supabase_readers": 3,
+      "sql_text_refs": 6,
+      "writer_files": [],
+      "reader_files": [
+        "src/lib/question-door/kill-scale.ts",
+        "src/lib/question-door/params.ts",
+        "src/lib/question-door/receipts.ts"
+      ],
+      "other_mention_files": [
+        "src/lib/question-door/brick6.golden.test.ts",
+        "src/lib/question-door/budget-map.ts",
+        "src/lib/question-door/creator-funnel.ts",
+        "src/lib/question-door/health-check.test.ts",
+        "src/lib/question-door/kill-scale.test.ts",
+        "src/lib/question-door/portfolio-pace.ts",
+        "src/lib/question-door/registry.ts",
+        "src/lib/question-door/scale-headroom.ts",
+        "src/lib/question-door/service.test.ts",
+        "src/lib/question-door/service.ts",
+        "scripts/reference-sweep.mjs",
+        "scripts/seed-registries.mjs"
+      ]
+    },
+    "registry_persons": {
+      "floor": "floor4",
+      "files_total": 10,
+      "files_excluding_migrations": 5,
+      "supabase_writers": 4,
+      "upsert_writers": 0,
+      "supabase_readers": 0,
+      "sql_text_refs": 0,
+      "writer_files": [
+        "src/lib/question-door/brick5.golden.test.ts"
+      ],
+      "reader_files": [],
+      "other_mention_files": [
+        "src/lib/person-bridge-queue.ts",
+        "src/lib/question-door/person-bridge.ts",
+        "src/lib/question-door/registry.ts",
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "registry_person_merges": {
+      "floor": "floor4",
+      "files_total": 4,
+      "files_excluding_migrations": 2,
+      "supabase_writers": 1,
+      "upsert_writers": 0,
+      "supabase_readers": 1,
+      "sql_text_refs": 0,
+      "writer_files": [
+        "src/lib/question-door/brick5.golden.test.ts"
+      ],
+      "reader_files": [],
+      "other_mention_files": [
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "registry_person_link_queue": {
+      "floor": "floor4",
+      "files_total": 4,
+      "files_excluding_migrations": 2,
+      "supabase_writers": 1,
+      "upsert_writers": 0,
+      "supabase_readers": 0,
+      "sql_text_refs": 0,
+      "writer_files": [
+        "src/lib/person-bridge-queue.ts"
+      ],
+      "reader_files": [],
+      "other_mention_files": [
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "registry_person_link_conflicts": {
+      "floor": "floor4",
+      "files_total": 3,
+      "files_excluding_migrations": 1,
+      "supabase_writers": 0,
+      "upsert_writers": 0,
+      "supabase_readers": 0,
+      "sql_text_refs": 0,
+      "writer_files": [],
+      "reader_files": [],
+      "other_mention_files": [
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "registry_keywords": {
+      "floor": "floor4",
+      "files_total": 12,
+      "files_excluding_migrations": 6,
+      "supabase_writers": 0,
+      "upsert_writers": 0,
+      "supabase_readers": 0,
+      "sql_text_refs": 0,
+      "writer_files": [],
+      "reader_files": [],
+      "other_mention_files": [
+        "src/lib/question-door/capture-health.ts",
+        "src/lib/question-door/coverage-report.ts",
+        "src/lib/question-door/coverage.golden.test.ts",
+        "src/lib/question-door/registry.ts",
+        "scripts/reference-sweep.mjs",
+        "scripts/seed-registries.mjs"
+      ]
+    },
+    "registry_definitions": {
+      "floor": "floor4",
+      "files_total": 23,
+      "files_excluding_migrations": 16,
+      "supabase_writers": 0,
+      "upsert_writers": 0,
+      "supabase_readers": 0,
+      "sql_text_refs": 1,
+      "writer_files": [],
+      "reader_files": [],
+      "other_mention_files": [
+        "src/lib/question-door/brick6.golden.test.ts",
+        "src/lib/question-door/brick7.golden.test.ts",
+        "src/lib/question-door/creative-bench.ts",
+        "src/lib/question-door/health-check.test.ts",
+        "src/lib/question-door/kill-scale.test.ts",
+        "src/lib/question-door/kill-scale.ts",
+        "src/lib/question-door/portfolio-pace.ts",
+        "src/lib/question-door/receipts.ts",
+        "src/lib/question-door/registry.ts",
+        "src/lib/question-door/rulesets.ts",
+        "src/lib/question-door/scale-headroom.ts",
+        "src/lib/question-door/service.test.ts",
+        "src/lib/question-door/types.ts",
+        "src/lib/question-door/verdict-engine.ts",
+        "scripts/reference-sweep.mjs",
+        "scripts/seed-registries.mjs"
+      ]
+    },
+    "organic_keywords": {
+      "floor": "floor4",
+      "files_total": 17,
+      "files_excluding_migrations": 11,
+      "supabase_writers": 2,
+      "upsert_writers": 1,
+      "supabase_readers": 2,
+      "sql_text_refs": 0,
+      "writer_files": [
+        "src/app/api/organic-keywords/route.ts"
+      ],
+      "reader_files": [
+        "src/lib/ads-v2/facts.ts"
+      ],
+      "other_mention_files": [
+        "src/lib/question-door/capture-health.ts",
+        "src/lib/question-door/coverage-report.ts",
+        "src/lib/question-door/coverage.golden.test.ts",
+        "src/lib/question-door/creator-funnel.ts",
+        "src/lib/question-door/kill-scale.ts",
+        "src/lib/question-door/portfolio-pace.ts",
+        "src/lib/question-door/scale-headroom.ts",
+        "scripts/build-keyword-tool.mjs",
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "door_ask_log": {
+      "floor": "door",
+      "files_total": 6,
+      "files_excluding_migrations": 5,
+      "supabase_writers": 0,
+      "upsert_writers": 0,
+      "supabase_readers": 0,
+      "sql_text_refs": 2,
+      "writer_files": [],
+      "reader_files": [],
+      "other_mention_files": [
+        "src/app/api/mcp/utari/route.ts",
+        "src/lib/question-door/brick6.golden.test.ts",
+        "src/lib/question-door/service.test.ts",
+        "src/lib/question-door/service.ts",
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "door_miss_log": {
+      "floor": "door",
+      "files_total": 5,
+      "files_excluding_migrations": 4,
+      "supabase_writers": 0,
+      "upsert_writers": 0,
+      "supabase_readers": 0,
+      "sql_text_refs": 1,
+      "writer_files": [],
+      "reader_files": [],
+      "other_mention_files": [
+        "src/app/api/mcp/utari/route.ts",
+        "src/lib/question-door/service.test.ts",
+        "src/lib/question-door/service.ts",
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "door_freshness_thresholds": {
+      "floor": "door",
+      "files_total": 11,
+      "files_excluding_migrations": 8,
+      "supabase_writers": 0,
+      "upsert_writers": 0,
+      "supabase_readers": 4,
+      "sql_text_refs": 0,
+      "writer_files": [],
+      "reader_files": [
+        "src/lib/question-door/budget-map.ts",
+        "src/lib/question-door/capture-health.ts",
+        "src/lib/question-door/receipts.ts"
+      ],
+      "other_mention_files": [
+        "src/lib/question-door/brick6.golden.test.ts",
+        "src/lib/question-door/health-check.test.ts",
+        "src/lib/question-door/kill-scale.test.ts",
+        "src/lib/question-door/service.test.ts",
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "ads_attribution_exceptions": {
+      "floor": "shrink_candidates",
+      "files_total": 7,
+      "files_excluding_migrations": 5,
+      "supabase_writers": 5,
+      "upsert_writers": 0,
+      "supabase_readers": 2,
+      "sql_text_refs": 0,
+      "writer_files": [
+        "src/app/api/ads-tracker/attribution-alerts/route.ts",
+        "src/app/api/ads-tracker/setter-counts/route.ts",
+        "src/app/api/sales-hub/ghl-appointment-webhook/route.ts",
+        "src/lib/ads-tracker/server.ts"
+      ],
+      "reader_files": [],
+      "other_mention_files": [
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "ads_attribution_facts": {
+      "floor": "shrink_candidates",
+      "files_total": 2,
+      "files_excluding_migrations": 2,
+      "supabase_writers": 1,
+      "upsert_writers": 1,
+      "supabase_readers": 0,
+      "sql_text_refs": 0,
+      "writer_files": [
+        "src/app/api/ads-tracker/reconcile-facts/route.ts"
+      ],
+      "reader_files": [],
+      "other_mention_files": [
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "ads_keyword_backfill_runs": {
+      "floor": "shrink_candidates",
+      "files_total": 1,
+      "files_excluding_migrations": 1,
+      "supabase_writers": 0,
+      "upsert_writers": 0,
+      "supabase_readers": 0,
+      "sql_text_refs": 0,
+      "writer_files": [],
+      "reader_files": [],
+      "other_mention_files": [
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "ads_keyword_backfill_rows": {
+      "floor": "shrink_candidates",
+      "files_total": 1,
+      "files_excluding_migrations": 1,
+      "supabase_writers": 0,
+      "upsert_writers": 0,
+      "supabase_readers": 0,
+      "sql_text_refs": 0,
+      "writer_files": [],
+      "reader_files": [],
+      "other_mention_files": [
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "attribution_summary": {
+      "floor": "shrink_candidates",
+      "files_total": 5,
+      "files_excluding_migrations": 5,
+      "supabase_writers": 1,
+      "upsert_writers": 1,
+      "supabase_readers": 2,
+      "sql_text_refs": 0,
+      "writer_files": [
+        "src/lib/ads-tracker/sale-facts.ts"
+      ],
+      "reader_files": [
+        "src/app/api/mcp/utari/route.ts",
+        "src/lib/utari/foundation.ts"
+      ],
+      "other_mention_files": [
+        "src/lib/ads-tracker/snapshot.ts",
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "dm_identity": {
+      "floor": "shrink_candidates",
+      "files_total": 1,
+      "files_excluding_migrations": 1,
+      "supabase_writers": 0,
+      "upsert_writers": 0,
+      "supabase_readers": 0,
+      "sql_text_refs": 0,
+      "writer_files": [],
+      "reader_files": [],
+      "other_mention_files": [
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "manychat_contact_links": {
+      "floor": "shrink_candidates",
+      "files_total": 18,
+      "files_excluding_migrations": 13,
+      "supabase_writers": 2,
+      "upsert_writers": 2,
+      "supabase_readers": 12,
+      "sql_text_refs": 1,
+      "writer_files": [
+        "src/lib/dm-contact-linking.ts",
+        "src/lib/ghl-dm-sync.ts"
+      ],
+      "reader_files": [
+        "src/app/api/cron/dm-link-sync/route.ts",
+        "src/app/api/dms/conversations/route.ts",
+        "src/app/api/sales-hub/ghl-appointment-webhook/route.ts",
+        "src/app/api/sales-hub/ghl-conversation-webhook/route.ts",
+        "src/lib/ads-tracker/server.ts",
+        "src/lib/ads-v2/facts.ts",
+        "src/lib/content-pipeline/fathom-links.ts",
+        "src/lib/manychat.ts",
+        "src/lib/setter-report-data.ts"
+      ],
+      "other_mention_files": [
+        "src/app/api/setup/init-tables/route.ts",
+        "scripts/reference-sweep.mjs"
+      ]
+    },
+    "dm_ad_links": {
+      "floor": "shrink_candidates",
+      "files_total": 4,
+      "files_excluding_migrations": 4,
+      "supabase_writers": 0,
+      "upsert_writers": 0,
+      "supabase_readers": 1,
+      "sql_text_refs": 0,
+      "writer_files": [],
+      "reader_files": [
+        "mcp-utari/index.mjs"
+      ],
+      "other_mention_files": [
+        "src/app/api/mcp/utari/route.ts",
+        "src/lib/utari/foundation.ts",
+        "scripts/reference-sweep.mjs"
+      ]
+    }
+  }
+}

@@ -1,0 +1,678 @@
+{
+  "question_key": "portfolio_pace",
+  "question": "Where the money actually stands and which way it is moving: the calendar month to date and the prior full month (the LEVEL), alongside the weekly shape of the trailing eight weeks (the TREND), with spend, cash collected and blended collected ROI per creator and for the whole portfolio. A trailing extrapolation is offered only as a labelled trend line and is never presented as the level.",
+  "params": {
+    "client": "all",
+    "trend_weeks": 8,
+    "date_from": "2026-08-01",
+    "date_to": "2026-08-09"
+  },
+  "answers": {
+    "account": "all",
+    "as_of_day": "2026-08-09",
+    "units": "Money is in USD CENTS. Blended collected ROI is a multiple. Nothing here is annualised.",
+    "level_window": {
+      "from": "2026-08-01",
+      "to": "2026-08-09"
+    },
+    "prior_month_window": {
+      "from": "2026-07-01",
+      "to": "2026-07-31"
+    },
+    "per_creator": [
+      {
+        "client": "jake",
+        "level": {
+          "month_to_date": {
+            "from": "2026-08-01",
+            "to": "2026-08-09",
+            "spend_usd_cents": 137595,
+            "collected_usd_cents": 120000,
+            "blended_collected_roi": 0.87,
+            "dms": 89,
+            "closes": 1,
+            "complete": false,
+            "days_elapsed": 9,
+            "days_in_month": 31,
+            "note": "2026-08-01 to 2026-08-09: 9 of 31 days of the calendar month. This is a PARTIAL month and is not comparable to the prior full month without saying so."
+          },
+          "prior_full_month": {
+            "from": "2026-07-01",
+            "to": "2026-07-31",
+            "spend_usd_cents": 225454,
+            "collected_usd_cents": 0,
+            "blended_collected_roi": 0,
+            "dms": 32,
+            "closes": 0,
+            "complete": true
+          },
+          "basis": "level_vs_trend v1: a level claim is a CALENDAR figure. Both numbers here are real calendar periods with no extrapolation of any kind in them."
+        },
+        "trend": {
+          "weekly": [
+            {
+              "from": "2026-06-15",
+              "to": "2026-06-21",
+              "spend_usd_cents": 61263,
+              "collected_usd_cents": 0,
+              "blended_collected_roi": 0,
+              "dms": 0,
+              "closes": 0,
+              "days": 7,
+              "cash_still_landing": false,
+              "week_index": -7
+            },
+            {
+              "from": "2026-06-22",
+              "to": "2026-06-28",
+              "spend_usd_cents": 86302,
+              "collected_usd_cents": 0,
+              "blended_collected_roi": 0,
+              "dms": 0,
+              "closes": 0,
+              "days": 7,
+              "cash_still_landing": false,
+              "week_index": -6
+            },
+            {
+              "from": "2026-06-29",
+              "to": "2026-07-05",
+              "spend_usd_cents": 67911,
+              "collected_usd_cents": 0,
+              "blended_collected_roi": 0,
+              "dms": 0,
+              "closes": 0,
+              "days": 7,
+              "cash_still_landing": false,
+              "week_index": -5
+            },
+            {
+              "from": "2026-07-06",
+              "to": "2026-07-12",
+              "spend_usd_cents": 67769,
+              "collected_usd_cents": 0,
+              "blended_collected_roi": 0,
+              "dms": 0,
+              "closes": 0,
+              "days": 7,
+              "cash_still_landing": false,
+              "week_index": -4
+            },
+            {
+              "from": "2026-07-13",
+              "to": "2026-07-19",
+              "spend_usd_cents": 43773,
+              "collected_usd_cents": 0,
+              "blended_collected_roi": 0,
+              "dms": 0,
+              "closes": 0,
+              "days": 7,
+              "cash_still_landing": false,
+              "week_index": -3
+            },
+            {
+              "from": "2026-07-20",
+              "to": "2026-07-26",
+              "spend_usd_cents": 32758,
+              "collected_usd_cents": 0,
+              "blended_collected_roi": 0,
+              "dms": 0,
+              "closes": 0,
+              "days": 7,
+              "cash_still_landing": false,
+              "week_index": -2
+            },
+            {
+              "from": "2026-07-27",
+              "to": "2026-08-02",
+              "spend_usd_cents": 62596,
+              "collected_usd_cents": 120000,
+              "blended_collected_roi": 1.92,
+              "dms": 41,
+              "closes": 1,
+              "days": 7,
+              "cash_still_landing": true,
+              "week_index": -1
+            },
+            {
+              "from": "2026-08-03",
+              "to": "2026-08-09",
+              "spend_usd_cents": 113925,
+              "collected_usd_cents": 0,
+              "blended_collected_roi": 0,
+              "dms": 80,
+              "closes": 0,
+              "days": 7,
+              "cash_still_landing": true,
+              "week_index": 0
+            }
+          ],
+          "weekly_basis": "8 trailing seven-day buckets ending 2026-08-09, oldest first. Each bucket is a real seven days of data; the last one ends yesterday and is not a calendar week. cash_still_landing marks a bucket that ends inside the signed sales-lag p90 of 13 days: its spend is fully recorded and its cash is not.",
+          "trend_line": {
+            "is_level_claim": false,
+            "label": "TREND LINE, NOT A LEVEL",
+            "basis_window": {
+              "from": "2026-08-03",
+              "to": "2026-08-09"
+            },
+            "daily_pace_spend_usd_cents": 16275,
+            "daily_pace_collected_usd_cents": 0,
+            "if_this_pace_held_for_a_full_month": {
+              "spend_usd_cents": 504525,
+              "collected_usd_cents": 0
+            },
+            "what_this_is_not": "This is an extrapolation of the last seven days across a whole month. It is NOT this month's number, it is NOT a forecast, and under level_vs_trend v1 it may never be reported as the level. The level is in the `level` block above, and it is a calendar figure. This line exists to show direction only."
+          }
+        },
+        "blend_warning": "Every blended ROI on this answer is a ratio over a whole period, and a blend can hide its own tail: a fortnight at 3x can contain a final three days at 0.5x. That is why the weekly series ships attached to every blend here and is never omitted. Read the shape before you act on the blend."
+      },
+      {
+        "client": "tyson",
+        "level": {
+          "month_to_date": {
+            "from": "2026-08-01",
+            "to": "2026-08-09",
+            "spend_usd_cents": 398748,
+            "collected_usd_cents": 1289900,
+            "blended_collected_roi": 3.23,
+            "dms": 269,
+            "closes": 9,
+            "complete": false,
+            "days_elapsed": 9,
+            "days_in_month": 31,
+            "note": "2026-08-01 to 2026-08-09: 9 of 31 days of the calendar month. This is a PARTIAL month and is not comparable to the prior full month without saying so."
+          },
+          "prior_full_month": {
+            "from": "2026-07-01",
+            "to": "2026-07-31",
+            "spend_usd_cents": 1329544,
+            "collected_usd_cents": 4612500,
+            "blended_collected_roi": 3.47,
+            "dms": 1374,
+            "closes": 36,
+            "complete": true
+          },
+          "basis": "level_vs_trend v1: a level claim is a CALENDAR figure. Both numbers here are real calendar periods with no extrapolation of any kind in them."
+        },
+        "trend": {
+          "weekly": [
+            {
+              "from": "2026-06-15",
+              "to": "2026-06-21",
+              "spend_usd_cents": 444117,
+              "collected_usd_cents": 980000,
+              "blended_collected_roi": 2.21,
+              "dms": 329,
+              "closes": 9,
+              "days": 7,
+              "cash_still_landing": false,
+              "week_index": -7
+            },
+            {
+              "from": "2026-06-22",
+              "to": "2026-06-28",
+              "spend_usd_cents": 328416,
+              "collected_usd_cents": 810000,
+              "blended_collected_roi": 2.47,
+              "dms": 197,
+              "closes": 5,
+              "days": 7,
+              "cash_still_landing": false,
+              "week_index": -6
+            },
+            {
+              "from": "2026-06-29",
+              "to": "2026-07-05",
+              "spend_usd_cents": 335326,
+              "collected_usd_cents": 750000,
+              "blended_collected_roi": 2.24,
+              "dms": 377,
+              "closes": 7,
+              "days": 7,
+              "cash_still_landing": false,
+              "week_index": -5
+            },
+            {
+              "from": "2026-07-06",
+              "to": "2026-07-12",
+              "spend_usd_cents": 323064,
+              "collected_usd_cents": 1460000,
+              "blended_collected_roi": 4.52,
+              "dms": 345,
+              "closes": 12,
+              "days": 7,
+              "cash_still_landing": false,
+              "week_index": -4
+            },
+            {
+              "from": "2026-07-13",
+              "to": "2026-07-19",
+              "spend_usd_cents": 311065,
+              "collected_usd_cents": 702900,
+              "blended_collected_roi": 2.26,
+              "dms": 304,
+              "closes": 5,
+              "days": 7,
+              "cash_still_landing": false,
+              "week_index": -3
+            },
+            {
+              "from": "2026-07-20",
+              "to": "2026-07-26",
+              "spend_usd_cents": 292384,
+              "collected_usd_cents": 729900,
+              "blended_collected_roi": 2.5,
+              "dms": 282,
+              "closes": 6,
+              "days": 7,
+              "cash_still_landing": false,
+              "week_index": -2
+            },
+            {
+              "from": "2026-07-27",
+              "to": "2026-08-02",
+              "spend_usd_cents": 273276,
+              "collected_usd_cents": 1619600,
+              "blended_collected_roi": 5.93,
+              "dms": 209,
+              "closes": 11,
+              "days": 7,
+              "cash_still_landing": true,
+              "week_index": -1
+            },
+            {
+              "from": "2026-08-03",
+              "to": "2026-08-09",
+              "spend_usd_cents": 308383,
+              "collected_usd_cents": 910000,
+              "blended_collected_roi": 2.95,
+              "dms": 212,
+              "closes": 6,
+              "days": 7,
+              "cash_still_landing": true,
+              "week_index": 0
+            }
+          ],
+          "weekly_basis": "8 trailing seven-day buckets ending 2026-08-09, oldest first. Each bucket is a real seven days of data; the last one ends yesterday and is not a calendar week. cash_still_landing marks a bucket that ends inside the signed sales-lag p90 of 13 days: its spend is fully recorded and its cash is not.",
+          "trend_line": {
+            "is_level_claim": false,
+            "label": "TREND LINE, NOT A LEVEL",
+            "basis_window": {
+              "from": "2026-08-03",
+              "to": "2026-08-09"
+            },
+            "daily_pace_spend_usd_cents": 44055,
+            "daily_pace_collected_usd_cents": 130000,
+            "if_this_pace_held_for_a_full_month": {
+              "spend_usd_cents": 1365696,
+              "collected_usd_cents": 4030000
+            },
+            "what_this_is_not": "This is an extrapolation of the last seven days across a whole month. It is NOT this month's number, it is NOT a forecast, and under level_vs_trend v1 it may never be reported as the level. The level is in the `level` block above, and it is a calendar figure. This line exists to show direction only."
+          }
+        },
+        "blend_warning": "Every blended ROI on this answer is a ratio over a whole period, and a blend can hide its own tail: a fortnight at 3x can contain a final three days at 0.5x. That is why the weekly series ships attached to every blend here and is never omitted. Read the shape before you act on the blend."
+      }
+    ],
+    "total": {
+      "level": {
+        "month_to_date": {
+          "from": "2026-08-01",
+          "to": "2026-08-09",
+          "spend_usd_cents": 536343,
+          "collected_usd_cents": 1409900,
+          "blended_collected_roi": 2.63,
+          "dms": 358,
+          "closes": 10,
+          "complete": false,
+          "days_elapsed": 9,
+          "days_in_month": 31,
+          "note": "2026-08-01 to 2026-08-09: 9 of 31 days of the calendar month. This is a PARTIAL month and is not comparable to the prior full month without saying so."
+        },
+        "prior_full_month": {
+          "from": "2026-07-01",
+          "to": "2026-07-31",
+          "spend_usd_cents": 1554998,
+          "collected_usd_cents": 4612500,
+          "blended_collected_roi": 2.97,
+          "dms": 1406,
+          "closes": 36,
+          "complete": true
+        },
+        "basis": "level_vs_trend v1: a level claim is a CALENDAR figure. Both numbers here are real calendar periods with no extrapolation of any kind in them."
+      },
+      "trend": {
+        "weekly": [
+          {
+            "from": "2026-06-15",
+            "to": "2026-06-21",
+            "spend_usd_cents": 505380,
+            "collected_usd_cents": 980000,
+            "blended_collected_roi": 1.94,
+            "dms": 329,
+            "closes": 9,
+            "days": 7,
+            "cash_still_landing": false,
+            "week_index": -7
+          },
+          {
+            "from": "2026-06-22",
+            "to": "2026-06-28",
+            "spend_usd_cents": 414718,
+            "collected_usd_cents": 810000,
+            "blended_collected_roi": 1.95,
+            "dms": 197,
+            "closes": 5,
+            "days": 7,
+            "cash_still_landing": false,
+            "week_index": -6
+          },
+          {
+            "from": "2026-06-29",
+            "to": "2026-07-05",
+            "spend_usd_cents": 403237,
+            "collected_usd_cents": 750000,
+            "blended_collected_roi": 1.86,
+            "dms": 377,
+            "closes": 7,
+            "days": 7,
+            "cash_still_landing": false,
+            "week_index": -5
+          },
+          {
+            "from": "2026-07-06",
+            "to": "2026-07-12",
+            "spend_usd_cents": 390833,
+            "collected_usd_cents": 1460000,
+            "blended_collected_roi": 3.74,
+            "dms": 345,
+            "closes": 12,
+            "days": 7,
+            "cash_still_landing": false,
+            "week_index": -4
+          },
+          {
+            "from": "2026-07-13",
+            "to": "2026-07-19",
+            "spend_usd_cents": 354838,
+            "collected_usd_cents": 702900,
+            "blended_collected_roi": 1.98,
+            "dms": 304,
+            "closes": 5,
+            "days": 7,
+            "cash_still_landing": false,
+            "week_index": -3
+          },
+          {
+            "from": "2026-07-20",
+            "to": "2026-07-26",
+            "spend_usd_cents": 325142,
+            "collected_usd_cents": 729900,
+            "blended_collected_roi": 2.24,
+            "dms": 282,
+            "closes": 6,
+            "days": 7,
+            "cash_still_landing": false,
+            "week_index": -2
+          },
+          {
+            "from": "2026-07-27",
+            "to": "2026-08-02",
+            "spend_usd_cents": 335872,
+            "collected_usd_cents": 1739600,
+            "blended_collected_roi": 5.18,
+            "dms": 250,
+            "closes": 12,
+            "days": 7,
+            "cash_still_landing": true,
+            "week_index": -1
+          },
+          {
+            "from": "2026-08-03",
+            "to": "2026-08-09",
+            "spend_usd_cents": 422308,
+            "collected_usd_cents": 910000,
+            "blended_collected_roi": 2.15,
+            "dms": 292,
+            "closes": 6,
+            "days": 7,
+            "cash_still_landing": true,
+            "week_index": 0
+          }
+        ],
+        "weekly_basis": "8 trailing seven-day buckets ending 2026-08-09, oldest first. Each bucket is a real seven days of data; the last one ends yesterday and is not a calendar week. cash_still_landing marks a bucket that ends inside the signed sales-lag p90 of 13 days: its spend is fully recorded and its cash is not.",
+        "trend_line": {
+          "is_level_claim": false,
+          "label": "TREND LINE, NOT A LEVEL",
+          "basis_window": {
+            "from": "2026-08-03",
+            "to": "2026-08-09"
+          },
+          "daily_pace_spend_usd_cents": 60330,
+          "daily_pace_collected_usd_cents": 130000,
+          "if_this_pace_held_for_a_full_month": {
+            "spend_usd_cents": 1870221,
+            "collected_usd_cents": 4030000
+          },
+          "what_this_is_not": "This is an extrapolation of the last seven days across a whole month. It is NOT this month's number, it is NOT a forecast, and under level_vs_trend v1 it may never be reported as the level. The level is in the `level` block above, and it is a calendar figure. This line exists to show direction only."
+        }
+      },
+      "blend_warning": "Every blended ROI on this answer is a ratio over a whole period, and a blend can hide its own tail: a fortnight at 3x can contain a final three days at 0.5x. That is why the weekly series ships attached to every blend here and is never omitted. Read the shape before you act on the blend."
+    },
+    "the_rule": "level_vs_trend v1: any pace or per-month claim must carry the actual calendar month (month-to-date plus prior month) AND the weekly trend shape. A trailing window alone is never a level claim. This answer is built so that reading it correctly is the path of least resistance: the calendar figures and the trend shape are separate blocks, and the extrapolation is inside the trend block, stamped is_level_claim false.",
+    "current_week_caveat": "sales_lag v1: Sales lag is a median of 2 days and a p90 of 13 days; sales lag spend by 5-14 days. Recent-window answers automatically carry the understatement caveat. A recent dip is provisional and never a kill trigger. The newest bucket ends 2026-08-09 and its cash WILL rise after this answer was given: the spend is already recorded and the sales it produced mostly are not. A falling last bar is the expected shape of a healthy account, not evidence of a problem, and on its own it is never a reason to kill anything."
+  },
+  "definitions_quoted": [
+    {
+      "key": "spend",
+      "label": "Ad spend",
+      "meaning": "How much Meta charged to run this ad across the selected days.",
+      "source": "Meta, bucketed to Eastern-time days.",
+      "format": "usd",
+      "is_calculated": false
+    },
+    {
+      "key": "messages",
+      "label": "DMs",
+      "meaning": "How many different people sent this ad's keyword in a DM.",
+      "source": "ManyChat keyword events, counted as distinct people.",
+      "format": "int",
+      "is_calculated": false
+    },
+    {
+      "key": "newClients",
+      "label": "New clients",
+      "meaning": "How many of those calls became a paying client.",
+      "source": "The sales tracker wins.",
+      "format": "int",
+      "is_calculated": false
+    },
+    {
+      "key": "collected",
+      "label": "Collected revenue",
+      "meaning": "Cash actually collected from clients tied to this ad's keyword.",
+      "source": "The sales tracker, tied to a keyword by hard key only.",
+      "format": "usd",
+      "is_calculated": false
+    },
+    {
+      "key": "collectedRoi",
+      "label": "Collected ROAS",
+      "meaning": "The cash collected for every dollar of ad spend, shown as a multiple.",
+      "source": "Collected revenue divided by ad spend.",
+      "format": "ratio2",
+      "is_calculated": true
+    }
+  ],
+  "as_of": [
+    {
+      "source": "adsv2_dm_facts",
+      "last_written_at": "2026-08-10T05:25:10.434552+00:00",
+      "note": "the newest stamped DM fact"
+    },
+    {
+      "source": "adsv2_booking_facts",
+      "last_written_at": "2026-08-10T05:25:10.604832+00:00",
+      "note": "the newest stamped booking fact"
+    },
+    {
+      "source": "adsv2_sale_facts",
+      "last_written_at": "2026-08-10T05:25:10.745567+00:00",
+      "note": "the newest stamped sale fact"
+    },
+    {
+      "source": "warehouse.ads",
+      "last_written_at": "2026-08-10T05:25:55.020565+00:00",
+      "note": "the last hourly refresh of the merged ads table"
+    }
+  ],
+  "sources": [
+    "ads_meta_insights_daily",
+    "adsv2_dm_facts",
+    "adsv2_booking_facts",
+    "adsv2_sale_facts",
+    "registry_definitions",
+    "registry_entities"
+  ],
+  "receipt": {
+    "contract_version": 2,
+    "question_key": "portfolio_pace",
+    "question_version": 1,
+    "asked_at": "2026-08-10T05:29:24.762Z",
+    "caller": "utari",
+    "params_as_resolved": {
+      "client": "all",
+      "trend_weeks": 8,
+      "date_from": "2026-08-01",
+      "date_to": "2026-08-09"
+    },
+    "aliases_resolved": [],
+    "window": {
+      "from": "2026-08-01",
+      "to": "2026-08-09",
+      "kind": "calendar_month_to_date"
+    },
+    "data_version": 456,
+    "freshness": [
+      {
+        "source": "adsv2_dm_facts",
+        "last_written_at": "2026-08-10T05:25:10.434552+00:00",
+        "note": "the newest stamped DM fact"
+      },
+      {
+        "source": "adsv2_booking_facts",
+        "last_written_at": "2026-08-10T05:25:10.604832+00:00",
+        "note": "the newest stamped booking fact"
+      },
+      {
+        "source": "adsv2_sale_facts",
+        "last_written_at": "2026-08-10T05:25:10.745567+00:00",
+        "note": "the newest stamped sale fact"
+      },
+      {
+        "source": "warehouse.ads",
+        "last_written_at": "2026-08-10T05:25:55.020565+00:00",
+        "note": "the last hourly refresh of the merged ads table"
+      }
+    ],
+    "stale": [],
+    "coverage": {
+      "window_wins_total": 16,
+      "window_cash_usd_cents_total": 2069800,
+      "buckets": {
+        "ad": {
+          "wins": 10,
+          "cash_usd_cents": 1409900
+        },
+        "organic": {
+          "wins": 1,
+          "cash_usd_cents": 120000
+        },
+        "misc_chat": {
+          "wins": 0,
+          "cash_usd_cents": 0
+        },
+        "awaiting_review": {
+          "wins": 5,
+          "cash_usd_cents": 539900
+        }
+      },
+      "classified_pct_wins": 68.8,
+      "classified_pct_cash": 73.9,
+      "note": "awaiting_review is the only bucket that counts as a gap; ad, organic and misc chat are all classified. 5 of the 5 awaiting-review wins carry no creator at all, because nobody has classified them yet. They are counted here on purpose even when this answer is about one creator: leaving them out is exactly how a coverage number reads 100% while real money sits unclassified. 3 of the awaiting-review wins already carry the team's own \"Miscellaneous Chat\" label. They are counted as awaiting review rather than as misc chat, which understates coverage rather than flattering it. Moving them belongs to the labeler, not to this read."
+    },
+    "exclusions": [
+      {
+        "what": "organic keyword traffic and rows still awaiting review",
+        "count": 0,
+        "why": "organic_keywords v1 keeps marked organic keywords out of ad ROAS, and an awaiting-review row is one nobody has classified yet. Both are out of every figure here, which understates cash rather than flattering it. The coverage block states the awaiting-review gap for the month-to-date window."
+      },
+      {
+        "what": "the current, incomplete week and the current, incomplete month",
+        "count": 0,
+        "why": "both are reported as partial ON PURPOSE and are labelled `complete: false`. They are never annualised, never grossed up, and never compared like-for-like against a full period without that label being attached."
+      }
+    ],
+    "caveats": [
+      "sales_lag v1: Sales lag is a median of 2 days and a p90 of 13 days; sales lag spend by 5-14 days. Recent-window answers automatically carry the understatement caveat. A recent dip is provisional and never a kill trigger.",
+      "This window ends 2026-08-09, inside the sales lag, so its cash and close numbers will keep rising after this answer was given. A recent dip here is provisional and is never on its own a reason to kill an ad.",
+      "pricing_currency v1: One price book across creators: 3-month $1,200; 6-month standard $2,400 with frequent $2,200 closes (closer-level flexibility; the tracker is the record). Revenue reports in USD. Jake's ad account bills in AUD; spend converts at the synced fx rate. Non-USD sale rows convert at sale-date fx.",
+      "Jake's ad account bills in AUD, so his spend in this answer has been converted to USD at the synced rate, while the sale money was already USD and was never converted.",
+      "coverage v1: Coverage = the percentage of wins AND the percentage of cash sitting in the AD, ORGANIC or MISC CHAT buckets (that is, classified), with AWAITING REVIEW counted and dollared separately as the true gap. Every money answer carries all four buckets in its receipt.",
+      "5 wins worth 5399.00 USD in this window are still awaiting review, so 68.8% of wins and 73.9% of cash are classified. This answer is not a claim of full coverage."
+    ],
+    "certainty": "directional",
+    "definitions_cited": [
+      {
+        "registry": "warehouse.definitions",
+        "name": "spend"
+      },
+      {
+        "registry": "warehouse.definitions",
+        "name": "collected"
+      },
+      {
+        "registry": "warehouse.definitions",
+        "name": "collectedRoi"
+      },
+      {
+        "registry": "warehouse.definitions",
+        "name": "messages"
+      },
+      {
+        "registry": "warehouse.definitions",
+        "name": "newClients"
+      },
+      {
+        "registry": "registry_definitions",
+        "name": "sales_lag",
+        "version": 1
+      },
+      {
+        "registry": "registry_definitions",
+        "name": "pricing_currency",
+        "version": 1
+      },
+      {
+        "registry": "registry_definitions",
+        "name": "coverage",
+        "version": 1
+      },
+      {
+        "registry": "registry_definitions",
+        "name": "level_vs_trend",
+        "version": 1
+      },
+      {
+        "registry": "registry_definitions",
+        "name": "roi_window",
+        "version": 1
+      },
+      {
+        "registry": "registry_definitions",
+        "name": "collected_vs_contracted",
+        "version": 1
+      }
+    ]
+  },
+  "freestyle_rule": "THE FREESTYLE RULE: this answer came through the locked door, so it is certified and it carries its own receipt. Any number you produce about this business OUTSIDE the door (a query you wrote, a figure you inferred, a total you added up yourself) is a WORKSHOP answer: label it as uncertified when you report it, and log what you were trying to ask into door_miss_log so it becomes a candidate for certification. The miss log is the backlog that decides what this door learns to answer next; an unlogged workshop answer is a question the door will never learn. Ask describe_misses to see that backlog."
+}
