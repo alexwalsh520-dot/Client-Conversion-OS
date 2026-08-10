@@ -674,3 +674,48 @@ Phase 1 closed 11 tables. Phase 2 closed 9 more, including `adsv2_sale_facts`,
 which is cash. What is left readable with the browser key is the deferred set and
 the floor 2 tables Phase 3 will move, with `ad_creative_transcripts` the notable
 one still open because v1 writes it.
+
+### The scheduled sync, watched
+
+The 11:25 UTC scheduled run, the first one after the phase landed:
+
+```
+11:25:12  budget      ok   rows=0     SKIPPED tyson "no access token", jake "no access token"
+11:25:12  facts       ok   rows=2460
+11:25:18  precompute  ok
+```
+
+**Phase 2 is confirmed under the real cron.** The facts pass wrote 2,460 rows and
+the precompute wrote its windows, both into moved tables, through the repointed
+code, on a schedule nobody triggered by hand. That is the phase proven twice.
+
+### What I found out about the token problem, and where it stops
+
+The scheduled run skipped both creators again, so this is not something the
+deploy fixed and it is not a one-off.
+
+What I ruled out: the route is not taking a different path for a cron caller than
+for a hand caller. I read it. Whether the caller is the cron secret or a signed-in
+admin, both fall through to the same `runAdsV2Sync(...)` with the same arguments.
+There is no branch that could explain it.
+
+What is actually happening: the tokens are read from environment variables
+(`firstEnv(creator.tokenEnv)` in `src/lib/ads-v2/budget-sync.ts`, and the same
+pattern in `activity-sync.ts`). Tyson looks for `META_ACCESS_TOKEN_TYSON`, then
+`META_ADS_TOKEN`, then `META_ACCESS_TOKEN`. Jake looks for
+`META_ACCESS_TOKEN_JAKE_DIVLJAK`, then `META_ACCESS_TOKEN_JAKE`. When the sync ran
+by hand those resolved for both creators. When it runs on the schedule they
+resolve for neither.
+
+Where it stops: the same URL, on the same project, resolving environment
+variables differently depending on who called it, is not something I can explain
+from the code, and I will not invent a reason. The next place to look is which
+deployment Vercel's scheduled invocation is actually running, and whether that
+deployment's environment carries the Meta token variables. This project has a
+history there, recorded separately as the production alias clobber.
+
+Why it matters more than the failing test: the budget photo had not refreshed
+since 8 August. `budget_map` was answering from a two-day-old photo and saying so
+in its receipt, which is the system being honest, but nobody was reading the
+receipt. It is fresh now only because a sync was forced by hand today. On the
+current schedule it will go stale again.
