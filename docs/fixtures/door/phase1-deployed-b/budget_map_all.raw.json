@@ -1,0 +1,317 @@
+{
+  "question_key": "budget_map",
+  "question": "Every entity currently holding a daily budget for one creator (or all of them): its verbatim Meta name, its id, whether the dial sits on the ad set or the campaign, the dollars per day, and its delivery status, reconciled against what it actually spent yesterday. Totals per creator and overall. Read from the most recent stored budget photo, whose age is reported and flagged when stale.",
+  "params": {
+    "client": "all",
+    "date_from": "2026-08-09",
+    "date_to": "2026-08-09"
+  },
+  "answers": {
+    "account": "all",
+    "as_of_day": "2026-08-09",
+    "units": "Money is in USD CENTS. daily_native_cents is in the ad account's own billing currency, named by billing_currency. pace_pct_of_dial is a percentage.",
+    "entities": [
+      {
+        "client": "tyson",
+        "level": "adset",
+        "entity_id": "52589686189864",
+        "entity_name_verbatim": "FIT - Warm Audience Stack (relaunch 7/21)",
+        "campaign_id": "52570597860064",
+        "daily_usd_cents": 14000,
+        "daily_native_cents": 14000,
+        "billing_currency": "USD",
+        "lifetime_usd_cents": null,
+        "effective_status": "ACTIVE",
+        "yesterday_spend_usd_cents": 13382,
+        "pace_pct_of_dial": 95.6,
+        "reconciliation": "ok",
+        "flagged": false,
+        "photo_day": "2026-08-08",
+        "first_photo_day": "2026-07-23",
+        "photo_taken_at": "2026-08-09T03:25:08.04+00:00",
+        "photo_age_hours": 31,
+        "stale": true
+      },
+      {
+        "client": "jake",
+        "level": "adset",
+        "entity_id": "120249890728010185",
+        "entity_name_verbatim": "TEST - US - 50 (7/27)",
+        "campaign_id": "120249890662080185",
+        "daily_usd_cents": 12109,
+        "daily_native_cents": 17200,
+        "billing_currency": "AUD",
+        "lifetime_usd_cents": null,
+        "effective_status": "ACTIVE",
+        "yesterday_spend_usd_cents": 13777,
+        "pace_pct_of_dial": 113.8,
+        "reconciliation": "ok",
+        "flagged": false,
+        "photo_day": "2026-08-08",
+        "first_photo_day": "2026-07-28",
+        "photo_taken_at": "2026-08-09T03:25:09.081+00:00",
+        "photo_age_hours": 31,
+        "stale": true
+      },
+      {
+        "client": "tyson",
+        "level": "adset",
+        "entity_id": "52575879187864",
+        "entity_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_id": "52564462555664",
+        "daily_usd_cents": 10000,
+        "daily_native_cents": 10000,
+        "billing_currency": "USD",
+        "lifetime_usd_cents": null,
+        "effective_status": "ACTIVE",
+        "yesterday_spend_usd_cents": 9400,
+        "pace_pct_of_dial": 94,
+        "reconciliation": "ok",
+        "flagged": false,
+        "photo_day": "2026-08-08",
+        "first_photo_day": "2026-07-23",
+        "photo_taken_at": "2026-08-09T03:25:08.04+00:00",
+        "photo_age_hours": 31,
+        "stale": true
+      },
+      {
+        "client": "tyson",
+        "level": "adset",
+        "entity_id": "52581820968064",
+        "entity_name_verbatim": "7/1 - SCALE - Revived Winners",
+        "campaign_id": "52570597860064",
+        "daily_usd_cents": 10000,
+        "daily_native_cents": 10000,
+        "billing_currency": "USD",
+        "lifetime_usd_cents": null,
+        "effective_status": "ACTIVE",
+        "yesterday_spend_usd_cents": 9766,
+        "pace_pct_of_dial": 97.7,
+        "reconciliation": "ok",
+        "flagged": false,
+        "photo_day": "2026-08-08",
+        "first_photo_day": "2026-07-23",
+        "photo_taken_at": "2026-08-09T03:25:08.04+00:00",
+        "photo_age_hours": 31,
+        "stale": true
+      },
+      {
+        "client": "tyson",
+        "level": "adset",
+        "entity_id": "52595863807264",
+        "entity_name_verbatim": "TEST · Direct CTA · 10 (vet ICP 8/7)",
+        "campaign_id": "52564462555664",
+        "daily_usd_cents": 10000,
+        "daily_native_cents": 10000,
+        "billing_currency": "USD",
+        "lifetime_usd_cents": null,
+        "effective_status": "ACTIVE",
+        "yesterday_spend_usd_cents": 8779,
+        "pace_pct_of_dial": 87.8,
+        "reconciliation": "ok",
+        "flagged": false,
+        "photo_day": "2026-08-08",
+        "first_photo_day": "2026-08-07",
+        "photo_taken_at": "2026-08-09T03:25:08.04+00:00",
+        "photo_age_hours": 31,
+        "stale": true
+      },
+      {
+        "client": "jake",
+        "level": "adset",
+        "entity_id": "120250191763420185",
+        "entity_name_verbatim": "SCALING - US - PROVEN (8/8)",
+        "campaign_id": "120250189749130185",
+        "daily_usd_cents": 4989,
+        "daily_native_cents": 7086,
+        "billing_currency": "AUD",
+        "lifetime_usd_cents": null,
+        "effective_status": "ACTIVE",
+        "yesterday_spend_usd_cents": 4545,
+        "pace_pct_of_dial": 91.1,
+        "reconciliation": "ok",
+        "flagged": false,
+        "photo_day": "2026-08-08",
+        "first_photo_day": "2026-08-08",
+        "photo_taken_at": "2026-08-09T03:25:09.081+00:00",
+        "photo_age_hours": 31,
+        "stale": true
+      },
+      {
+        "client": "jake",
+        "level": "adset",
+        "entity_id": "120250003126390185",
+        "entity_name_verbatim": "TEST - US LAB (8/1)",
+        "campaign_id": "120249890662080185",
+        "daily_usd_cents": 3520,
+        "daily_native_cents": 5000,
+        "billing_currency": "AUD",
+        "lifetime_usd_cents": null,
+        "effective_status": "ACTIVE",
+        "yesterday_spend_usd_cents": 0,
+        "pace_pct_of_dial": 0,
+        "reconciliation": "zero_delivery",
+        "flagged": true,
+        "photo_day": "2026-08-08",
+        "first_photo_day": "2026-08-01",
+        "photo_taken_at": "2026-08-09T03:25:09.081+00:00",
+        "photo_age_hours": 31,
+        "stale": true
+      }
+    ],
+    "per_creator": [
+      {
+        "client": "jake",
+        "photo_day": "2026-08-08",
+        "entity_count": 3,
+        "total_daily_usd_cents": 20618,
+        "yesterday_spend_usd_cents": 18322,
+        "flagged_count": 1,
+        "no_photo": null
+      },
+      {
+        "client": "tyson",
+        "photo_day": "2026-08-08",
+        "entity_count": 4,
+        "total_daily_usd_cents": 44000,
+        "yesterday_spend_usd_cents": 41327,
+        "flagged_count": 0,
+        "no_photo": null
+      }
+    ],
+    "total_daily_usd_cents": 64618,
+    "total_yesterday_spend_usd_cents": 59649,
+    "entity_count": 7,
+    "flagged": [
+      {
+        "entity_id": "120250003126390185",
+        "entity_name_verbatim": "TEST - US LAB (8/1)",
+        "reconciliation": "zero_delivery",
+        "daily_usd_cents": 3520,
+        "yesterday_spend_usd_cents": 0,
+        "pace_pct_of_dial": 0
+      }
+    ],
+    "reconciliation_rule": "Yesterday (2026-08-09) each dial is compared with what that entity actually spent. Meta may deliver up to 25% above a daily budget on any one day and balance it across the week, so anything from 75% to 125% of the dial reads as ok. Above that band is over_daily_flex, below it is under_delivering, and no spend at all against a live dial is zero_delivery. An entity whose first budget photo is later than 2026-08-09 reads as too_new_to_reconcile and is NOT flagged: it did not exist on the day being reconciled, so it could not have spent, and reporting a launch as a delivery failure is how a monitoring answer teaches its reader to skim. That 25% is Meta's documented platform behaviour, NOT an owner-signed threshold; nothing here was decided by this system.",
+    "staleness": {
+      "threshold_hours": 26,
+      "threshold_source": "door_freshness_thresholds, so ops can tune it without a deploy",
+      "stale_entity_count": 7,
+      "note": "7 of 7 dials come from a photo older than the 26 hour threshold. They are reported with their real age rather than withheld, but they are not evidence of what the dials are RIGHT NOW."
+    },
+    "entities_excluded_for_status": 1,
+    "what_this_is_not": "This is the most recent STORED budget photo, not a live read of Meta. It cannot see a change made in Ads Manager since the photo was taken, and it cannot see an entity that is stuck in review burning nothing. health_check answers that question, live from the Meta API, and is the one to ask before acting on a dial."
+  },
+  "definitions_quoted": [
+    {
+      "key": "budget",
+      "label": "Daily budget",
+      "meaning": "The daily budget set in Meta at that time. Ad sets hold budgets in ABO; campaigns only when CBO; ads never do.",
+      "source": "Meta budget settings, saved once per Eastern-time day.",
+      "format": "budget",
+      "is_calculated": false
+    },
+    {
+      "key": "spend",
+      "label": "Ad spend",
+      "meaning": "How much Meta charged to run this ad across the selected days.",
+      "source": "Meta, bucketed to Eastern-time days.",
+      "format": "usd",
+      "is_calculated": false
+    }
+  ],
+  "as_of": [
+    {
+      "source": "adsv2_budget_snapshots",
+      "last_written_at": "2026-08-09T03:25:09.081+00:00",
+      "note": "the last daily budget photo"
+    },
+    {
+      "source": "warehouse.ads",
+      "last_written_at": "2026-08-10T10:26:07.26429+00:00",
+      "note": "the last hourly refresh of the merged ads table"
+    }
+  ],
+  "sources": [
+    "adsv2_budget_snapshots",
+    "ads_meta_insights_daily",
+    "registry_entities"
+  ],
+  "receipt": {
+    "contract_version": 2,
+    "question_key": "budget_map",
+    "question_version": 1,
+    "asked_at": "2026-08-10T10:26:10.099Z",
+    "caller": "utari",
+    "params_as_resolved": {
+      "client": "all",
+      "date_from": "2026-08-09",
+      "date_to": "2026-08-09"
+    },
+    "aliases_resolved": [],
+    "window": {
+      "from": "2026-08-09",
+      "to": "2026-08-09",
+      "kind": "budget_photo_day"
+    },
+    "data_version": 461,
+    "freshness": [
+      {
+        "source": "adsv2_budget_snapshots",
+        "last_written_at": "2026-08-09T03:25:09.081+00:00",
+        "note": "the last daily budget photo"
+      },
+      {
+        "source": "warehouse.ads",
+        "last_written_at": "2026-08-10T10:26:07.26429+00:00",
+        "note": "the last hourly refresh of the merged ads table"
+      }
+    ],
+    "stale": [
+      {
+        "source": "adsv2_budget_snapshots",
+        "last_written_at": "2026-08-09T03:25:09.081+00:00",
+        "threshold_hours": 26,
+        "note": "adsv2_budget_snapshots was last written 31.0 hours ago, past its 26 hour threshold (the daily budget photos. One per Eastern day for anything active, so a full day plus a margin means a whole cycle was missed.)."
+      }
+    ],
+    "coverage": null,
+    "exclusions": [
+      {
+        "what": "entities that hold no budget of their own",
+        "count": 0,
+        "why": "an ad set inside a campaign-budget (CBO) campaign has no dial to report; the campaign holds it and appears here instead. Nothing is double counted, and an entity is listed once, at the level that actually holds the money."
+      },
+      {
+        "what": "budgets that are not currently delivering",
+        "count": 0,
+        "why": "a paused or archived entity still carries a budget field in Meta, but it is not money going out today. Only entities whose effective status is ACTIVE are in the totals, and the count of live-dial entities excluded for status is reported alongside."
+      }
+    ],
+    "caveats": [
+      "adsv2_budget_snapshots was last written 31.0 hours ago, past its 26 hour threshold (the daily budget photos. One per Eastern day for anything active, so a full day plus a margin means a whole cycle was missed.)."
+    ],
+    "certainty": "machine_certain",
+    "definitions_cited": [
+      {
+        "registry": "warehouse.definitions",
+        "name": "budget"
+      },
+      {
+        "registry": "warehouse.definitions",
+        "name": "spend"
+      },
+      {
+        "registry": "registry_definitions",
+        "name": "structure_rules",
+        "version": 1
+      },
+      {
+        "registry": "registry_definitions",
+        "name": "pricing_currency",
+        "version": 1
+      }
+    ]
+  },
+  "freestyle_rule": "THE FREESTYLE RULE: this answer came through the locked door, so it is certified and it carries its own receipt. Any number you produce about this business OUTSIDE the door (a query you wrote, a figure you inferred, a total you added up yourself) is a WORKSHOP answer: label it as uncertified when you report it, and log what you were trying to ask into door_miss_log so it becomes a candidate for certification. The miss log is the backlog that decides what this door learns to answer next; an unlogged workshop answer is a question the door will never learn. Ask describe_misses to see that backlog."
+}

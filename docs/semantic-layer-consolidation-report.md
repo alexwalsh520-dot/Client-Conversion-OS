@@ -523,3 +523,23 @@ of another build.
 | boundary credential sees the new tables | yes, after migration 103 |
 | browser key locked out of the moved tables | yes, verified 401 on all eleven |
 | reversible | yes, one ALTER per table |
+
+### Verified again after the deploy
+
+The gate above proved the move against the code that was already deployed. The
+push then deployed the repointed writers, so the pair was captured a second time
+against the new code:
+
+```
+data_version in phase1-deployed-a: 461
+data_version in phase1-deployed-b: 461
+identical: 19 of 19
+GATE PASS
+```
+
+The site answers 200 and the door answers normally. One capture in between was
+thrown out by the gate rather than reported, because it straddled sync run 460
+into 461 and two answers moved with the new data. That is the refusal rule
+working as intended, and the discarded pair is kept in
+`docs/fixtures/door/phase1-after-deploy` so the refusal can be checked rather
+than taken on trust.
