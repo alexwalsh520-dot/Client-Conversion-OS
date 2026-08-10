@@ -333,3 +333,27 @@ are still in `public` today. It is held only because law 7 says Phase 1 does not
 proceed without you, and starting Phase 4 out of order would mean firing about
 7,700 live calls at ManyChat's API on my own initiative. Say the word and it
 starts.
+
+---
+
+## Note added after the Phase 0 push: the ground moved while I worked
+
+`origin/main` gained commit `00b7b55` (Skool signup webhook, phone-setter
+attribution bridge) between the reference sweep and the push. The sweep was run
+against `e7328e3`, so it does not include that commit. Three things it changes,
+checked by reading the diff:
+
+- It adds a **new upsert writer to `manychat_contact_links`**, which the shrink
+  list had down as an archive candidate. It is now more alive, not less. The
+  deferral stands and the reason is now stronger.
+- It adds a new reader of `instagram_lead_links`, a floor 2 table. Phase 3
+  detail, no change to the plan.
+- It adds a new public table, `skool_signups`, and applies its migrations under
+  written names rather than numbers. Numbered migrations on `origin/main` still
+  run 001 to 097 plus this build's 100, so the 098 and 099 reservation for the
+  audience brick is unaffected.
+
+The wider point for later phases: this repo has more than one session applying
+migrations, so every phase must re-check the reference sweep against the current
+`origin/main` immediately before it moves anything, rather than trusting a sweep
+taken hours earlier.
