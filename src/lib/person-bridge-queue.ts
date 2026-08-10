@@ -48,7 +48,9 @@ export function enqueuePersonLink(evidence: BridgeEvidence): void {
   try {
     const db = getServiceSupabase();
     void Promise.resolve(
-      db.from("registry_person_link_queue").insert({
+      // warehouse, not the public compatibility view: the queue moved there in
+      // the Semantic Layer consolidation Phase 1 and a view cannot take a write.
+      db.schema("warehouse").from("registry_person_link_queue").insert({
         system_a: evidence.systemA,
         id_a: idA,
         system_b: idB ? evidence.systemB ?? null : null,

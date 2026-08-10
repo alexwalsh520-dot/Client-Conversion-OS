@@ -1,0 +1,142 @@
+{
+  "question_key": "ad_copy",
+  "question": "Everything one ad says, taken from the field that actually holds it: for a still, the words on the image; for a video, the words spoken in it and the words printed on it; and for either, the caption above it, labelled as the caption and never as the creative's own copy. Asked for a whole creator instead, it returns how much of that creator's spend runs on ads whose content is known, and names every ad where it is not.",
+  "params": {
+    "client": "tyson",
+    "ad_id": null,
+    "keyword": "LOADED",
+    "date_from": "2026-05-12",
+    "date_to": "2026-08-09"
+  },
+  "answers": {
+    "client": "tyson",
+    "looked_up_by": "keyword",
+    "window": {
+      "from": "2026-05-12",
+      "to": "2026-08-09"
+    },
+    "found": 1,
+    "ads": [
+      {
+        "ad_id": "52581821002664",
+        "keyword": "loaded",
+        "ad_name_verbatim": "LOADED",
+        "client": "tyson",
+        "delivery_state": "not_active",
+        "creative_type": "video",
+        "spend_usd_cents": 232386,
+        "content_known": true,
+        "what_the_ad_says": [
+          {
+            "label": "words_spoken_in_the_video",
+            "is_not": "NOT the caption and NOT the printed on-screen text.",
+            "text": null,
+            "source_field": "ad_creative_transcripts.transcript_text"
+          },
+          {
+            "label": "words_printed_on_the_video",
+            "is_not": "NOT the caption and NOT the cover thumbnail alone. Read from frames sampled across the whole video, which is why it finds copy the thumbnail OCR never could.",
+            "text": "I'm looking for / 5 servicemen / stuck at the same body for 6-18 months who want to crush their fitness standards. / - You don't need more info, you need a system / - Daily 1:1 check-ins so you actually stay consistent this time / - Built around duty days, rotating shifts, and kids / - All in one app so you just open it and follow the plan / DM me for details on 1 of the 5 spots.",
+            "source_field": "ad_creative_transcripts.on_screen_text"
+          }
+        ],
+        "caption": {
+          "label": "caption_above_the_creative",
+          "is_not": "NOT the words on the image and NOT the words in the video. This is the primary text that sits above the creative in the feed.",
+          "text": "5 VETERANS WANTED: GET YOUR WARRIOR BODY BACK\n\nI'm looking for 5 veterans who are done lying to themselves.\n\nNot for guys who blame \"busy seasons\" while their gut grows bigger every month.\n\nAs a Marine about to transition myself, I see what happens. You lose your structure. Your accountability. Your brothers who kept you sharp.\n\nAnd your body becomes proof of your surrender.\n\nYou know that feeling when you catch yourself in a mirror?\n\nWhen you remember what you used to be capable of?\n\nWhen you realize you've become everything you swore you'd never become?\n\nThat warrior is still in there. Buried under excuses and broken promises to yourself.\n\nThis isn't some civilian fitness program. This is a system built for men who understand discipline but lost their enforcement.\n\nReady to stop the self-betrayal? Click the link to learn more.\n\nMy clients don't just get their bodies back. They get their self-respect back.\n\nMy client Mark was lying awake at 3am hating how soft he'd gotten since leaving the Army. Then he got his warrior body back fast. No more shame when he looked in the mirror.\n\nAnother veteran client Dave felt like a fraud when people called him \"hero\" while his body was falling apart. Then he rebuilt his strength without the gym taking over his life. His kids respect him again like they used to.\n\nMy client Tony missed the brotherhood and discipline so much he was drinking every night to numb it. Then he found his purpose again without starting over from zero. No more empty feeling inside.\n\nThe system works because you already know how to execute under pressure. You just need someone to apply that pressure again.\n\nIf you're dealing with:\n\n• Avoiding mirrors because you hate what you see\n\n• A body that would embarrass your former self\n\n• Lying to yourself about \"getting back to it\"\n\n• Knowing you're capable of more but doing nothing\n\n...and you're ready to end the cycle of self-deception, click the link to learn more.\n\nYou'll get a complete battle plan for your nutrition, training, and daily accountability.\n\nThis isn't for everyone. If you want to keep making excuses, keep scrolling.\n\nBut if you're ready to become the man you used to respect, click the link to learn more.",
+          "source_field": "ad_creative_copy.primary_text"
+        },
+        "video_read": {
+          "audio_status": "no_audio",
+          "on_screen_status": "ok",
+          "duration_s": 16.75,
+          "frames_read": 6,
+          "transcribed_at": "2026-08-08T09:40:36.982+00:00",
+          "models": {
+            "spoken": "whisper-large-v3",
+            "printed": "claude-sonnet-4-6"
+          },
+          "note": "This video has no audio track. That is a fact about the ad, not a gap in the record: it says nothing out loud and everything it says is printed on it."
+        },
+        "not_known_because": null
+      }
+    ],
+    "field_law": "Each block above says what it IS and what it is NOT. The caption is returned separately from what the creative itself says, always, because reading the caption as the on-image copy is a mistake this system has already made once and paid for."
+  },
+  "definitions_quoted": [],
+  "as_of": [
+    {
+      "source": "ad_creative_copy",
+      "last_written_at": "2026-08-07T16:20:52.663849+00:00",
+      "note": "When this creator's newest still-image OCR and caption were stored."
+    },
+    {
+      "source": "ad_creative_transcripts",
+      "last_written_at": "2026-08-08T10:41:02.934+00:00",
+      "note": "When this creator's newest video read was stored. Video reads are kept current by the two-hourly creative cron."
+    }
+  ],
+  "sources": [
+    "ad_creative_copy",
+    "ad_creative_transcripts",
+    "ad_creative_image",
+    "ads_meta_insights_daily"
+  ],
+  "receipt": {
+    "contract_version": 2,
+    "question_key": "ad_copy",
+    "question_version": 1,
+    "asked_at": "2026-08-10T10:13:01.942Z",
+    "caller": "utari",
+    "params_as_resolved": {
+      "client": "tyson",
+      "ad_id": null,
+      "keyword": "LOADED",
+      "date_from": "2026-05-12",
+      "date_to": "2026-08-09"
+    },
+    "aliases_resolved": [],
+    "window": {
+      "from": "2026-05-12",
+      "to": "2026-08-09",
+      "kind": "explicit_range"
+    },
+    "data_version": null,
+    "freshness": [
+      {
+        "source": "ad_creative_copy",
+        "last_written_at": "2026-08-07T16:20:52.663849+00:00",
+        "note": "When this creator's newest still-image OCR and caption were stored."
+      },
+      {
+        "source": "ad_creative_transcripts",
+        "last_written_at": "2026-08-08T10:41:02.934+00:00",
+        "note": "When this creator's newest video read was stored. Video reads are kept current by the two-hourly creative cron."
+      }
+    ],
+    "stale": [],
+    "coverage": null,
+    "exclusions": [
+      {
+        "what": "ads that carried no keyword in the window",
+        "count": 0,
+        "why": "spend is read through the same certified keyword-grain aggregation the Ads v2 tab paints from, so an ad that never carried a keyword has no spend row here to report against."
+      },
+      {
+        "what": "what an ad's images or video SHOW, as opposed to what they SAY",
+        "count": 0,
+        "why": "this question reports words only. Nothing here describes a person, a setting or a visual style, because a vision model asked to describe an ad will compose copy that appears nowhere in the account."
+      }
+    ],
+    "caveats": [],
+    "certainty": "machine_certain",
+    "definitions_cited": [
+      {
+        "registry": "registry_definitions",
+        "name": "creative_truth",
+        "version": 1
+      }
+    ]
+  },
+  "freestyle_rule": "THE FREESTYLE RULE: this answer came through the locked door, so it is certified and it carries its own receipt. Any number you produce about this business OUTSIDE the door (a query you wrote, a figure you inferred, a total you added up yourself) is a WORKSHOP answer: label it as uncertified when you report it, and log what you were trying to ask into door_miss_log so it becomes a candidate for certification. The miss log is the backlog that decides what this door learns to answer next; an unlogged workshop answer is a question the door will never learn. Ask describe_misses to see that backlog."
+}

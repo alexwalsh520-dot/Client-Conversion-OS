@@ -1,0 +1,216 @@
+{
+  "question_key": "attribution_share",
+  "question": "Where a window's cash sits: proved to an active creator's ad and counted by the tab, proved but still held back for review, honestly labelled as a former creator's ad, or carrying no ad evidence at all with the written reason.",
+  "params": {
+    "date_from": "2026-07-27",
+    "date_to": "2026-08-09"
+  },
+  "answers": {
+    "date_from": "2026-07-27",
+    "date_to": "2026-08-09",
+    "active_roster": [
+      "jake",
+      "tyson"
+    ],
+    "units": "Money is in CENTS.",
+    "totals_by_bucket": {
+      "counted_by_the_tab": {
+        "sales": 59,
+        "wins": 18,
+        "cash_usd_cents": 2649600
+      },
+      "no_ad_evidence": {
+        "sales": 26,
+        "wins": 6,
+        "cash_usd_cents": 659900
+      }
+    },
+    "rows": [
+      {
+        "bucket": "counted_by_the_tab",
+        "client_key": "tyson",
+        "reason": "(none, it carries a hard key)",
+        "evidence_key": "subscriber_id",
+        "is_organic": false,
+        "sales": 41,
+        "wins": 16,
+        "cash_usd_cents": 2409600,
+        "counted_in_the_saved_answer": true
+      },
+      {
+        "bucket": "no_ad_evidence",
+        "client_key": null,
+        "reason": "unknown",
+        "evidence_key": "(none)",
+        "is_organic": false,
+        "sales": 14,
+        "wins": 3,
+        "cash_usd_cents": 300000,
+        "counted_in_the_saved_answer": false
+      },
+      {
+        "bucket": "no_ad_evidence",
+        "client_key": null,
+        "reason": "no_keyword_ever",
+        "evidence_key": "(none)",
+        "is_organic": false,
+        "sales": 11,
+        "wins": 2,
+        "cash_usd_cents": 239900,
+        "counted_in_the_saved_answer": false
+      },
+      {
+        "bucket": "counted_by_the_tab",
+        "client_key": "jake",
+        "reason": "(none, it carries a hard key)",
+        "evidence_key": "subscriber_id",
+        "is_organic": false,
+        "sales": 17,
+        "wins": 1,
+        "cash_usd_cents": 120000,
+        "counted_in_the_saved_answer": true
+      },
+      {
+        "bucket": "counted_by_the_tab",
+        "client_key": "tyson",
+        "reason": "(none, it carries a hard key)",
+        "evidence_key": "human_resolution",
+        "is_organic": false,
+        "sales": 1,
+        "wins": 1,
+        "cash_usd_cents": 120000,
+        "counted_in_the_saved_answer": true
+      },
+      {
+        "bucket": "no_ad_evidence",
+        "client_key": "tyson",
+        "reason": "organic_dm",
+        "evidence_key": "(none)",
+        "is_organic": true,
+        "sales": 1,
+        "wins": 1,
+        "cash_usd_cents": 120000,
+        "counted_in_the_saved_answer": false
+      }
+    ],
+    "bucket_key": {
+      "counted_by_the_tab": "a hard evidence key, a keyword, an active creator, and nothing held back. This is the ONLY bucket the Ads v2 tab's saved cash counts.",
+      "proved_but_held_back": "an evidence key exists but the row is still marked awaiting review, so the tab leaves it out.",
+      "former_creator_ad": "the honest label for a sale that came through a creator who has since left the roster.",
+      "no_ad_evidence": "nothing proved an ad. The written reason is on the row. These rows carry no creator, by design."
+    }
+  },
+  "definitions_quoted": [
+    {
+      "key": "collected",
+      "label": "Collected revenue",
+      "meaning": "Cash actually collected from clients tied to this ad's keyword.",
+      "source": "The sales tracker, tied to a keyword by hard key only.",
+      "format": "usd",
+      "is_calculated": false
+    }
+  ],
+  "as_of": [
+    {
+      "source": "adsv2_sale_facts",
+      "last_written_at": "2026-08-10T09:25:27.077643+00:00",
+      "note": "the newest stamped sale fact"
+    }
+  ],
+  "sources": [
+    "adsv2_sale_facts"
+  ],
+  "receipt": {
+    "contract_version": 2,
+    "question_key": "attribution_share",
+    "question_version": 1,
+    "asked_at": "2026-08-10T10:13:16.056Z",
+    "caller": "utari",
+    "params_as_resolved": {
+      "date_from": "2026-07-27",
+      "date_to": "2026-08-09"
+    },
+    "aliases_resolved": [],
+    "window": {
+      "from": "2026-07-27",
+      "to": "2026-08-09",
+      "kind": "explicit_range"
+    },
+    "data_version": null,
+    "freshness": [
+      {
+        "source": "adsv2_sale_facts",
+        "last_written_at": "2026-08-10T09:25:27.077643+00:00",
+        "note": "the newest stamped sale fact"
+      }
+    ],
+    "stale": [],
+    "coverage": {
+      "window_wins_total": 24,
+      "window_cash_usd_cents_total": 3309500,
+      "buckets": {
+        "ad": {
+          "wins": 18,
+          "cash_usd_cents": 2649600
+        },
+        "organic": {
+          "wins": 1,
+          "cash_usd_cents": 120000
+        },
+        "misc_chat": {
+          "wins": 0,
+          "cash_usd_cents": 0
+        },
+        "awaiting_review": {
+          "wins": 5,
+          "cash_usd_cents": 539900
+        }
+      },
+      "classified_pct_wins": 79.2,
+      "classified_pct_cash": 83.7,
+      "note": "awaiting_review is the only bucket that counts as a gap; ad, organic and misc chat are all classified. 5 of the 5 awaiting-review wins carry no creator at all, because nobody has classified them yet. They are counted here on purpose even when this answer is about one creator: leaving them out is exactly how a coverage number reads 100% while real money sits unclassified. 3 of the awaiting-review wins already carry the team's own \"Miscellaneous Chat\" label. They are counted as awaiting review rather than as misc chat, which understates coverage rather than flattering it. Moving them belongs to the labeler, not to this read."
+    },
+    "exclusions": [],
+    "caveats": [
+      "sales_lag v1: Sales lag is a median of 2 days and a p90 of 13 days; sales lag spend by 5-14 days. Recent-window answers automatically carry the understatement caveat. A recent dip is provisional and never a kill trigger.",
+      "This window ends 2026-08-09, inside the sales lag, so its cash and close numbers will keep rising after this answer was given. A recent dip here is provisional and is never on its own a reason to kill an ad.",
+      "pricing_currency v1: One price book across creators: 3-month $1,200; 6-month standard $2,400 with frequent $2,200 closes (closer-level flexibility; the tracker is the record). Revenue reports in USD. Jake's ad account bills in AUD; spend converts at the synced fx rate. Non-USD sale rows convert at sale-date fx.",
+      "Jake's ad account bills in AUD, so his spend in this answer has been converted to USD at the synced rate, while the sale money was already USD and was never converted.",
+      "coverage v1: Coverage = the percentage of wins AND the percentage of cash sitting in the AD, ORGANIC or MISC CHAT buckets (that is, classified), with AWAITING REVIEW counted and dollared separately as the true gap. Every money answer carries all four buckets in its receipt.",
+      "5 wins worth 5399.00 USD in this window are still awaiting review, so 79.2% of wins and 83.7% of cash are classified. This answer is not a claim of full coverage."
+    ],
+    "certainty": "machine_certain",
+    "definitions_cited": [
+      {
+        "registry": "warehouse.definitions",
+        "name": "collected"
+      },
+      {
+        "registry": "registry_definitions",
+        "name": "sales_lag",
+        "version": 1
+      },
+      {
+        "registry": "registry_definitions",
+        "name": "pricing_currency",
+        "version": 1
+      },
+      {
+        "registry": "registry_definitions",
+        "name": "coverage",
+        "version": 1
+      },
+      {
+        "registry": "registry_definitions",
+        "name": "certainty_buckets",
+        "version": 1
+      },
+      {
+        "registry": "registry_definitions",
+        "name": "collected_vs_contracted",
+        "version": 1
+      }
+    ]
+  },
+  "freestyle_rule": "THE FREESTYLE RULE: this answer came through the locked door, so it is certified and it carries its own receipt. Any number you produce about this business OUTSIDE the door (a query you wrote, a figure you inferred, a total you added up yourself) is a WORKSHOP answer: label it as uncertified when you report it, and log what you were trying to ask into door_miss_log so it becomes a candidate for certification. The miss log is the backlog that decides what this door learns to answer next; an unlogged workshop answer is a question the door will never learn. Ask describe_misses to see that backlog."
+}

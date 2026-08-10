@@ -3,16 +3,18 @@
 Started 2026-08-10. This document is written as the build runs, one section per
 phase, and it says what actually happened rather than what was planned.
 
-**Status right now: Phase 0 is complete and its gate passed. Phase 1 has NOT
-started, because law 7 of this build says to stop and hand you a one-click, and
-that one-click turned out to be real. It is at the top of the "What is waiting on
-you" section below.**
+**Status right now: Phases 0 and 1 are complete and both gates passed. The
+exposure block described below was cleared from inside the database rather than
+from the dashboard, and the eleven registry and door tables have moved into the
+warehouse room with the door answering identically on both sides of the move.**
 
 ---
 
-## What is waiting on you
+## The exposure block, and how it was cleared
 
-**One thing, and it takes about thirty seconds.**
+**Resolved on 2026-08-10 by migration 101. Kept here because it is the reason
+the build paused, and because you may still want the dashboard field to agree
+with the database.**
 
 The warehouse room is not reachable by the app's database client. Postgres will
 happily let code read it, but the API layer in front of the database (PostgREST)
@@ -26,13 +28,23 @@ GET /rest/v1/definitions   with header  Accept-Profile: warehouse
       "hint":"Only the following schemas are exposed: public, graphql_public"}
 ```
 
-That list is a project setting, not a database setting, so no migration can
-change it and neither can I. The click:
+The dashboard has a field for this, and I could not reach it. But PostgREST also
+reads its own configuration out of the database, from settings attached to the
+`authenticator` role, and a migration can write there. That is what migration 101
+does, and the live API confirmed it immediately: the same request stopped saying
+`PGRST106 Invalid schema` and started saying `permission denied for schema
+warehouse`, which is the correct answer and the safe one. Public kept returning
+200 throughout.
+
+One caveat you should know. The database setting and the dashboard field are two
+different places that say the same thing. If Supabase ever pushes its own
+PostgREST configuration over the top, the database setting could be overwritten
+and the moves would start failing. If you ever have the dashboard open anyway,
+setting **Exposed schemas** to `public, warehouse` there as well costs nothing and
+removes that risk:
 
 > Supabase dashboard, project `bostjayrguulwaltnbgt`
-> Project Settings, then API
-> the **Exposed schemas** field
-> add `warehouse` next to `public`, then Save
+> Project Settings, then API, then **Exposed schemas**
 
 Nothing breaks when you do it. Adding a schema to that list does not grant
 anybody anything: every table in warehouse already has row level security on with
@@ -357,3 +369,157 @@ The wider point for later phases: this repo has more than one session applying
 migrations, so every phase must re-check the reference sweep against the current
 `origin/main` immediately before it moves anything, rather than trusting a sweep
 taken hours earlier.
+
+---
+
+## Phase 1: the registries and the door plumbing. Complete, gate passed.
+
+Eleven tables moved from `public` into `warehouse`. Nothing was deleted, nothing
+was renamed, and each one reverses with a single `ALTER TABLE ... SET SCHEMA`
+back.
+
+Moved: `registry_definitions`, `registry_entities`, `registry_keywords`,
+`registry_persons`, `registry_person_merges`, `registry_person_link_queue`,
+`registry_person_link_conflicts`, `organic_keywords`, `door_ask_log`,
+`door_miss_log`, `door_freshness_thresholds`.
+
+Each one left a `security_invoker` compatibility view behind in `public` under
+its old name, so every reader that still uses the old name keeps working with no
+edit at all.
+
+### Migrations
+
+| migration | what it does |
+| --- | --- |
+| 101 | makes `warehouse` addressable by PostgREST, from inside the database |
+| 102 | the move itself, plus the function repointing and the grant tightening |
+| 103 | a gap I created and then found: see below |
+| 104 | closes a back door I found while verifying 102: see below |
+
+### The gate
+
+```
+data_version in phase1-before: 460
+data_version in phase1-after:  460
+identical: 19 of 19
+GATE PASS: every door answer is identical once the documented clock-driven fields are blanked.
+```
+
+Both captures came from the same sync run, so this is a real comparison and not
+an accident of timing. It is also the strongest single proof in this build: the
+door running on `origin/main` code, deployed and untouched, gave nineteen
+byte-identical answers across a move of eleven tables underneath it.
+
+Test suite after the phase: **347 pass, 3 fail, 0 skipped**, which is exactly the
+baseline. The same three pre-existing failures, no new ones. Typecheck clean.
+
+### The SQL functions
+
+Twenty-five functions name at least one of the moved tables, and they split into
+two kinds, each handled differently and each for a stated reason.
+
+**Nine hard-coded the `public.` prefix.** Left alone they would have silently
+started reading the compatibility view: correct for a read, fatal for a write,
+and quiet until it mattered. Each was regenerated from its own stored definition
+with the prefix swapped by pattern, not retyped, so there was no chance of a
+transcription slip. The pattern requires a non-identifier character after the
+name, which is what stopped `public.registry_definitions` from also mangling
+`public.registry_definitions_current`, a different object that must not be
+touched.
+
+**Seven write through bare, unprefixed names.** Rewriting those bodies would mean
+a regex over bare words, which can hit a column name or a string literal. Instead
+each writer was given `search_path = warehouse, public, pg_temp`, so a bare name
+lands on the real table in the room. Bare names in the same bodies that mean
+tables still living in `public` keep resolving to `public`, because `warehouse`
+does not contain them yet, and they will follow automatically as later phases
+move them.
+
+The rest only read, and reading through the compatibility view returns the same
+rows, which the gate proves.
+
+### The two app writers, repointed
+
+- `src/app/api/organic-keywords/route.ts`, all three call sites
+- `src/lib/person-bridge-queue.ts`, the queue insert
+
+Both now use `.schema("warehouse")`. Verified live rather than assumed, through
+supabase-js exactly as the app builds it: reads succeed on both the warehouse
+table and the public view, and a write that is filtered to match zero rows
+reaches the real table and returns cleanly. No real row was touched to prove it.
+
+### Two things I got wrong and then caught
+
+Recording these because a build report that only lists successes is not evidence
+of anything.
+
+**Migration 103, a gap I created.** Migration 100 gave the boundary credential
+default privileges on the warehouse schema, and I expected the moved tables to be
+picked up. They were not. `ALTER DEFAULT PRIVILEGES` only reaches tables
+**created** in a schema afterwards. A table **moved** in with `SET SCHEMA` carries
+its old grant list, so all eleven arrived invisible to `ai_marketing_readonly`.
+Caught by querying the privileges after the move instead of trusting the
+migration. Migration 103 grants them. Every later phase must run the same grant
+again, and the accuracy check planned for Phase 5 should watch for exactly this.
+
+**Migration 104, a back door I would have left open.** Locking the eleven moved
+tables away from the browser key was not enough. Three older views in `public`
+read those same tables and were not `security_invoker`, so they ran with their
+owner's rights and handed the data back anyway. Tested against the live API:
+`registry_definitions_current` returned the signed definitions and
+`registry_entity_alias_index` returned staff aliases, both `200`, both to a key
+that ships inside the browser bundle. Migration 104 makes all three
+`security_invoker` and revokes `anon` and `authenticated`. Re-tested: all three
+now `401`. Every reader of those views is server side and uses `service_role`, so
+nothing that worked stopped working.
+
+### The thing you most need to know from this phase
+
+While enumerating references I checked what the public browser key can actually
+read, and the answer was worse than the consolidation question I was asking.
+
+`public.registry_persons` granted full read, insert, update and delete to `anon`
+with row level security switched **off**. `anon` is the publishable key that ships
+in the browser bundle of the app. I verified it against the live API rather than
+inferring it from the grant table: the request returned `200` and real rows,
+names and ManyChat, GoHighLevel and Instagram ids together.
+
+**Phase 1 closed this for the eleven tables it moved**, as a side effect of
+granting the new compatibility views to `service_role` alone, and migration 104
+closed the three views that went around it. Nothing in the app used that access:
+every reader and writer of all eleven goes through `getServiceSupabase()`.
+
+**It is not closed everywhere.** Twenty-two tables in `public` are readable by the
+browser key with row level security off. The eleven this phase touched are now
+out of that count. The rest are the floor 3 and floor 2 tables that Phases 2 and
+3 will move, and they include the ones that matter most:
+
+| still readable with the browser key | approximate rows | what it holds |
+| --- | --- | --- |
+| `adsv2_dm_facts` | 4,036 | who sent which keyword, stamped |
+| `adsv2_sync_runs` | 2,790 | sync history |
+| `adsv2_budget_snapshots` | 1,255 | what every dial was set to |
+| `adsv2_window_snapshots` | 1,040 | the saved answers the tab paints |
+| `adsv2_sale_facts` | 594 | **cash, per sale** |
+| `adsv2_booking_facts` | 335 | who booked |
+| `ad_creative_transcripts` | 215 | what the ads say |
+
+Phases 2 and 3 close these the same way Phase 1 closed the registries, so the
+work is already planned rather than extra. But until those phases land, that
+list is live, and you should decide whether it waits for the phases or gets shut
+today as its own small job. I have not touched them, because turning off access
+to the tables the Ads v2 tab reads is not a change to make quietly in the middle
+of another build.
+
+### Phase 1 gate
+
+| gate item | result |
+| --- | --- |
+| tables moved | 11 of 11, each with a compatibility view |
+| door answers identical | 19 of 19, same sync run |
+| test suite | 347 pass, 3 fail, 0 skipped, identical to baseline |
+| typecheck | clean |
+| writers repointed and proven live | 2 of 2 |
+| boundary credential sees the new tables | yes, after migration 103 |
+| browser key locked out of the moved tables | yes, verified 401 on all eleven |
+| reversible | yes, one ALTER per table |

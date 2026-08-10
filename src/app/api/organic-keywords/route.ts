@@ -16,6 +16,7 @@ export async function GET() {
   if (!(await authed())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const sb = getServiceSupabase();
   const { data, error } = await sb
+    .schema("warehouse")
     .from("organic_keywords")
     .select("id,client_key,keyword_normalized,note,created_at")
     .order("client_key", { ascending: true })
@@ -34,7 +35,10 @@ export async function POST(req: NextRequest) {
   if (!isCreatorKey(client)) return NextResponse.json({ error: "Invalid creator key" }, { status: 400 });
   if (!keyword) return NextResponse.json({ error: "Invalid keyword" }, { status: 400 });
   const sb = getServiceSupabase();
+  // warehouse, not the public compatibility view: a view cannot take
+  // INSERT ... ON CONFLICT, which is what an upsert is.
   const { error } = await sb
+    .schema("warehouse")
     .from("organic_keywords")
     .upsert(
       { client_key: client, keyword_normalized: keyword, note: typeof body.note === "string" ? body.note.trim() || null : null },
@@ -49,7 +53,7 @@ export async function DELETE(req: NextRequest) {
   if (!(await authed())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json().catch(() => ({}));
   const sb = getServiceSupabase();
-  let q = sb.from("organic_keywords").delete();
+  let q = sb.schema("warehouse").from("organic_keywords").delete();
   if (typeof body.id === "number") {
     q = q.eq("id", body.id);
   } else {
