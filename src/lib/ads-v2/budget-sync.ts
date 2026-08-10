@@ -241,7 +241,7 @@ async function snapshotOneClient(
     // Upsert only today's rows; unique(entity_level, entity_id, et_day) makes a
     // re-run today idempotent and never touches any past day.
     const { error } = await db
-      .from("adsv2_budget_snapshots")
+      .schema("warehouse").from("adsv2_budget_snapshots")
       .upsert(rows, { onConflict: "entity_level,entity_id,et_day" });
     if (error) throw new Error(`budget upsert failed for ${creator.key}: ${error.message}`);
   }

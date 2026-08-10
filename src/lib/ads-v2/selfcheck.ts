@@ -248,7 +248,7 @@ export async function runSelfCheck(now: Date = new Date()): Promise<SelfCheckRep
 
     // Write alert rows (idempotent by dedupe_key).
     if (findings.length) {
-      await db.from("adsv2_alerts").upsert(
+      await db.schema("warehouse").from("adsv2_alerts").upsert(
         findings.map((f) => ({
           et_day: etDay,
           alert_type: f.type,
@@ -315,7 +315,7 @@ async function checkInvariants(db: Db, etDay: string): Promise<InvariantViolatio
       for (const [preset, label] of nested) {
         const r = rangeForPreset(preset, etDay);
         const { data } = await db
-          .from("adsv2_window_snapshots")
+          .schema("warehouse").from("adsv2_window_snapshots")
           .select("payload")
           .eq("account", account)
           .eq("status", status)
@@ -450,7 +450,7 @@ async function checkParentChildSums(db: Db, etDay: string): Promise<ParentChildV
   for (const account of accounts) {
     for (const status of statuses) {
       const { data } = await db
-        .from("adsv2_window_snapshots")
+        .schema("warehouse").from("adsv2_window_snapshots")
         .select("payload")
         .eq("account", account)
         .eq("status", status)

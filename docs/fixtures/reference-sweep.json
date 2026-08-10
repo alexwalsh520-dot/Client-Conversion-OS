@@ -1,5 +1,5 @@
 {
-  "scanned_files": 1056,
+  "scanned_files": 1062,
   "tables": {
     "ads_meta_insights_daily": {
       "floor": "floor2",
@@ -254,11 +254,11 @@
     },
     "instagram_lead_links": {
       "floor": "floor2",
-      "files_total": 11,
-      "files_excluding_migrations": 10,
+      "files_total": 12,
+      "files_excluding_migrations": 11,
       "supabase_writers": 6,
       "upsert_writers": 0,
-      "supabase_readers": 9,
+      "supabase_readers": 10,
       "sql_text_refs": 1,
       "writer_files": [
         "src/lib/instagram-connections.ts"
@@ -266,6 +266,7 @@
       "reader_files": [
         "src/app/api/dms/conversations/route.ts",
         "src/app/api/sales-hub/backfill-lead-links/route.ts",
+        "src/app/api/sales-hub/skool-signup-webhook/route.ts",
         "src/app/api/sales-hub/time-to-eat/route.ts",
         "src/lib/buyer-dna/core.ts",
         "src/lib/sales-hub/response-times.ts",
@@ -777,7 +778,7 @@
     },
     "registry_entities": {
       "floor": "floor4",
-      "files_total": 20,
+      "files_total": 22,
       "files_excluding_migrations": 15,
       "supabase_writers": 0,
       "upsert_writers": 0,
@@ -806,7 +807,7 @@
     },
     "registry_persons": {
       "floor": "floor4",
-      "files_total": 10,
+      "files_total": 11,
       "files_excluding_migrations": 5,
       "supabase_writers": 4,
       "upsert_writers": 0,
@@ -825,7 +826,7 @@
     },
     "registry_person_merges": {
       "floor": "floor4",
-      "files_total": 4,
+      "files_total": 5,
       "files_excluding_migrations": 2,
       "supabase_writers": 1,
       "upsert_writers": 0,
@@ -841,7 +842,7 @@
     },
     "registry_person_link_queue": {
       "floor": "floor4",
-      "files_total": 4,
+      "files_total": 5,
       "files_excluding_migrations": 2,
       "supabase_writers": 1,
       "upsert_writers": 0,
@@ -857,7 +858,7 @@
     },
     "registry_person_link_conflicts": {
       "floor": "floor4",
-      "files_total": 3,
+      "files_total": 4,
       "files_excluding_migrations": 1,
       "supabase_writers": 0,
       "upsert_writers": 0,
@@ -871,7 +872,7 @@
     },
     "registry_keywords": {
       "floor": "floor4",
-      "files_total": 12,
+      "files_total": 14,
       "files_excluding_migrations": 6,
       "supabase_writers": 0,
       "upsert_writers": 0,
@@ -890,7 +891,7 @@
     },
     "registry_definitions": {
       "floor": "floor4",
-      "files_total": 23,
+      "files_total": 25,
       "files_excluding_migrations": 16,
       "supabase_writers": 0,
       "upsert_writers": 0,
@@ -919,7 +920,7 @@
     },
     "organic_keywords": {
       "floor": "floor4",
-      "files_total": 17,
+      "files_total": 18,
       "files_excluding_migrations": 11,
       "supabase_writers": 2,
       "upsert_writers": 1,
@@ -945,7 +946,7 @@
     },
     "door_ask_log": {
       "floor": "door",
-      "files_total": 6,
+      "files_total": 7,
       "files_excluding_migrations": 5,
       "supabase_writers": 0,
       "upsert_writers": 0,
@@ -963,7 +964,7 @@
     },
     "door_miss_log": {
       "floor": "door",
-      "files_total": 5,
+      "files_total": 6,
       "files_excluding_migrations": 4,
       "supabase_writers": 0,
       "upsert_writers": 0,
@@ -980,7 +981,7 @@
     },
     "door_freshness_thresholds": {
       "floor": "door",
-      "files_total": 11,
+      "files_total": 12,
       "files_excluding_migrations": 8,
       "supabase_writers": 0,
       "upsert_writers": 0,
@@ -1099,13 +1100,14 @@
     },
     "manychat_contact_links": {
       "floor": "shrink_candidates",
-      "files_total": 18,
-      "files_excluding_migrations": 13,
-      "supabase_writers": 2,
-      "upsert_writers": 2,
-      "supabase_readers": 12,
+      "files_total": 19,
+      "files_excluding_migrations": 14,
+      "supabase_writers": 3,
+      "upsert_writers": 3,
+      "supabase_readers": 13,
       "sql_text_refs": 1,
       "writer_files": [
+        "src/app/api/sales-hub/skool-signup-webhook/route.ts",
         "src/lib/dm-contact-linking.ts",
         "src/lib/ghl-dm-sync.ts"
       ],

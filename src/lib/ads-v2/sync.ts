@@ -68,7 +68,7 @@ async function runIsolatedStep<T>(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     try {
-      await db.from("adsv2_alerts").upsert(
+      await db.schema("warehouse").from("adsv2_alerts").upsert(
         {
           et_day: todayEt(),
           alert_type: "sync_step_failed",

@@ -34,7 +34,7 @@ export async function fetchAllRows<T>(
 
 /** Read the current data version (a monotonically increasing integer). */
 export async function getDataVersion(db: Db): Promise<number> {
-  const { data } = await db.from("adsv2_meta").select("value").eq("key", "data_version").maybeSingle();
+  const { data } = await db.schema("warehouse").from("adsv2_meta").select("value").eq("key", "data_version").maybeSingle();
   const v = data?.value;
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? n : 1;
@@ -45,7 +45,7 @@ export async function bumpDataVersion(db: Db): Promise<number> {
   const current = await getDataVersion(db);
   const next = current + 1;
   await db
-    .from("adsv2_meta")
+    .schema("warehouse").from("adsv2_meta")
     .upsert({ key: "data_version", value: next as unknown as object, updated_at: new Date().toISOString() }, { onConflict: "key" });
   return next;
 }
@@ -53,7 +53,7 @@ export async function bumpDataVersion(db: Db): Promise<number> {
 /** Record the start of a sync run; returns the row id. */
 export async function startRun(db: Db, source: string): Promise<string | null> {
   const { data } = await db
-    .from("adsv2_sync_runs")
+    .schema("warehouse").from("adsv2_sync_runs")
     .insert({ source, status: "ok", started_at: new Date().toISOString() })
     .select("id")
     .maybeSingle();
@@ -68,7 +68,7 @@ export async function finishRun(
 ): Promise<void> {
   if (!id) return;
   await db
-    .from("adsv2_sync_runs")
+    .schema("warehouse").from("adsv2_sync_runs")
     .update({
       status: patch.status,
       ended_at: new Date().toISOString(),

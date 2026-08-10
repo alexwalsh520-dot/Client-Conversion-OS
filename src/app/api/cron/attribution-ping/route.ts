@@ -174,7 +174,7 @@ async function GETimpl() {
   const openCents = open.reduce((sum, s) => sum + s.collected_usd_cents, 0);
 
   // Previous state, for "closed since last ping" and the loop-close moment.
-  const { data: stateRow } = await db.from("adsv2_meta").select("value").eq("key", STATE_KEY).maybeSingle();
+  const { data: stateRow } = await db.schema("warehouse").from("adsv2_meta").select("value").eq("key", STATE_KEY).maybeSingle();
   const prev = (stateRow?.value || null) as PingState | null;
   const prevKeys = new Set(prev?.openKeys || []);
   const closedKeys = [...prevKeys].filter((k) => !openKeys.includes(k));
@@ -198,7 +198,7 @@ async function GETimpl() {
 
   const nextState: PingState = { openKeys, openCents, updatedAt: new Date().toISOString() };
   await db
-    .from("adsv2_meta")
+    .schema("warehouse").from("adsv2_meta")
     .upsert({ key: STATE_KEY, value: nextState as unknown as object, updated_at: new Date().toISOString() }, { onConflict: "key" });
 
   return {

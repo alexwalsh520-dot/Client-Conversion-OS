@@ -46,7 +46,7 @@ export async function serveWindow(query: AdsV2Query): Promise<ServeResult> {
 
 async function readSnapshot(db: Db, query: AdsV2Query, version: number): Promise<AdsV2Payload | null> {
   const { data } = await db
-    .from("adsv2_window_snapshots")
+    .schema("warehouse").from("adsv2_window_snapshots")
     .select("payload, data_version")
     .eq("account", query.account)
     .eq("date_from", query.dateFrom)
@@ -96,7 +96,7 @@ export async function computeAndStore(db: Db, query: AdsV2Query, version: number
   // status filter can never read as missing money again.
   const metrics = await buildDaySeries(query, version);
   metrics.total = payload.total;
-  await db.from("adsv2_window_snapshots").upsert(
+  await db.schema("warehouse").from("adsv2_window_snapshots").upsert(
     {
       account: query.account,
       date_from: query.dateFrom,
@@ -124,7 +124,7 @@ export async function serveMetrics(query: AdsV2Query): Promise<{ payload: AdsV2M
   const db = getServiceSupabase();
   const version = await getDataVersion(db);
   const { data } = await db
-    .from("adsv2_window_snapshots")
+    .schema("warehouse").from("adsv2_window_snapshots")
     .select("metrics_payload, data_version")
     .eq("account", query.account)
     .eq("date_from", query.dateFrom)

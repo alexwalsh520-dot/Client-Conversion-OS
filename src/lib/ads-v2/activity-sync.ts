@@ -410,7 +410,7 @@ export async function runActivitySync(
 
   try {
     const { data: cursorRow } = await db
-      .from("adsv2_meta")
+      .schema("warehouse").from("adsv2_meta")
       .select("value")
       .eq("key", CURSOR_KEY)
       .maybeSingle();
@@ -461,7 +461,7 @@ export async function runActivitySync(
     // Only advance the cursor when nobody was throttled and at least one client
     // actually completed, so a throttled run re-reads rather than skips.
     if (!throttled && clients.length) {
-      await db.from("adsv2_meta").upsert(
+      await db.schema("warehouse").from("adsv2_meta").upsert(
         {
           key: CURSOR_KEY,
           value: { at: now.toISOString() } as unknown as object,
@@ -543,7 +543,7 @@ export async function runActivityBackfill(
 
   try {
     const { data: stateRow } = await db
-      .from("adsv2_meta")
+      .schema("warehouse").from("adsv2_meta")
       .select("value")
       .eq("key", BACKFILL_KEY)
       .maybeSingle();
@@ -609,7 +609,7 @@ export async function runActivityBackfill(
     await db.rpc("adsv2_resolve_ad_change_parents");
 
     const nextState: BackfillState = { cursor, done, emptyStreak, totalInserted, oldestSeen };
-    await db.from("adsv2_meta").upsert(
+    await db.schema("warehouse").from("adsv2_meta").upsert(
       {
         key: BACKFILL_KEY,
         value: nextState as unknown as object,

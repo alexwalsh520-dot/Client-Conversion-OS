@@ -129,7 +129,7 @@ export async function runAccuracyChecks(
   const alerts = rows.filter((r) => r.status === "red" || r.status === "error");
   if (alerts.length) {
     try {
-      await db.from("adsv2_alerts").upsert(
+      await db.schema("warehouse").from("adsv2_alerts").upsert(
         alerts.map((r) => ({
           et_day: r.et_day,
           alert_type: `accuracy_${r.status}`,
