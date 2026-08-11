@@ -3,10 +3,10 @@
 Started 2026-08-10. This document is written as the build runs, one section per
 phase, and it says what actually happened rather than what was planned.
 
-**Status right now: Phases 0 and 1 are complete and both gates passed. The
-exposure block described below was cleared from inside the database rather than
-from the dashboard, and the eleven registry and door tables have moved into the
-warehouse room with the door answering identically on both sides of the move.**
+**Status right now: Phases 0, 1, 2 and 3 are complete and every gate passed.
+Thirty-three tables have moved into the warehouse room. The door has answered 19
+of 19 identically at every single gate. Phase 4, the ManyChat identity backfill,
+and Phase 5, the folds and stickers, are not started.**
 
 ---
 
@@ -719,3 +719,135 @@ since 8 August. `budget_map` was answering from a two-day-old photo and saying s
 in its receipt, which is the system being honest, but nobody was reading the
 receipt. It is fresh now only because a sync was forced by hand today. On the
 current schedule it will go stale again.
+
+---
+
+## Phase 3: the copies of reality. Complete, gate passed.
+
+Twelve tables moved. Migrations 106 and 107.
+
+Moved: `ads_keyword_events`, `dm_conversation_messages`, `ghl_appointments`,
+`sales_tracker_rows`, `manychat_origin_checks`, `manychat_tag_events`,
+`instagram_lead_links`, `fx_rates`, `fathom_calls`, `fathom_call_links`,
+`creator_content`, `creator_account_snapshots`.
+
+**One deferred: `ads_meta_insights_daily`**, the ad spend spine. The frozen v1 tab
+writes it from `src/app/api/sync/ads-tracker/route.ts`. That is a real gap, not a
+tidy ending, and it is the single biggest thing this build did not finish.
+
+### The ordering, which was the whole risk of this phase
+
+Two of these are written by live webhooks: `ads_keyword_events`, which is every
+"someone sent the magic word", and `dm_conversation_messages`, which takes about
+1,500 rows a day. A dropped keyword event is lost attribution, which is lost
+money.
+
+In Phases 1 and 2 the migration went first and the deploy followed, which leaves a
+gap the length of a Vercel build. That was acceptable for a sync that retries
+hourly. It is not acceptable for a webhook that does not come back.
+
+So the order was inverted. The repointed code was deployed first, with the door's
+`serverInfo` version bumped to `2.3.0` purely as a marker, and the deploy was
+polled for rather than guessed at:
+
+```
+DEPLOY LIVE at 09:45:30 UTC
+migration 106 applied immediately after
+```
+
+### The live webhook proof
+
+The requirement was to watch fresh rows land after the move, not to assume it.
+Here is the `dm_conversation_messages` write stream straight through the
+switchover:
+
+```
+09:44:09   09:44:13   09:44:59   09:45:24     <- before
+                                              <- deploy 09:45:30, migration ~09:46
+09:46:42   09:47:43   09:48:10   09:48:26   09:49:01   09:49:18    <- after
+```
+
+Live webhook traffic, writing through the repointed code, into a table that had
+just changed schema. That is the proof this phase needed.
+
+**Being straight about the gap.** There is 78 seconds between the last row before
+and the first row after. The surrounding cadence runs anywhere from 15 to 60
+seconds between rows, so that gap is inside normal variation, but I cannot prove
+nothing was dropped in it. What I can say is that the window was seconds of
+exposure rather than minutes, and that the stream resumed on its own with no
+intervention.
+
+`ads_keyword_events` did not receive a live event in the window, so its webhook is
+**not** proven the same way. Its write path is proven separately: a write filtered
+to match zero rows reaches the real table and returns cleanly. Same for
+`manychat_tag_events`, `ghl_appointments`, `instagram_lead_links` and
+`creator_content`. No real row was touched to prove any of it.
+
+### The gate
+
+```
+data_version in phase3-before: 486
+data_version in phase3-after:  486
+identical: 19 of 19
+GATE PASS
+```
+
+Test suite: **347 pass, 3 fail, 0 skipped**, which is exactly the baseline this
+build started from. The `budget_map` golden now passes again after being re-pinned.
+
+### The budget_map golden, re-pinned, with the arithmetic
+
+Asked for $340, pinned at $390, and both numbers are right at different moments:
+
+```
+ $440   the map as pinned on 8 August
+-$100   "TEST · Direct CTA · 10 (vet ICP 8/7)" killed
+=$340   correct when it was asked for
+ +$50   "TEST · Link Click · 1 (warm stack 8/11)" launched 11 August
+=$390   what the live map reports now
+```
+
+Verified by hand against the 11 August photo, four dials, rather than copied from
+whatever the test printed. **This test asserts a live budget total, so it fails
+every time a dial moves, and it has now moved three times in four days ($600,
+$440, $390). Re-pinning does not fix that. Only changing what it asserts would.**
+
+### Where the browser key stands now
+
+This is the number that moved most in this build.
+
+| | tables in `public` readable by the browser key with row level security off |
+| --- | --- |
+| before Phase 1 | 22 |
+| now | **8** |
+
+All eight that remain are `content_*` app tables: carousels, calendar days,
+playbooks and so on. No money, no personal identifiers, and outside this build's
+floors entirely.
+
+**One thing to confirm rather than change.** `ads_dashboard_snapshots` is a
+deferred table and it still returns real rows to the browser key, not through an
+oversight but through an explicit policy called `ads_snap_read` with
+`USING (true)` granted to `anon`. Somebody meant that. My guess is the tokenized
+creator share links need it, but it is a guess, so I have not touched it. Worth
+you confirming it is deliberate.
+
+### Phase 3 gate
+
+| gate item | result |
+| --- | --- |
+| tables moved | 12 of 12, each with a compatibility view |
+| deferred | 1, `ads_meta_insights_daily`, v1 writes it |
+| door answers identical | 19 of 19, same sync run |
+| live webhook writing after the move | proven, 6 rows in the 4 minutes after |
+| other write paths | proven by zero-row writes, no data touched |
+| test suite | 347 pass, 3 fail, 0 skipped, the original baseline |
+| browser key | locked out of all 12, and out of `public.sale_attribution` |
+| every warehouse object labelled | yes, 0 unlabelled |
+| reversible | yes, one ALTER per table |
+
+### The room, as it stands
+
+`warehouse` now holds **38 tables and 11 views**, up from 5 tables and 11 views
+when this build started. `public` is down to 149 tables from 189. The boundary
+credential `ai_marketing_readonly` can read all 38 and nothing else anywhere.
