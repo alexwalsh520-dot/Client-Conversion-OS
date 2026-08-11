@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
 
   const db = getServiceSupabase();
   const { data, error } = await db
-    .from("ads_keyword_events")
+    .schema("warehouse").from("ads_keyword_events")
     .insert({
       source: "ghl",
       event_type: EVENT_TYPES[bucket],

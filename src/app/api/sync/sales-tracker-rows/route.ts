@@ -147,7 +147,7 @@ async function handler(req: NextRequest) {
 
   for (const chunk of chunks(rows, UPSERT_CHUNK_SIZE)) {
     const { error } = await db
-      .from("sales_tracker_rows")
+      .schema("warehouse").from("sales_tracker_rows")
       .upsert(chunk, { onConflict: "source,sheet_row_key" });
 
     if (error) {

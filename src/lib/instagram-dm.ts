@@ -445,7 +445,7 @@ async function reclassifyConversation(
 ) {
   const sb = getServiceSupabase();
   const { data, error } = await sb
-    .from("dm_conversation_messages")
+    .schema("warehouse").from("dm_conversation_messages")
     .select("body, direction, sent_at")
     .eq("client", metadata.client)
     .eq("conversation_id", conversationId)
@@ -546,7 +546,7 @@ export async function processInstagramWebhookPayload(payload: Record<string, unk
   }));
 
   const { error } = await sb
-    .from("dm_conversation_messages")
+    .schema("warehouse").from("dm_conversation_messages")
     .upsert(payloadRows, { onConflict: "message_id" });
 
   if (error) {

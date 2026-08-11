@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
   const slugPart = prospect.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
   const fathomId = `${MANUAL_PREFIX}${creator}:${recordedAt}:${slugPart}`;
 
-  const { error } = await sb.from("fathom_calls").upsert(
+  const { error } = await sb.schema("warehouse").from("fathom_calls").upsert(
     {
       fathom_id: fathomId,
       title: title || `${prospect} (manual upload)`,
@@ -81,7 +81,7 @@ export async function DELETE(req: NextRequest) {
   // Drop anything mined from it too, so removing a call removes what it produced.
   await sb.from("content_voc").delete().eq("source_id", id);
   await sb.from("content_mined").delete().eq("source_id", id);
-  const { error } = await sb.from("fathom_calls").delete().eq("fathom_id", id);
+  const { error } = await sb.schema("warehouse").from("fathom_calls").delete().eq("fathom_id", id);
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 200 });
   return NextResponse.json({ ok: true, removed: id });
 }

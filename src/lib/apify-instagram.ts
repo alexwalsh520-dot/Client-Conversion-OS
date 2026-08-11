@@ -103,7 +103,7 @@ export async function ingestViaApify(
     for (let i = 0; i < rows.length; i += 100) {
       const chunk = rows.slice(i, i + 100);
       const { error } = await sb
-        .from("creator_content")
+        .schema("warehouse").from("creator_content")
         .upsert(chunk, { onConflict: "client_key,ig_media_id", ignoreDuplicates: false });
       if (error) throw new Error(`upsert failed: ${error.message}`);
       upserted += chunk.length;

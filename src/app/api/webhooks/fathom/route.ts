@@ -29,9 +29,9 @@ async function storeFathomCall(payload: Record<string, unknown>) {
   };
   const sb = getServiceSupabase();
   if (row.fathom_id) {
-    await sb.from("fathom_calls").upsert(row, { onConflict: "fathom_id", ignoreDuplicates: false });
+    await sb.schema("warehouse").from("fathom_calls").upsert(row, { onConflict: "fathom_id", ignoreDuplicates: false });
   } else {
-    await sb.from("fathom_calls").insert(row);
+    await sb.schema("warehouse").from("fathom_calls").insert(row);
   }
 }
 

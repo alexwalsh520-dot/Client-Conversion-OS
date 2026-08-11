@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
       skipped.push(creator);
       continue;
     }
-    const { error } = await sb.from("creator_account_snapshots").upsert(
+    const { error } = await sb.schema("warehouse").from("creator_account_snapshots").upsert(
       {
         client_key: creator,
         snapshot_date: snapshotDate,

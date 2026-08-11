@@ -56,9 +56,9 @@ export async function POST(req: NextRequest) {
     // no_speech / na are terminal and never selected. transcript_words asc nullsFirst puts posts that
     // were never transcribed (null words) ahead of the low-word junk, so fresh coverage is never starved.
     const { data: rows } = targetId
-      ? await sb.from("creator_content").select(SEL).eq("id", targetId).not("video_url", "is", null).limit(1)
+      ? await sb.schema("warehouse").from("creator_content").select(SEL).eq("id", targetId).not("video_url", "is", null).limit(1)
       : await sb
-          .from("creator_content")
+          .schema("warehouse").from("creator_content")
           .select(SEL)
           .eq("client_key", slug)
           .not("video_url", "is", null)
@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
           failed++;
         }
       }
-      await sb.from("creator_content").update(update).eq("id", r.id);
+      await sb.schema("warehouse").from("creator_content").update(update).eq("id", r.id);
       // Targeted mode: hand the transcript straight back to the caller.
       if (targetId) {
         return NextResponse.json({

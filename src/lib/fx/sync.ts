@@ -110,7 +110,7 @@ export async function syncFxRates(
     let stored = 0;
     for (let i = 0; i < rows.length; i += 500) {
       const chunk = rows.slice(i, i + 500);
-      const { error } = await db.from("fx_rates").upsert(chunk, { onConflict: "rate_date,base,quote" });
+      const { error } = await db.schema("warehouse").from("fx_rates").upsert(chunk, { onConflict: "rate_date,base,quote" });
       if (error) {
         console.warn(`[fx] upsert failed for ${base}`, error.message);
         break;

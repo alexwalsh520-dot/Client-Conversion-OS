@@ -1,0 +1,246 @@
+{
+  "label": "phase3-before",
+  "door_url": "https://client-conversion-os.vercel.app/api/mcp/utari",
+  "window": {
+    "date_from": "2026-07-27",
+    "date_to": "2026-08-09"
+  },
+  "fixture_person": "00012017-7324-4a2f-ac99-91113c1baf81",
+  "volatile_fields": {
+    "asked_at": "the clock time the question was asked",
+    "last_written_at": "when a source table was last written by the hourly sync",
+    "data_version": "the sync run counter, which advances every hourly refresh",
+    "generated_at": "the clock time an answer body was generated",
+    "as_of_time": "the clock time a live read was taken",
+    "checked_at": "the clock time a health read was taken",
+    "captured_at": "when a stored snapshot was taken",
+    "fetched_at": "when a live Meta read was taken",
+    "ran_at": "when a check ran",
+    "updated_at": "row write time",
+    "created_at": "row write time",
+    "hours_since_last": "hours since a source was last written, which grows by the minute",
+    "age_hours": "how old a stored photo is, which grows by the hour",
+    "age_minutes": "how old a stored photo is, which grows by the minute",
+    "age_days": "how old a stored photo is, which grows by the day",
+    "snapshot_age_hours": "how old the stored budget photo is",
+    "snapshot_age_minutes": "how old the stored budget photo is",
+    "stale": "the list of sources past their freshness threshold, which the clock alone can flip"
+  },
+  "shape_only": [
+    "budget_map_all",
+    "capture_health_all"
+  ],
+  "panel": [
+    {
+      "name": "kill_scale_read_tyson_decide",
+      "question_key": "kill_scale_read",
+      "params": {
+        "client": "tyson",
+        "mode": "decide",
+        "date_from": "2026-07-27",
+        "date_to": "2026-08-09"
+      },
+      "ok": true,
+      "data_version": 486,
+      "error": null
+    },
+    {
+      "name": "kill_scale_read_jake_decide",
+      "question_key": "kill_scale_read",
+      "params": {
+        "client": "jake",
+        "mode": "decide",
+        "date_from": "2026-07-27",
+        "date_to": "2026-08-09"
+      },
+      "ok": true,
+      "data_version": 486,
+      "error": null
+    },
+    {
+      "name": "creator_funnel_tyson",
+      "question_key": "creator_funnel",
+      "params": {
+        "client": "tyson",
+        "date_from": "2026-07-27",
+        "date_to": "2026-08-09"
+      },
+      "ok": true,
+      "data_version": 486,
+      "error": null
+    },
+    {
+      "name": "creator_funnel_all",
+      "question_key": "creator_funnel",
+      "params": {
+        "client": "all",
+        "date_from": "2026-07-27",
+        "date_to": "2026-08-09"
+      },
+      "ok": true,
+      "data_version": 486,
+      "error": null
+    },
+    {
+      "name": "budget_map_all",
+      "question_key": "budget_map",
+      "params": {
+        "client": "all"
+      },
+      "ok": true,
+      "data_version": 486,
+      "error": null
+    },
+    {
+      "name": "coverage_report_all",
+      "question_key": "coverage_report",
+      "params": {
+        "client": "all",
+        "date_from": "2026-07-27",
+        "date_to": "2026-08-09"
+      },
+      "ok": true,
+      "data_version": null,
+      "error": null
+    },
+    {
+      "name": "person_timeline_fixture",
+      "question_key": "person_timeline",
+      "params": {
+        "person": "00012017-7324-4a2f-ac99-91113c1baf81"
+      },
+      "ok": true,
+      "data_version": null,
+      "error": null
+    },
+    {
+      "name": "ad_copy_tyson_loaded",
+      "question_key": "ad_copy",
+      "params": {
+        "client": "tyson",
+        "keyword": "LOADED"
+      },
+      "ok": true,
+      "data_version": null,
+      "error": null
+    },
+    {
+      "name": "health_check_all",
+      "question_key": "health_check",
+      "params": {
+        "client": "all"
+      },
+      "ok": true,
+      "data_version": null,
+      "error": null
+    },
+    {
+      "name": "scale_headroom_tyson",
+      "question_key": "scale_headroom",
+      "params": {
+        "client": "tyson",
+        "date_from": "2026-07-27",
+        "date_to": "2026-08-09"
+      },
+      "ok": true,
+      "data_version": 486,
+      "error": null
+    },
+    {
+      "name": "portfolio_pace_all",
+      "question_key": "portfolio_pace",
+      "params": {
+        "client": "all",
+        "trend_weeks": 8
+      },
+      "ok": true,
+      "data_version": 486,
+      "error": null
+    },
+    {
+      "name": "capture_health_all",
+      "question_key": "capture_health",
+      "params": {
+        "client": "all",
+        "days": 14,
+        "sample": 5
+      },
+      "ok": true,
+      "data_version": null,
+      "error": null
+    },
+    {
+      "name": "lead_quality_tyson",
+      "question_key": "lead_quality_read",
+      "params": {
+        "client": "tyson",
+        "date_from": "2026-07-27",
+        "date_to": "2026-08-09",
+        "cohort": "keyword"
+      },
+      "ok": true,
+      "data_version": null,
+      "error": null
+    },
+    {
+      "name": "creative_bench_tyson",
+      "question_key": "creative_bench",
+      "params": {
+        "client": "tyson",
+        "date_from": "2026-07-27",
+        "date_to": "2026-08-09"
+      },
+      "ok": true,
+      "data_version": 486,
+      "error": null
+    },
+    {
+      "name": "attribution_share",
+      "question_key": "attribution_share",
+      "params": {
+        "date_from": "2026-07-27",
+        "date_to": "2026-08-09"
+      },
+      "ok": true,
+      "data_version": null,
+      "error": null
+    },
+    {
+      "name": "leak_map",
+      "question_key": "leak_map",
+      "params": {
+        "date_from": "2026-07-27",
+        "date_to": "2026-08-09"
+      },
+      "ok": true,
+      "data_version": null,
+      "error": null
+    },
+    {
+      "name": "resolution_queue",
+      "question_key": "resolution_queue",
+      "params": {
+        "limit": 100
+      },
+      "ok": true,
+      "data_version": null,
+      "error": null
+    },
+    {
+      "name": "data_health",
+      "question_key": "data_health",
+      "params": {},
+      "ok": true,
+      "data_version": null,
+      "error": null
+    },
+    {
+      "name": "define_all",
+      "question_key": "define",
+      "params": {},
+      "ok": true,
+      "data_version": null,
+      "error": null
+    }
+  ]
+}

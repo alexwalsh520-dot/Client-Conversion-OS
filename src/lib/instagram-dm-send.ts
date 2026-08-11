@@ -71,7 +71,7 @@ async function fetchInstagramProfile(subscriberId: string, config: InstagramMess
 async function getRecentInstagramSubscriberIds(clientKey: string | null) {
   const db = getServiceSupabase();
   let query = db
-    .from("dm_conversation_messages")
+    .schema("warehouse").from("dm_conversation_messages")
     .select("subscriber_id, sent_at")
     .eq("channel", INSTAGRAM_CHANNEL)
     .order("sent_at", { ascending: false })
@@ -181,7 +181,7 @@ async function findConversationId(params: {
 }) {
   const db = getServiceSupabase();
   let query = db
-    .from("dm_conversation_messages")
+    .schema("warehouse").from("dm_conversation_messages")
     .select("conversation_id")
     .eq("channel", INSTAGRAM_CHANNEL)
     .eq("subscriber_id", params.subscriberId)
@@ -227,7 +227,7 @@ async function logSentVoiceNote(params: {
     },
   };
 
-  const { error } = await db.from("dm_conversation_messages").upsert(payload, {
+  const { error } = await db.schema("warehouse").from("dm_conversation_messages").upsert(payload, {
     onConflict: "message_id",
   });
 

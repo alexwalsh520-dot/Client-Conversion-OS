@@ -150,7 +150,7 @@ async function upsertConversationMessages(
   }));
 
   const { error } = await sb
-    .from("dm_conversation_messages")
+    .schema("warehouse").from("dm_conversation_messages")
     .upsert(payload, { onConflict: "message_id" });
 
   if (error) {

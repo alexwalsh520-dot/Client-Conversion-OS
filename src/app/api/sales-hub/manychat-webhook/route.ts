@@ -149,7 +149,7 @@ export async function POST(req: NextRequest) {
       event_at: normalizedEventAt,
     };
 
-    const { error } = await sb.from("manychat_tag_events").insert(tagEventPayload);
+    const { error } = await sb.schema("warehouse").from("manychat_tag_events").insert(tagEventPayload);
 
     if (error) {
       const shouldRetryWithoutNewColumns =
@@ -159,7 +159,7 @@ export async function POST(req: NextRequest) {
 
       if (shouldRetryWithoutNewColumns) {
         const { error: fallbackError } = await sb
-          .from("manychat_tag_events")
+          .schema("warehouse").from("manychat_tag_events")
           .insert(removeColumns(tagEventPayload, ["keyword_raw", "keyword_normalized", "raw_payload"]));
 
         if (fallbackError) {
@@ -188,7 +188,7 @@ export async function POST(req: NextRequest) {
       };
 
       const { error: keywordError } = await sb
-        .from("ads_keyword_events")
+        .schema("warehouse").from("ads_keyword_events")
         .insert(keywordEventPayload);
 
       if (keywordError) {
@@ -196,7 +196,7 @@ export async function POST(req: NextRequest) {
           // ManyChat can retry webhooks. Duplicate source ids are safe to ignore.
         } else if (missingColumn(keywordError, "source_event_id")) {
           const { error: fallbackError } = await sb
-            .from("ads_keyword_events")
+            .schema("warehouse").from("ads_keyword_events")
             .insert(removeColumns(keywordEventPayload, ["source_event_id"]));
 
           if (fallbackError && !duplicateEvent(fallbackError)) {

@@ -1,5 +1,5 @@
 {
-  "scanned_files": 1062,
+  "scanned_files": 1063,
   "tables": {
     "ads_meta_insights_daily": {
       "floor": "floor2",
@@ -399,7 +399,7 @@
     },
     "adsv2_dm_facts": {
       "floor": "floor3",
-      "files_total": 22,
+      "files_total": 23,
       "files_excluding_migrations": 10,
       "supabase_writers": 0,
       "upsert_writers": 0,
@@ -422,7 +422,7 @@
     },
     "adsv2_booking_facts": {
       "floor": "floor3",
-      "files_total": 29,
+      "files_total": 30,
       "files_excluding_migrations": 12,
       "supabase_writers": 0,
       "upsert_writers": 0,
@@ -448,7 +448,7 @@
     },
     "adsv2_sale_facts": {
       "floor": "floor3",
-      "files_total": 36,
+      "files_total": 37,
       "files_excluding_migrations": 20,
       "supabase_writers": 0,
       "upsert_writers": 0,
@@ -482,7 +482,7 @@
     },
     "adsv2_sale_resolutions": {
       "floor": "floor3",
-      "files_total": 6,
+      "files_total": 7,
       "files_excluding_migrations": 2,
       "supabase_writers": 0,
       "upsert_writers": 0,
@@ -497,7 +497,7 @@
     },
     "adsv2_booking_resolutions": {
       "floor": "floor3",
-      "files_total": 4,
+      "files_total": 5,
       "files_excluding_migrations": 3,
       "supabase_writers": 0,
       "upsert_writers": 0,
@@ -514,7 +514,7 @@
     },
     "adsv2_window_snapshots": {
       "floor": "floor3",
-      "files_total": 9,
+      "files_total": 10,
       "files_excluding_migrations": 6,
       "supabase_writers": 1,
       "upsert_writers": 1,
@@ -535,7 +535,7 @@
     },
     "adsv2_budget_snapshots": {
       "floor": "floor3",
-      "files_total": 15,
+      "files_total": 16,
       "files_excluding_migrations": 11,
       "supabase_writers": 1,
       "upsert_writers": 1,
@@ -575,7 +575,7 @@
     },
     "adsv2_alerts": {
       "floor": "floor3",
-      "files_total": 8,
+      "files_total": 9,
       "files_excluding_migrations": 7,
       "supabase_writers": 3,
       "upsert_writers": 3,
@@ -597,7 +597,7 @@
     },
     "adsv2_sync_runs": {
       "floor": "floor3",
-      "files_total": 5,
+      "files_total": 6,
       "files_excluding_migrations": 4,
       "supabase_writers": 2,
       "upsert_writers": 0,
@@ -616,7 +616,7 @@
     },
     "adsv2_meta": {
       "floor": "floor3",
-      "files_total": 12,
+      "files_total": 13,
       "files_excluding_migrations": 9,
       "supabase_writers": 4,
       "upsert_writers": 4,
@@ -640,7 +640,7 @@
     },
     "ad_creative_copy": {
       "floor": "floor3",
-      "files_total": 20,
+      "files_total": 21,
       "files_excluding_migrations": 18,
       "supabase_writers": 4,
       "upsert_writers": 3,
@@ -673,7 +673,7 @@
     },
     "ad_creative_image": {
       "floor": "floor3",
-      "files_total": 16,
+      "files_total": 17,
       "files_excluding_migrations": 11,
       "supabase_writers": 2,
       "upsert_writers": 2,
@@ -699,7 +699,7 @@
     },
     "ad_creative_transcripts": {
       "floor": "floor3",
-      "files_total": 10,
+      "files_total": 11,
       "files_excluding_migrations": 7,
       "supabase_writers": 2,
       "upsert_writers": 1,
@@ -721,7 +721,7 @@
     },
     "ad_set_targeting": {
       "floor": "floor3",
-      "files_total": 3,
+      "files_total": 4,
       "files_excluding_migrations": 3,
       "supabase_writers": 1,
       "upsert_writers": 1,
@@ -739,7 +739,7 @@
     },
     "ads_dashboard_snapshots": {
       "floor": "floor3",
-      "files_total": 4,
+      "files_total": 5,
       "files_excluding_migrations": 4,
       "supabase_writers": 1,
       "upsert_writers": 1,
@@ -758,7 +758,7 @@
     },
     "sale_attribution_facts": {
       "floor": "floor3",
-      "files_total": 5,
+      "files_total": 6,
       "files_excluding_migrations": 5,
       "supabase_writers": 1,
       "upsert_writers": 1,

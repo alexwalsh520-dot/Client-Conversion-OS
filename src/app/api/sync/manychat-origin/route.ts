@@ -147,7 +147,7 @@ async function handler(req: NextRequest) {
 
   // 3. Already checked subscribers (skip to respect rate limits across runs).
   const { data: doneRows } = await db
-    .from("manychat_origin_checks")
+    .schema("warehouse").from("manychat_origin_checks")
     .select("client_key, subscriber_id");
   const alreadyChecked = new Set(
     (doneRows || []).map((r) => `${r.client_key}:${r.subscriber_id}`)
@@ -203,7 +203,7 @@ async function handler(req: NextRequest) {
     const info = await getInfo(c.client, c.subscriberId);
     const { fromAd, keyword } = classify(info);
     const { error: upErr } = await db
-      .from("manychat_origin_checks")
+      .schema("warehouse").from("manychat_origin_checks")
       .upsert(
         {
           client_key: c.client,

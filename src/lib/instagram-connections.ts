@@ -672,7 +672,7 @@ async function findLeadLink(client: string, filters: { manychatId?: string | nul
 
   if (filters.manychatId) {
     const { data } = await sb
-      .from("instagram_lead_links")
+      .schema("warehouse").from("instagram_lead_links")
       .select("*")
       .eq("client", client)
       .eq("manychat_subscriber_id", filters.manychatId)
@@ -683,7 +683,7 @@ async function findLeadLink(client: string, filters: { manychatId?: string | nul
 
   if (filters.instagramUserId) {
     const { data } = await sb
-      .from("instagram_lead_links")
+      .schema("warehouse").from("instagram_lead_links")
       .select("*")
       .eq("client", client)
       .eq("instagram_user_id", filters.instagramUserId)
@@ -694,7 +694,7 @@ async function findLeadLink(client: string, filters: { manychatId?: string | nul
 
   if (normalizedHandle) {
     const { data } = await sb
-      .from("instagram_lead_links")
+      .schema("warehouse").from("instagram_lead_links")
       .select("*")
       .eq("client", client)
       .eq("instagram_handle", normalizedHandle)
@@ -734,9 +734,9 @@ export async function upsertManychatLeadIdentity(input: {
   };
 
   if (existing?.id) {
-    await sb.from("instagram_lead_links").update(payload).eq("id", existing.id);
+    await sb.schema("warehouse").from("instagram_lead_links").update(payload).eq("id", existing.id);
   } else {
-    await sb.from("instagram_lead_links").insert(payload);
+    await sb.schema("warehouse").from("instagram_lead_links").insert(payload);
   }
 }
 
@@ -925,9 +925,9 @@ export async function upsertInstagramLeadIdentity(input: {
   };
 
   if (existing?.id) {
-    await sb.from("instagram_lead_links").update(payload).eq("id", existing.id);
+    await sb.schema("warehouse").from("instagram_lead_links").update(payload).eq("id", existing.id);
   } else {
-    await sb.from("instagram_lead_links").insert(payload);
+    await sb.schema("warehouse").from("instagram_lead_links").insert(payload);
   }
 
   // Bridge: stamp this IGSID onto the ManyChat-side link (keyed by @handle, which carries
@@ -935,7 +935,7 @@ export async function upsertInstagramLeadIdentity(input: {
   // to the right setter even when a separate Instagram-only link already exists.
   if (handle) {
     const { data: mcLink } = await sb
-      .from("instagram_lead_links")
+      .schema("warehouse").from("instagram_lead_links")
       .select("id, instagram_user_id")
       .eq("client", input.client)
       .eq("instagram_handle", handle)
@@ -944,7 +944,7 @@ export async function upsertInstagramLeadIdentity(input: {
       .maybeSingle();
     if (mcLink?.id && mcLink.instagram_user_id !== input.instagramUserId) {
       await sb
-        .from("instagram_lead_links")
+        .schema("warehouse").from("instagram_lead_links")
         .update({
           instagram_user_id: input.instagramUserId,
           confidence: "matched",

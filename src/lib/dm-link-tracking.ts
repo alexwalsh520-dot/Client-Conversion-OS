@@ -181,7 +181,7 @@ async function hasExistingEvent(
 ): Promise<boolean> {
   const sb = getServiceSupabase();
   let query = sb
-    .from("manychat_tag_events")
+    .schema("warehouse").from("manychat_tag_events")
     .select("id")
     .eq("client", client)
     .eq("subscriber_id", subscriberId)
@@ -211,7 +211,7 @@ async function insertDetectedEvent(params: {
   const sb = getServiceSupabase();
   const normalizedEventAt = event.eventAt || new Date().toISOString();
 
-  const { error } = await sb.from("manychat_tag_events").insert({
+  const { error } = await sb.schema("warehouse").from("manychat_tag_events").insert({
     subscriber_id: subscriberId,
     subscriber_name: null,
     tag_name: event.tagName,

@@ -1,0 +1,3429 @@
+{
+  "question_key": "kill_scale_read",
+  "question": "The kill-or-scale read for one creator (or all of them): every live ad and ad set with its spend, run rate, funnel, cash and collected ROI. In facts mode it returns the decision inputs with no verdicts at all; in decide mode it adds a verdict per ad and ad set under a named decision ruleset; in watch mode it returns daily flags only, with no recommendation of any kind.",
+  "params": {
+    "client": "tyson",
+    "mode": "decide",
+    "date_from": "2026-07-27",
+    "date_to": "2026-08-09",
+    "ruleset": "zakk_v1"
+  },
+  "answers": {
+    "account": "tyson",
+    "window": {
+      "from": "2026-07-27",
+      "to": "2026-08-09"
+    },
+    "run_rate_window": {
+      "from": "2026-08-03",
+      "to": "2026-08-09"
+    },
+    "units": "Money is in USD CENTS throughout. Collected ROI is a multiple. Link CTR is a share between 0 and 1.",
+    "economics": [
+      {
+        "client": "tyson",
+        "standard_ticket_usd_cents": 240000,
+        "cac_target_usd_cents": 48000,
+        "close_rate": 0.5722,
+        "close_rate_basis": "trailing 90 days of ad-attributed taken calls and wins, ending 2026-08-09. The target cost per booked call below is exactly this rate multiplied by the CAC target, so the arithmetic on this answer reproduces.",
+        "close_rate_taken_calls": 180,
+        "close_rate_wins": 103,
+        "used_account_wide_close_rate": false,
+        "cost_per_call_target_usd_cents": 27466
+      }
+    ],
+    "ads": [
+      {
+        "ad_id": "52575889190464",
+        "keyword": "able",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "ABLE",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 3875,
+        "daily_run_rate_usd_cents": 2,
+        "impressions": 2539,
+        "clicks": 17,
+        "link_ctr": 0.0067,
+        "dms": 1,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": 3875,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 49,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-08-10",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575889190464",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:24:05.539096+00:00"
+        }
+      },
+      {
+        "ad_id": "52575886729464",
+        "keyword": "alive",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "ALIVE",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 12,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 6,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 42,
+        "first_active_day": "2026-06-24",
+        "last_active_day": "2026-08-04",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575886729464",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:23:36.059793+00:00"
+        }
+      },
+      {
+        "ad_id": "52575888633464",
+        "keyword": "bold",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "BOLD",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 179,
+        "daily_run_rate_usd_cents": 1,
+        "impressions": 65,
+        "clicks": 1,
+        "link_ctr": 0.01538,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 50,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-08-11",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575888633464",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:23:55.452211+00:00"
+        }
+      },
+      {
+        "ad_id": "52575888509864",
+        "keyword": "brave",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "BRAVE",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 2129,
+        "daily_run_rate_usd_cents": 14,
+        "impressions": 1133,
+        "clicks": 16,
+        "link_ctr": 0.01412,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 48,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-08-09",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575888509864",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:23:55.872986+00:00"
+        }
+      },
+      {
+        "ad_id": "52575889153464",
+        "keyword": "capable",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "CAPABLE",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 3,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 2,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 49,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-08-10",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575889153464",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:24:04.581998+00:00"
+        }
+      },
+      {
+        "ad_id": "52575884944264",
+        "keyword": "clear",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "CLEAR",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 2,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 1,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 36,
+        "first_active_day": "2026-06-24",
+        "last_active_day": "2026-07-29",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575884944264",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:23:24.297243+00:00"
+        }
+      },
+      {
+        "ad_id": "52575887834664",
+        "keyword": "dash",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "DASH",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 5,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 2,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 37,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-07-29",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575887834664",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:23:43.076705+00:00"
+        }
+      },
+      {
+        "ad_id": "52575886392464",
+        "keyword": "firm",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "FIRM",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 8,
+        "daily_run_rate_usd_cents": 1,
+        "impressions": 6,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 48,
+        "first_active_day": "2026-06-24",
+        "last_active_day": "2026-08-10",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575886392464",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:23:31.128227+00:00"
+        }
+      },
+      {
+        "ad_id": "52589686209064",
+        "keyword": "fit",
+        "client": "tyson",
+        "adset_id": "52589686189864",
+        "campaign_id": "52570597860064",
+        "ad_name_verbatim": "FIT",
+        "adset_name_verbatim": "FIT - Warm Audience Stack (relaunch 7/21)",
+        "campaign_name_verbatim": "SCALING",
+        "delivery_state": "active",
+        "spend_usd_cents": 167706,
+        "daily_run_rate_usd_cents": 12500,
+        "impressions": 124994,
+        "clicks": 999,
+        "link_ctr": 0.00799,
+        "dms": 103,
+        "booked": 4,
+        "taken": 12,
+        "shown": 1,
+        "closes": 9,
+        "collected_usd_cents": 1229900,
+        "collected_roi": 7.33,
+        "cost_per_dm_usd_cents": 1628,
+        "cost_per_booked_call_usd_cents": 41927,
+        "days_live": 22,
+        "first_active_day": "2026-07-21",
+        "last_active_day": "2026-08-11",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": {
+          "cost_per_result_rising": true,
+          "ctr_falling": false,
+          "sustained_hours": 72,
+          "cost_per_dm_before_usd_cents": 1426,
+          "cost_per_dm_now_usd_cents": 1985,
+          "link_ctr_before": 0.00749,
+          "link_ctr_now": 0.00833
+        },
+        "history": {
+          "reached_kpi_line_before": true,
+          "best_prior_roi": 5.12,
+          "best_prior_window": "2026-06-29 to 2026-07-12",
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52589686209064",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-21T10:20:37.566938+00:00"
+        }
+      },
+      {
+        "ad_id": "52575889562064",
+        "keyword": "form",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "FORM",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 222,
+        "daily_run_rate_usd_cents": 1,
+        "impressions": 117,
+        "clicks": 1,
+        "link_ctr": 0.00855,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 49,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-08-10",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575889562064",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:24:22.669893+00:00"
+        }
+      },
+      {
+        "ad_id": "52575888967664",
+        "keyword": "frame",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "FRAME",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 30,
+        "daily_run_rate_usd_cents": 1,
+        "impressions": 16,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 48,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-08-09",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575888967664",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:24:10.091073+00:00"
+        }
+      },
+      {
+        "ad_id": "52575884439664",
+        "keyword": "fresh",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "FRESH",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 149,
+        "daily_run_rate_usd_cents": 2,
+        "impressions": 52,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 49,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-08-10",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575884439664",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:23:15.781948+00:00"
+        }
+      },
+      {
+        "ad_id": "52575886988264",
+        "keyword": "fuel",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "FUEL",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 29,
+        "daily_run_rate_usd_cents": 1,
+        "impressions": 14,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 48,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-08-09",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575886988264",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:23:37.075027+00:00"
+        }
+      },
+      {
+        "ad_id": "52575888306664",
+        "keyword": "great",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "GREAT",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 13,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 7,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 1,
+        "booked": 1,
+        "taken": 0,
+        "shown": 1,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": 13,
+        "cost_per_booked_call_usd_cents": 13,
+        "days_live": 38,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-07-30",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575888306664",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:23:55.994859+00:00"
+        }
+      },
+      {
+        "ad_id": "52575888841864",
+        "keyword": "grip",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "GRIP",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 6,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 3,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 37,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-07-29",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575888841864",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:23:55.078323+00:00"
+        }
+      },
+      {
+        "ad_id": "52575889959664",
+        "keyword": "guide",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "GUIDE",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 26,
+        "daily_run_rate_usd_cents": 1,
+        "impressions": 17,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 43,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-08-04",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575889959664",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:24:30.005071+00:00"
+        }
+      },
+      {
+        "ad_id": "52575895930664",
+        "keyword": "honor",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "HONOR",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 22,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 7,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 46,
+        "first_active_day": "2026-06-24",
+        "last_active_day": "2026-08-08",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575895930664",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:26:03.883814+00:00"
+        }
+      },
+      {
+        "ad_id": "52575889736464",
+        "keyword": "kick",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "KICK",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 4,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 4,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 37,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-07-29",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575889736464",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:24:23.710559+00:00"
+        }
+      },
+      {
+        "ad_id": "52575889777064",
+        "keyword": "launch",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "LAUNCH",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 17,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 6,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 38,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-07-30",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575889777064",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:24:28.920816+00:00"
+        }
+      },
+      {
+        "ad_id": "52575889988464",
+        "keyword": "lift",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "LIFT",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 1296,
+        "daily_run_rate_usd_cents": 5,
+        "impressions": 783,
+        "clicks": 12,
+        "link_ctr": 0.01533,
+        "dms": 1,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": 1296,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 50,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-08-11",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575889988464",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:24:34.860252+00:00"
+        }
+      },
+      {
+        "ad_id": "52575888131264",
+        "keyword": "map",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "MAP",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 67,
+        "daily_run_rate_usd_cents": 4,
+        "impressions": 16,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 48,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-08-09",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575888131264",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:23:57.362635+00:00"
+        }
+      },
+      {
+        "ad_id": "52575889111464",
+        "keyword": "march",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "MARCH",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 10,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 1,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 48,
+        "first_active_day": "2026-06-24",
+        "last_active_day": "2026-08-10",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575889111464",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:24:05.29487+00:00"
+        }
+      },
+      {
+        "ad_id": "52575889822464",
+        "keyword": "mile",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "MILE",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 32,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 19,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 44,
+        "first_active_day": "2026-06-24",
+        "last_active_day": "2026-08-06",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575889822464",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:24:27.889875+00:00"
+        }
+      },
+      {
+        "ad_id": "52575887611464",
+        "keyword": "next",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "NEXT",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 4,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 2,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 36,
+        "first_active_day": "2026-06-25",
+        "last_active_day": "2026-07-30",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575887611464",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:23:41.98393+00:00"
+        }
+      },
+      {
+        "ad_id": "52575887987664",
+        "keyword": "now",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "NOW",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 92777,
+        "daily_run_rate_usd_cents": 9331,
+        "impressions": 73363,
+        "clicks": 626,
+        "link_ctr": 0.00853,
+        "dms": 145,
+        "booked": 1,
+        "taken": 2,
+        "shown": 0,
+        "closes": 1,
+        "collected_usd_cents": 239900,
+        "collected_roi": 2.59,
+        "cost_per_dm_usd_cents": 640,
+        "cost_per_booked_call_usd_cents": 92777,
+        "days_live": 50,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-08-11",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": {
+          "cost_per_result_rising": true,
+          "ctr_falling": true,
+          "sustained_hours": 72,
+          "cost_per_dm_before_usd_cents": 617,
+          "cost_per_dm_now_usd_cents": 773,
+          "link_ctr_before": 0.00886,
+          "link_ctr_now": 0.00738
+        },
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575887987664",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:23:49.249354+00:00"
+        }
+      },
+      {
+        "ad_id": "52575886633264",
+        "keyword": "plan",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "PLAN",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 11,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 7,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 39,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-07-31",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575886633264",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:23:36.069078+00:00"
+        }
+      },
+      {
+        "ad_id": "52581821053064",
+        "keyword": "pro",
+        "client": "tyson",
+        "adset_id": "52581820968064",
+        "campaign_id": "52570597860064",
+        "ad_name_verbatim": "PRO",
+        "adset_name_verbatim": "7/1 - SCALE - Revived Winners",
+        "campaign_name_verbatim": "SCALING",
+        "delivery_state": "active",
+        "spend_usd_cents": 138008,
+        "daily_run_rate_usd_cents": 9875,
+        "impressions": 96904,
+        "clicks": 730,
+        "link_ctr": 0.00753,
+        "dms": 68,
+        "booked": 2,
+        "taken": 6,
+        "shown": 0,
+        "closes": 3,
+        "collected_usd_cents": 559900,
+        "collected_roi": 4.06,
+        "cost_per_dm_usd_cents": 2030,
+        "cost_per_booked_call_usd_cents": 69004,
+        "days_live": 42,
+        "first_active_day": "2026-07-01",
+        "last_active_day": "2026-08-11",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": {
+          "cost_per_result_rising": true,
+          "ctr_falling": false,
+          "sustained_hours": 72,
+          "cost_per_dm_before_usd_cents": 2587,
+          "cost_per_dm_now_usd_cents": 2667,
+          "link_ctr_before": 0.00692,
+          "link_ctr_now": 0.00806
+        },
+        "history": {
+          "reached_kpi_line_before": true,
+          "best_prior_roi": 8.75,
+          "best_prior_window": "2026-06-29 to 2026-07-12",
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52581821053064",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T16:01:20.560676+00:00"
+        }
+      },
+      {
+        "ad_id": "52575885189664",
+        "keyword": "progress",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "PROGRESS",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 9,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 6,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 38,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-07-30",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575885189664",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:23:23.799769+00:00"
+        }
+      },
+      {
+        "ad_id": "52575887501064",
+        "keyword": "proud",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "PROUD",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 19,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 7,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 39,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-07-31",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575887501064",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:23:42.581406+00:00"
+        }
+      },
+      {
+        "ad_id": "52575889877464",
+        "keyword": "quick",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "QUICK",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 52,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 30,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 48,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-08-09",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575889877464",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:24:28.781742+00:00"
+        }
+      },
+      {
+        "ad_id": "52575889424264",
+        "keyword": "real",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "REAL",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 8,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 8,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 49,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-08-10",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575889424264",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:24:15.500196+00:00"
+        }
+      },
+      {
+        "ad_id": "52575885842264",
+        "keyword": "recover",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "RECOVER",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 9,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 7,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 49,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-08-10",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575885842264",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:23:30.414608+00:00"
+        }
+      },
+      {
+        "ad_id": "52575886204064",
+        "keyword": "restore",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "RESTORE",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 4,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 3,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 41,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-08-02",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575886204064",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:23:31.554516+00:00"
+        }
+      },
+      {
+        "ad_id": "52575889323864",
+        "keyword": "root",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "ROOT",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 0,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 1,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": null,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 33,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-07-25",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575889323864",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:24:17.752154+00:00"
+        }
+      },
+      {
+        "ad_id": "52575889690064",
+        "keyword": "score",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "SCORE",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 19,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 8,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 40,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-08-01",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575889690064",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:24:23.133772+00:00"
+        }
+      },
+      {
+        "ad_id": "52575886528264",
+        "keyword": "sharp",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "SHARP",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 17,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 11,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 49,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-08-10",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575886528264",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:23:30.30866+00:00"
+        }
+      },
+      {
+        "ad_id": "52575885697264",
+        "keyword": "spark",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "SPARK",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 2,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 2,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 38,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-07-30",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575885697264",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:23:24.186314+00:00"
+        }
+      },
+      {
+        "ad_id": "52575885372864",
+        "keyword": "steady",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "STEADY",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 2,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 1,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 35,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-07-27",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575885372864",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:23:24.138107+00:00"
+        }
+      },
+      {
+        "ad_id": "52575884791264",
+        "keyword": "step",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "STEP",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 6,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 4,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 36,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-07-28",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575884791264",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:23:14.705875+00:00"
+        }
+      },
+      {
+        "ad_id": "52575887191064",
+        "keyword": "streak",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "STREAK",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 4,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 3,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 37,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-07-29",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575887191064",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:23:36.579987+00:00"
+        }
+      },
+      {
+        "ad_id": "52581821039064",
+        "keyword": "summit",
+        "client": "tyson",
+        "adset_id": "52581820968064",
+        "campaign_id": "52570597860064",
+        "ad_name_verbatim": "SUMMIT",
+        "adset_name_verbatim": "7/1 - SCALE - Revived Winners",
+        "campaign_name_verbatim": "SCALING",
+        "delivery_state": "active",
+        "spend_usd_cents": 687,
+        "daily_run_rate_usd_cents": 9,
+        "impressions": 276,
+        "clicks": 1,
+        "link_ctr": 0.00362,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 42,
+        "first_active_day": "2026-07-01",
+        "last_active_day": "2026-08-11",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52581821039064",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T16:01:16.59238+00:00"
+        }
+      },
+      {
+        "ad_id": "52575885944264",
+        "keyword": "thrive",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "THRIVE",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 1,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 1,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 38,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-07-30",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575885944264",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:23:29.951901+00:00"
+        }
+      },
+      {
+        "ad_id": "52575889932264",
+        "keyword": "tone",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "TONE",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 184,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 119,
+        "clicks": 3,
+        "link_ctr": 0.02521,
+        "dms": 1,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": 184,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 49,
+        "first_active_day": "2026-06-23",
+        "last_active_day": "2026-08-10",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575889932264",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:24:29.182015+00:00"
+        }
+      },
+      {
+        "ad_id": "52575889357464",
+        "keyword": "tough",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "TOUGH",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 23,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 25,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 1,
+        "shown": 0,
+        "closes": 1,
+        "collected_usd_cents": 120000,
+        "collected_roi": 5217.39,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 48,
+        "first_active_day": "2026-06-24",
+        "last_active_day": "2026-08-10",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575889357464",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:24:15.235661+00:00"
+        }
+      },
+      {
+        "ad_id": "52575889642864",
+        "keyword": "track",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "TRACK",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 41,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 20,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 47,
+        "first_active_day": "2026-06-24",
+        "last_active_day": "2026-08-09",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575889642864",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:24:22.342896+00:00"
+        }
+      },
+      {
+        "ad_id": "52575885529264",
+        "keyword": "true",
+        "client": "tyson",
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "ad_name_verbatim": "TRUE",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "delivery_state": "active",
+        "spend_usd_cents": 6,
+        "daily_run_rate_usd_cents": 0,
+        "impressions": 4,
+        "clicks": 0,
+        "link_ctr": 0,
+        "dms": 0,
+        "booked": 0,
+        "taken": 0,
+        "shown": 0,
+        "closes": 0,
+        "collected_usd_cents": 0,
+        "collected_roi": 0,
+        "cost_per_dm_usd_cents": null,
+        "cost_per_booked_call_usd_cents": null,
+        "days_live": 43,
+        "first_active_day": "2026-06-24",
+        "last_active_day": "2026-08-05",
+        "cost_per_call_target_usd_cents": 27466,
+        "fatigue": null,
+        "history": {
+          "reached_kpi_line_before": false,
+          "best_prior_roi": null,
+          "best_prior_window": null,
+          "basis": "the 3 trailing windows of the same length immediately before this one, counting only windows where the ad cleared the 100 dollar evidence floor"
+        },
+        "copy_pointer": {
+          "ad_creative_copy_ad_id": "52575885529264",
+          "has_primary_text": true,
+          "has_on_image_text": true,
+          "extracted_at": "2026-07-01T05:23:25.374958+00:00"
+        }
+      }
+    ],
+    "ad_sets": [
+      {
+        "adset_id": "52589686189864",
+        "campaign_id": "52570597860064",
+        "adset_name_verbatim": "FIT - Warm Audience Stack (relaunch 7/21)",
+        "campaign_name_verbatim": "SCALING",
+        "client": "tyson",
+        "spend_usd_cents": 167706,
+        "dms": 103,
+        "booked": 4,
+        "taken": 12,
+        "shown": 1,
+        "closes": 9,
+        "collected_usd_cents": 1229900,
+        "collected_roi": 7.33,
+        "daily_budget_usd_cents": 14000,
+        "budget_level": "adset",
+        "ad_ids": [
+          "52589686209064"
+        ]
+      },
+      {
+        "adset_id": "52581820968064",
+        "campaign_id": "52570597860064",
+        "adset_name_verbatim": "7/1 - SCALE - Revived Winners",
+        "campaign_name_verbatim": "SCALING",
+        "client": "tyson",
+        "spend_usd_cents": 138695,
+        "dms": 68,
+        "booked": 2,
+        "taken": 6,
+        "shown": 0,
+        "closes": 3,
+        "collected_usd_cents": 559900,
+        "collected_roi": 4.04,
+        "daily_budget_usd_cents": 10000,
+        "budget_level": "adset",
+        "ad_ids": [
+          "52581821053064",
+          "52581821039064"
+        ]
+      },
+      {
+        "adset_id": "52575879187864",
+        "campaign_id": "52564462555664",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "campaign_name_verbatim": "Tyson - TESTING",
+        "client": "tyson",
+        "spend_usd_cents": 101334,
+        "dms": 149,
+        "booked": 2,
+        "taken": 3,
+        "shown": 1,
+        "closes": 2,
+        "collected_usd_cents": 359900,
+        "collected_roi": 3.55,
+        "daily_budget_usd_cents": 10000,
+        "budget_level": "adset",
+        "ad_ids": [
+          "52575889190464",
+          "52575886729464",
+          "52575888633464",
+          "52575888509864",
+          "52575889153464",
+          "52575884944264",
+          "52575887834664",
+          "52575886392464",
+          "52575889562064",
+          "52575888967664",
+          "52575884439664",
+          "52575886988264",
+          "52575888306664",
+          "52575888841864",
+          "52575889959664",
+          "52575895930664",
+          "52575889736464",
+          "52575889777064",
+          "52575889988464",
+          "52575888131264",
+          "52575889111464",
+          "52575889822464",
+          "52575887611464",
+          "52575887987664",
+          "52575886633264",
+          "52575885189664",
+          "52575887501064",
+          "52575889877464",
+          "52575889424264",
+          "52575885842264",
+          "52575886204064",
+          "52575889323864",
+          "52575889690064",
+          "52575886528264",
+          "52575885697264",
+          "52575885372864",
+          "52575884791264",
+          "52575887191064",
+          "52575885944264",
+          "52575889932264",
+          "52575889357464",
+          "52575889642864",
+          "52575885529264"
+        ]
+      }
+    ],
+    "budget_map": {
+      "entities": [
+        {
+          "level": "adset",
+          "entity_id": "52575879187864",
+          "campaign_id": "52564462555664",
+          "daily_usd_cents": 10000,
+          "delivery_state": "active",
+          "yesterday_spend_usd_cents": 9412,
+          "pace_pct_of_budget": 94.1
+        },
+        {
+          "level": "adset",
+          "entity_id": "52581820968064",
+          "campaign_id": "52570597860064",
+          "daily_usd_cents": 10000,
+          "delivery_state": "active",
+          "yesterday_spend_usd_cents": 9772,
+          "pace_pct_of_budget": 97.7
+        },
+        {
+          "level": "adset",
+          "entity_id": "52589686189864",
+          "campaign_id": "52570597860064",
+          "daily_usd_cents": 14000,
+          "delivery_state": "active",
+          "yesterday_spend_usd_cents": 13395,
+          "pace_pct_of_budget": 95.7
+        },
+        {
+          "level": "adset",
+          "entity_id": "52595863807264",
+          "campaign_id": "52564462555664",
+          "daily_usd_cents": 10000,
+          "delivery_state": "active",
+          "yesterday_spend_usd_cents": 8779,
+          "pace_pct_of_budget": 87.8
+        }
+      ],
+      "mismatches": [],
+      "total_daily_usd_cents": 44000,
+      "yesterday": "2026-08-09"
+    },
+    "closes_named": [
+      {
+        "adset_id": null,
+        "keyword": "gym",
+        "prospect": "Lexus G.",
+        "sale_day": "2026-07-27",
+        "collected_usd_cents": 80000,
+        "closer": "WOBBE"
+      },
+      {
+        "adset_id": "52581820968064",
+        "keyword": "pro",
+        "prospect": "Alex Raines",
+        "sale_day": "2026-07-28",
+        "collected_usd_cents": 200000,
+        "closer": "AUSTIN"
+      },
+      {
+        "adset_id": "52589686189864",
+        "keyword": "fit",
+        "prospect": "Kristin Anderson",
+        "sale_day": "2026-07-28",
+        "collected_usd_cents": 179900,
+        "closer": "ERIN"
+      },
+      {
+        "adset_id": null,
+        "keyword": "good",
+        "prospect": "Clare Welsh",
+        "sale_day": "2026-07-29",
+        "collected_usd_cents": 100000,
+        "closer": "BROZ"
+      },
+      {
+        "adset_id": "52589686189864",
+        "keyword": "fit",
+        "prospect": "Corey Joseph",
+        "sale_day": "2026-07-30",
+        "collected_usd_cents": 120000,
+        "closer": "WOBBE"
+      },
+      {
+        "adset_id": "52575879187864",
+        "keyword": "now",
+        "prospect": "Kayla Elliot",
+        "sale_day": "2026-07-30",
+        "collected_usd_cents": 239900,
+        "closer": "WOBBE"
+      },
+      {
+        "adset_id": null,
+        "keyword": "loaded",
+        "prospect": "Maximillian Mailloux",
+        "sale_day": "2026-07-30",
+        "collected_usd_cents": 199900,
+        "closer": "WOBBE"
+      },
+      {
+        "adset_id": "52575879187864",
+        "keyword": "tough",
+        "prospect": "Domingo Mendez",
+        "sale_day": "2026-07-30",
+        "collected_usd_cents": 120000,
+        "closer": "WOBBE"
+      },
+      {
+        "adset_id": "52589686189864",
+        "keyword": "fit",
+        "prospect": "Piper Baldwin",
+        "sale_day": "2026-08-01",
+        "collected_usd_cents": 20000,
+        "closer": "AUSTIN"
+      },
+      {
+        "adset_id": "52581820968064",
+        "keyword": "pro",
+        "prospect": "Jacob Duran",
+        "sale_day": "2026-08-01",
+        "collected_usd_cents": 239900,
+        "closer": "WOBBE"
+      },
+      {
+        "adset_id": "52589686189864",
+        "keyword": "fit",
+        "prospect": "Vincent Pace",
+        "sale_day": "2026-08-02",
+        "collected_usd_cents": 120000,
+        "closer": "WOBBE"
+      },
+      {
+        "adset_id": "52589686189864",
+        "keyword": "fit",
+        "prospect": "Alexi Walker",
+        "sale_day": "2026-08-04",
+        "collected_usd_cents": 80000,
+        "closer": "WILL"
+      },
+      {
+        "adset_id": "52589686189864",
+        "keyword": "fit",
+        "prospect": "Adrian Hildago",
+        "sale_day": "2026-08-04",
+        "collected_usd_cents": 190000,
+        "closer": "WILL"
+      },
+      {
+        "adset_id": "52589686189864",
+        "keyword": "fit",
+        "prospect": "Carter Peterson",
+        "sale_day": "2026-08-05",
+        "collected_usd_cents": 180000,
+        "closer": "BROZ"
+      },
+      {
+        "adset_id": "52581820968064",
+        "keyword": "pro",
+        "prospect": "Hunter Krivokucha",
+        "sale_day": "2026-08-05",
+        "collected_usd_cents": 120000,
+        "closer": "WOBBE"
+      },
+      {
+        "adset_id": "52589686189864",
+        "keyword": "fit",
+        "prospect": "Marc Lannuzzi",
+        "sale_day": "2026-08-06",
+        "collected_usd_cents": 100000,
+        "closer": "WOBBE"
+      },
+      {
+        "adset_id": "52589686189864",
+        "keyword": "fit",
+        "prospect": "Vinnie Boyen",
+        "sale_day": "2026-08-08",
+        "collected_usd_cents": 240000,
+        "closer": "BROZ"
+      }
+    ],
+    "counting_note": "booked counts DISTINCT PEOPLE with a booking on a pinned sales calendar, carrying a keyword. taken counts distinct people with a taken-call row in the sales tracker. They are two different populations read from two different systems, so taken can legitimately exceed booked for the same ad: a call booked off-calendar, or through a duplicate contact, is taken without ever being booked here. Treat booked as a floor.",
+    "mode": "decide",
+    "under_ruleset": "zakk_v1",
+    "ruleset_definition": {
+      "name": "ruleset_zakk",
+      "version": 1
+    },
+    "ruleset_components": [
+      "verdict_floors_kill_tree",
+      "scaling_ladder",
+      "decision_cadence",
+      "daily_run_rate",
+      "touch_floor_72h",
+      "learning_phase_awareness",
+      "structure_rules",
+      "roi_window",
+      "sales_lag",
+      "unit_economics",
+      "pricing_currency"
+    ],
+    "ad_verdicts": [
+      {
+        "ad_id": "52575889190464",
+        "keyword": "able",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $38.75 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0.14,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575886729464",
+        "keyword": "alive",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.12 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575888633464",
+        "keyword": "bold",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $1.79 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0.01,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575888509864",
+        "keyword": "brave",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $21.29 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0.08,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575889153464",
+        "keyword": "capable",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.03 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575884944264",
+        "keyword": "clear",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.02 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575887834664",
+        "keyword": "dash",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.05 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575886392464",
+        "keyword": "firm",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.08 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52589686209064",
+        "keyword": "fit",
+        "verdict": "protect",
+        "under_ruleset": "zakk_v1",
+        "basis": "ruleset_zakk v1: $12,299.00 collected on $1,677.06 spend is 7.33x, at or above the 3x protect line, from 9 closes.",
+        "definitions_applied": [
+          "ruleset_zakk",
+          "collected_vs_contracted",
+          "roi_window"
+        ],
+        "computed": {
+          "collected_roi": 7.33,
+          "cost_per_booked_call_usd_cents": 41927,
+          "expected_bookings_at_target": 6.11,
+          "kill_eligible": true
+        }
+      },
+      {
+        "ad_id": "52575889562064",
+        "keyword": "form",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $2.22 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0.01,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575888967664",
+        "keyword": "frame",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.30 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575884439664",
+        "keyword": "fresh",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $1.49 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0.01,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575886988264",
+        "keyword": "fuel",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.29 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575888306664",
+        "keyword": "great",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.13 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": 13,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575888841864",
+        "keyword": "grip",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.06 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575889959664",
+        "keyword": "guide",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.26 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575895930664",
+        "keyword": "honor",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.22 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575889736464",
+        "keyword": "kick",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.04 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575889777064",
+        "keyword": "launch",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.17 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575889988464",
+        "keyword": "lift",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $12.96 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0.05,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575888131264",
+        "keyword": "map",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.67 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575889111464",
+        "keyword": "march",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.10 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575889822464",
+        "keyword": "mile",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.32 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575887611464",
+        "keyword": "next",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.04 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575887987664",
+        "keyword": "now",
+        "verdict": "kpi_line",
+        "under_ruleset": "zakk_v1",
+        "basis": "ruleset_zakk v1: $2,399.00 collected on $927.77 spend is 2.59x, between the 2x KPI line and the 3x protect line, from 1 close.",
+        "definitions_applied": [
+          "ruleset_zakk",
+          "collected_vs_contracted",
+          "roi_window"
+        ],
+        "computed": {
+          "collected_roi": 2.59,
+          "cost_per_booked_call_usd_cents": 92777,
+          "expected_bookings_at_target": 3.38,
+          "kill_eligible": true
+        }
+      },
+      {
+        "ad_id": "52575886633264",
+        "keyword": "plan",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.11 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52581821053064",
+        "keyword": "pro",
+        "verdict": "protect",
+        "under_ruleset": "zakk_v1",
+        "basis": "ruleset_zakk v1: $5,599.00 collected on $1,380.08 spend is 4.06x, at or above the 3x protect line, from 3 closes.",
+        "definitions_applied": [
+          "ruleset_zakk",
+          "collected_vs_contracted",
+          "roi_window"
+        ],
+        "computed": {
+          "collected_roi": 4.06,
+          "cost_per_booked_call_usd_cents": 69004,
+          "expected_bookings_at_target": 5.02,
+          "kill_eligible": true
+        }
+      },
+      {
+        "ad_id": "52575885189664",
+        "keyword": "progress",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.09 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575887501064",
+        "keyword": "proud",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.19 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575889877464",
+        "keyword": "quick",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.52 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575889424264",
+        "keyword": "real",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.08 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575885842264",
+        "keyword": "recover",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.09 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575886204064",
+        "keyword": "restore",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.04 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575889323864",
+        "keyword": "root",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.00 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": null,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575889690064",
+        "keyword": "score",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.19 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575886528264",
+        "keyword": "sharp",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.17 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575885697264",
+        "keyword": "spark",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.02 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575885372864",
+        "keyword": "steady",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.02 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575884791264",
+        "keyword": "step",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.06 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575887191064",
+        "keyword": "streak",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.04 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52581821039064",
+        "keyword": "summit",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $6.87 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0.03,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575885944264",
+        "keyword": "thrive",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.01 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575889932264",
+        "keyword": "tone",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $1.84 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0.01,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575889357464",
+        "keyword": "tough",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.23 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 5217.39,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575889642864",
+        "keyword": "track",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.41 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      },
+      {
+        "ad_id": "52575885529264",
+        "keyword": "true",
+        "verdict": "too_early",
+        "under_ruleset": "zakk_v1",
+        "basis": "verdict_floors_kill_tree v1: $0.06 total spend on this ad is below the $100.00 evidence floor, so no verdict of any kind lands. This is \"too early\", never \"failed\".",
+        "definitions_applied": [
+          "verdict_floors_kill_tree",
+          "ruleset_zakk"
+        ],
+        "computed": {
+          "collected_roi": 0,
+          "cost_per_booked_call_usd_cents": null,
+          "expected_bookings_at_target": 0,
+          "kill_eligible": false
+        }
+      }
+    ],
+    "ad_set_verdicts": [
+      {
+        "adset_id": "52589686189864",
+        "adset_name_verbatim": "FIT - Warm Audience Stack (relaunch 7/21)",
+        "verdict": "protect",
+        "under_ruleset": "zakk_v1",
+        "basis": "ruleset_zakk v1: $12,299.00 collected on $1,677.06 spend (7.33x) across 1 ad, 9 closes, 4 bookings. Ad verdicts: protect.",
+        "freed_usd_cents_per_day": null,
+        "kill_kills_campaign_warning": null,
+        "scaling_headroom": {
+          "eligible": true,
+          "current_daily_usd_cents": 14000,
+          "next_step_usd_cents": 20000,
+          "basis": "scaling_ladder v1: at 7.33x cash ROI, budget is a floor not a cap. $140.00/day sits on the bottom of the ladder, which DOUBLES by necessity ($50.00 to $100.00 to $200.00), so the next weekly step is $200.00/day. Never reactive mid-week."
+        },
+        "computed": {
+          "collected_roi": 7.33
+        }
+      },
+      {
+        "adset_id": "52581820968064",
+        "adset_name_verbatim": "7/1 - SCALE - Revived Winners",
+        "verdict": "mixed",
+        "under_ruleset": "zakk_v1",
+        "basis": "ruleset_zakk v1: $5,599.00 collected on $1,386.95 spend (4.04x) across 2 ads, 3 closes, 2 bookings. Ad verdicts: protect, too_early.",
+        "freed_usd_cents_per_day": null,
+        "kill_kills_campaign_warning": null,
+        "scaling_headroom": {
+          "eligible": true,
+          "current_daily_usd_cents": 10000,
+          "next_step_usd_cents": 20000,
+          "basis": "scaling_ladder v1: at 4.04x cash ROI, budget is a floor not a cap. $100.00/day sits on the bottom of the ladder, which DOUBLES by necessity ($50.00 to $100.00 to $200.00), so the next weekly step is $200.00/day. Never reactive mid-week."
+        },
+        "computed": {
+          "collected_roi": 4.04
+        }
+      },
+      {
+        "adset_id": "52575879187864",
+        "adset_name_verbatim": "TEST · Lead Magnet · 50 (6/24)",
+        "verdict": "mixed",
+        "under_ruleset": "zakk_v1",
+        "basis": "ruleset_zakk v1: $3,599.00 collected on $1,013.34 spend (3.55x) across 43 ads, 2 closes, 2 bookings. Ad verdicts: too_early, kpi_line.",
+        "freed_usd_cents_per_day": null,
+        "kill_kills_campaign_warning": null,
+        "scaling_headroom": {
+          "eligible": true,
+          "current_daily_usd_cents": 10000,
+          "next_step_usd_cents": 20000,
+          "basis": "scaling_ladder v1: at 3.55x cash ROI, budget is a floor not a cap. $100.00/day sits on the bottom of the ladder, which DOUBLES by necessity ($50.00 to $100.00 to $200.00), so the next weekly step is $200.00/day. Never reactive mid-week."
+        },
+        "computed": {
+          "collected_roi": 3.55
+        }
+      }
+    ],
+    "what_this_is": "Verdicts computed under ruleset zakk_v1, from ruleset_zakk v1 and the signed definitions it composes. Every verdict carries under_ruleset and a basis naming the definitions and the numbers that earned it. A verdict is ADVICE UNDER A LENS, not the truth: the facts above are the truth, and the same question in facts mode returns them with no judgement at all.",
+    "undecidable_inputs": {
+      "fresh_creative_tested": "false for every ad, because nothing in this system records whether fresh creative has already been tested on an ad. It is a conservative default, NOT a finding. It only ever makes the tree gentler: with it false, an ad reaches a kill through the never-reached-2x branch or not at all, so the default cannot manufacture a kill. Where the tested-creative branch would matter, a human has to supply that fact.",
+      "fatigue": "measured over the last 72 hours against the 72 before them, per touch_floor_72h v1, and shown per ad in the pack above. Null for an ad where either half of that comparison had no DMs or no impressions to measure: that is 'not measurable', which is a different fact from 'not fatiguing', and it is never reported as the latter."
+    }
+  },
+  "definitions_quoted": [
+    {
+      "key": "spend",
+      "label": "Ad spend",
+      "meaning": "How much Meta charged to run this ad across the selected days.",
+      "source": "Meta, bucketed to Eastern-time days.",
+      "format": "usd",
+      "is_calculated": false
+    },
+    {
+      "key": "messages",
+      "label": "DMs",
+      "meaning": "How many different people sent this ad's keyword in a DM.",
+      "source": "ManyChat keyword events, counted as distinct people.",
+      "format": "int",
+      "is_calculated": false
+    },
+    {
+      "key": "booked",
+      "label": "Calls booked",
+      "meaning": "How many different people booked a strategy call from this ad's keyword in this window, counted on the day they booked it.",
+      "source": "GoHighLevel sales-calendar bookings that carry the keyword, counted as distinct people on the day the booking was made (not the day the call is scheduled for), with reschedules grouped under one person.",
+      "format": "int",
+      "is_calculated": false
+    },
+    {
+      "key": "taken",
+      "label": "Calls taken",
+      "meaning": "How many strategy calls took place in this window, counted on the day the call happened, including ones booked earlier.",
+      "source": "The sales tracker, which only lists calls that took place. Counted by call day, so this can differ from the show-rate group, which counts people booked in this window.",
+      "format": "int",
+      "is_calculated": false
+    },
+    {
+      "key": "newClients",
+      "label": "New clients",
+      "meaning": "How many of those calls became a paying client.",
+      "source": "The sales tracker wins.",
+      "format": "int",
+      "is_calculated": false
+    },
+    {
+      "key": "collected",
+      "label": "Collected revenue",
+      "meaning": "Cash actually collected from clients tied to this ad's keyword.",
+      "source": "The sales tracker, tied to a keyword by hard key only.",
+      "format": "usd",
+      "is_calculated": false
+    },
+    {
+      "key": "collectedRoi",
+      "label": "Collected ROAS",
+      "meaning": "The cash collected for every dollar of ad spend, shown as a multiple.",
+      "source": "Collected revenue divided by ad spend.",
+      "format": "ratio2",
+      "is_calculated": true
+    }
+  ],
+  "as_of": [
+    {
+      "source": "adsv2_dm_facts",
+      "last_written_at": "2026-08-11T09:25:12.499339+00:00",
+      "note": "the newest stamped DM fact"
+    },
+    {
+      "source": "adsv2_booking_facts",
+      "last_written_at": "2026-08-11T09:25:12.700091+00:00",
+      "note": "the newest stamped booking fact"
+    },
+    {
+      "source": "adsv2_sale_facts",
+      "last_written_at": "2026-08-11T09:25:12.937839+00:00",
+      "note": "the newest stamped sale fact"
+    },
+    {
+      "source": "warehouse.ads",
+      "last_written_at": "2026-08-11T09:26:01.853393+00:00",
+      "note": "the last hourly refresh of the merged ads table"
+    }
+  ],
+  "sources": [
+    "ads_meta_insights_daily",
+    "adsv2_dm_facts",
+    "adsv2_booking_facts",
+    "adsv2_sale_facts",
+    "adsv2_budget_snapshots",
+    "registry_definitions",
+    "registry_entities",
+    "ad_creative_copy"
+  ],
+  "receipt": {
+    "contract_version": 2,
+    "question_key": "kill_scale_read",
+    "question_version": 1,
+    "asked_at": "2026-08-11T09:42:23.687Z",
+    "caller": "utari",
+    "params_as_resolved": {
+      "client": "tyson",
+      "mode": "decide",
+      "date_from": "2026-07-27",
+      "date_to": "2026-08-09",
+      "ruleset": "zakk_v1"
+    },
+    "aliases_resolved": [],
+    "window": {
+      "from": "2026-07-27",
+      "to": "2026-08-09",
+      "kind": "trailing_decision_window"
+    },
+    "data_version": 486,
+    "freshness": [
+      {
+        "source": "adsv2_dm_facts",
+        "last_written_at": "2026-08-11T09:25:12.499339+00:00",
+        "note": "the newest stamped DM fact"
+      },
+      {
+        "source": "adsv2_booking_facts",
+        "last_written_at": "2026-08-11T09:25:12.700091+00:00",
+        "note": "the newest stamped booking fact"
+      },
+      {
+        "source": "adsv2_sale_facts",
+        "last_written_at": "2026-08-11T09:25:12.937839+00:00",
+        "note": "the newest stamped sale fact"
+      },
+      {
+        "source": "warehouse.ads",
+        "last_written_at": "2026-08-11T09:26:01.853393+00:00",
+        "note": "the last hourly refresh of the merged ads table"
+      }
+    ],
+    "stale": [],
+    "coverage": {
+      "window_wins_total": 23,
+      "window_cash_usd_cents_total": 3189500,
+      "buckets": {
+        "ad": {
+          "wins": 17,
+          "cash_usd_cents": 2529600
+        },
+        "organic": {
+          "wins": 1,
+          "cash_usd_cents": 120000
+        },
+        "misc_chat": {
+          "wins": 0,
+          "cash_usd_cents": 0
+        },
+        "awaiting_review": {
+          "wins": 5,
+          "cash_usd_cents": 539900
+        }
+      },
+      "classified_pct_wins": 78.3,
+      "classified_pct_cash": 83.1,
+      "note": "awaiting_review is the only bucket that counts as a gap; ad, organic and misc chat are all classified. 5 of the 5 awaiting-review wins carry no creator at all, because nobody has classified them yet. They are counted here on purpose even when this answer is about one creator: leaving them out is exactly how a coverage number reads 100% while real money sits unclassified. 3 of the awaiting-review wins already carry the team's own \"Miscellaneous Chat\" label. They are counted as awaiting review rather than as misc chat, which understates coverage rather than flattering it. Moving them belongs to the labeler, not to this read."
+    },
+    "exclusions": [
+      {
+        "what": "ads carrying no keyword",
+        "count": 0,
+        "why": "the whole funnel in this system is joined by keyword, so an ad that never carried one has spend but no DMs, calls or cash that can be tied to it. Those ads are not in this read at all. Their spend is real and is visible in the Ads v2 tab's own totals."
+      },
+      {
+        "what": "organic keyword traffic and rows still awaiting review",
+        "count": 0,
+        "why": "organic_keywords v1 forbids marked organic keywords from entering ad ROAS, and an awaiting-review row is one nobody has classified yet. Both are excluded from every number here, which understates the funnel rather than flattering it. The receipt's coverage block states the awaiting-review gap in wins and dollars."
+      },
+      {
+        "what": "ads not currently ACTIVE",
+        "count": 66,
+        "why": "structure_rules v1 keeps paused history out of a live decision unless history is explicitly asked for. These ads still spent inside the window; they are excluded because a decision is about what is running now."
+      }
+    ],
+    "caveats": [
+      "These verdicts are advice under ruleset zakk_v1 and are not the only defensible reading of these numbers. Nothing here executes: no budget was moved and no ad was touched.",
+      "sales_lag v1: Sales lag is a median of 2 days and a p90 of 13 days; sales lag spend by 5-14 days. Recent-window answers automatically carry the understatement caveat. A recent dip is provisional and never a kill trigger.",
+      "This window ends 2026-08-09, inside the sales lag, so its cash and close numbers will keep rising after this answer was given. A recent dip here is provisional and is never on its own a reason to kill an ad.",
+      "coverage v1: Coverage = the percentage of wins AND the percentage of cash sitting in the AD, ORGANIC or MISC CHAT buckets (that is, classified), with AWAITING REVIEW counted and dollared separately as the true gap. Every money answer carries all four buckets in its receipt.",
+      "5 wins worth 5399.00 USD in this window are still awaiting review, so 78.3% of wins and 83.1% of cash are classified. This answer is not a claim of full coverage."
+    ],
+    "certainty": "directional",
+    "definitions_cited": [
+      {
+        "registry": "warehouse.definitions",
+        "name": "spend"
+      },
+      {
+        "registry": "warehouse.definitions",
+        "name": "messages"
+      },
+      {
+        "registry": "warehouse.definitions",
+        "name": "booked"
+      },
+      {
+        "registry": "warehouse.definitions",
+        "name": "taken"
+      },
+      {
+        "registry": "warehouse.definitions",
+        "name": "newClients"
+      },
+      {
+        "registry": "warehouse.definitions",
+        "name": "collected"
+      },
+      {
+        "registry": "warehouse.definitions",
+        "name": "collectedRoi"
+      },
+      {
+        "registry": "registry_definitions",
+        "name": "sales_lag",
+        "version": 1
+      },
+      {
+        "registry": "registry_definitions",
+        "name": "coverage",
+        "version": 1
+      },
+      {
+        "registry": "registry_definitions",
+        "name": "verdict_floors_kill_tree",
+        "version": 1
+      },
+      {
+        "registry": "registry_definitions",
+        "name": "scaling_ladder",
+        "version": 1
+      },
+      {
+        "registry": "registry_definitions",
+        "name": "decision_cadence",
+        "version": 1
+      },
+      {
+        "registry": "registry_definitions",
+        "name": "daily_run_rate",
+        "version": 1
+      },
+      {
+        "registry": "registry_definitions",
+        "name": "roi_window",
+        "version": 1
+      },
+      {
+        "registry": "registry_definitions",
+        "name": "touch_floor_72h",
+        "version": 1
+      },
+      {
+        "registry": "registry_definitions",
+        "name": "learning_phase_awareness",
+        "version": 1
+      },
+      {
+        "registry": "registry_definitions",
+        "name": "structure_rules",
+        "version": 1
+      },
+      {
+        "registry": "registry_definitions",
+        "name": "unit_economics",
+        "version": 1
+      },
+      {
+        "registry": "registry_definitions",
+        "name": "pricing_currency",
+        "version": 1
+      },
+      {
+        "registry": "registry_definitions",
+        "name": "ruleset_zakk",
+        "version": 1
+      }
+    ]
+  },
+  "note": "These verdicts are advice under ruleset zakk_v1 and are not the only defensible reading of these numbers. Nothing here executes: no budget was moved and no ad was touched.",
+  "freestyle_rule": "THE FREESTYLE RULE: this answer came through the locked door, so it is certified and it carries its own receipt. Any number you produce about this business OUTSIDE the door (a query you wrote, a figure you inferred, a total you added up yourself) is a WORKSHOP answer: label it as uncertified when you report it, and log what you were trying to ask into door_miss_log so it becomes a candidate for certification. The miss log is the backlog that decides what this door learns to answer next; an unlogged workshop answer is a question the door will never learn. Ask describe_misses to see that backlog."
+}

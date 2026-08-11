@@ -762,15 +762,37 @@ test("GOLDEN a1: the fit and pro leaves still match the hand-verified 8/8 number
 });
 
 /** Hand-verified in SQL on 2026-08-08: the live dials for tyson. */
+// Re-pinned 2026-08-11 from $440.00. Both halves of the change are real
+// decisions, and the arithmetic is written out because the number asked for and
+// the number pinned are not the same, which needs explaining rather than hiding.
+//
+//   $440  the map as pinned on 8 August
+//   -$100 "TEST · Direct CTA · 10 (vet ICP 8/7)" killed, confirmed by Alex
+//   =$340 the total Alex asked for, and it was correct when he asked
+//   +$50  "TEST · Link Click · 1 (warm stack 8/11)" launched on 11 August
+//   =$390 the total the live map actually reports now
+//
+// Verified by hand against the 2026-08-11 budget photo, four dials, rather than
+// copied from whatever the test happened to print.
+//
+// One thing to know about this test: it asserts a LIVE budget total, so it fails
+// every time a dial moves. It has now moved three times in four days
+// ($600, $440, $390). Re-pinning does not fix that; only changing what this test
+// asserts would.
+//
+// Separately, the old number had been propped up by a stale photo. There were no
+// budget rows at all for 9 or 10 August, because a ghost Vercel project was
+// running the sync without Meta tokens. That project is paused and photos refresh
+// again, which is why the map moved as soon as it did.
 const GOLDEN_BUDGET_MAP = [
   { name: "FIT - Warm Audience Stack (relaunch 7/21)", daily_usd_cents: 14_000 },
-  { name: "TEST · Direct CTA · 10 (vet ICP 8/7)", daily_usd_cents: 10_000 },
   { name: "7/1 - SCALE - Revived Winners", daily_usd_cents: 10_000 },
   { name: "TEST · Lead Magnet · 50 (6/24)", daily_usd_cents: 10_000 },
+  { name: "TEST · Link Click · 1 (warm stack 8/11)", daily_usd_cents: 5_000 },
 ];
-const GOLDEN_BUDGET_TOTAL = 44_000;
+const GOLDEN_BUDGET_TOTAL = 39_000;
 
-test("GOLDEN a2: budget_map reproduces the hand-verified 8/8 map of $440/day", { skip }, async () => {
+test("GOLDEN a2: budget_map reproduces the hand-verified map of $390/day", { skip }, async () => {
   const db = liveDb();
   const r = answerOf(
     await askQuestion(
@@ -784,7 +806,7 @@ test("GOLDEN a2: budget_map reproduces the hand-verified 8/8 map of $440/day", {
   assert.equal(
     body.total_daily_usd_cents,
     GOLDEN_BUDGET_TOTAL,
-    `the total daily dial drifted from the hand-verified $440.00/day. Recompute BY HAND and update the fixture, saying so in the report.`,
+    `the total daily dial drifted from the hand-verified $390.00/day. Recompute BY HAND and update the fixture, saying so in the report.`,
   );
   assert.equal(entities.length, GOLDEN_BUDGET_MAP.length);
   for (const want of GOLDEN_BUDGET_MAP) {

@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
     }).filter((r: { fathom_id: string }) => r.fathom_id);
 
     if (rows.length) {
-      const { error } = await sb.from("fathom_calls").upsert(rows, { onConflict: "fathom_id", ignoreDuplicates: false });
+      const { error } = await sb.schema("warehouse").from("fathom_calls").upsert(rows, { onConflict: "fathom_id", ignoreDuplicates: false });
       if (error) return NextResponse.json({ ok: false, error: error.message, stored }, { status: 200 });
       stored += rows.length;
     }

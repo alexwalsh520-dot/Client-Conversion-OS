@@ -108,13 +108,13 @@ export async function POST(req: NextRequest) {
     };
 
     const { error: keywordEventError } = await db
-      .from("ads_keyword_events")
+      .schema("warehouse").from("ads_keyword_events")
       .insert(keywordEventPayload);
 
     if (keywordEventError && !duplicateEvent(keywordEventError)) {
       if (missingColumn(keywordEventError, "source_event_id")) {
         const { error: fallbackError } = await db
-          .from("ads_keyword_events")
+          .schema("warehouse").from("ads_keyword_events")
           .insert(removeColumns(keywordEventPayload, ["source_event_id"]));
 
         if (fallbackError && !duplicateEvent(fallbackError)) {
@@ -158,13 +158,13 @@ export async function POST(req: NextRequest) {
     };
 
     const { error: keywordEventError } = await db
-      .from("ads_keyword_events")
+      .schema("warehouse").from("ads_keyword_events")
       .insert(keywordEventPayload);
 
     if (keywordEventError && !duplicateEvent(keywordEventError)) {
       if (missingColumn(keywordEventError, "source_event_id")) {
         const { error: fallbackError } = await db
-          .from("ads_keyword_events")
+          .schema("warehouse").from("ads_keyword_events")
           .insert(removeColumns(keywordEventPayload, ["source_event_id"]));
 
         if (fallbackError && !duplicateEvent(fallbackError)) {

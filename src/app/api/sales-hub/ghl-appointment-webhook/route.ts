@@ -127,7 +127,7 @@ async function resolveKeywordFromManychatFallback(params: {
 
   if (!subscriberId && contactId) {
     const { data, error } = await supabase
-      .from("ghl_appointments")
+      .schema("warehouse").from("ghl_appointments")
       .select("raw_payload,updated_at,created_at")
       .eq("contact_id", contactId)
       .not("raw_payload", "is", null)
@@ -148,7 +148,7 @@ async function resolveKeywordFromManychatFallback(params: {
 
   const cutoff = new Date(eventTimeWithLag(eventAt)).toISOString();
   const { data, error } = await supabase
-    .from("ads_keyword_events")
+    .schema("warehouse").from("ads_keyword_events")
     .select("keyword_raw,keyword_normalized,subscriber_id,event_at")
     .eq("source", "manychat")
     .eq("client_key", client)
@@ -305,7 +305,7 @@ export async function POST(req: NextRequest) {
       extractManychatSubscriberId(body);
 
     const { data, error } = await supabase
-      .from("ghl_appointments")
+      .schema("warehouse").from("ghl_appointments")
       .upsert(
         {
           appointment_id,
@@ -339,7 +339,7 @@ export async function POST(req: NextRequest) {
 
     if (isCancelledAppointment(status, event_type)) {
       const { error: deleteKeywordError } = await supabase
-        .from("ads_keyword_events")
+        .schema("warehouse").from("ads_keyword_events")
         .delete()
         .eq("appointment_id", appointment_id);
 
@@ -348,7 +348,7 @@ export async function POST(req: NextRequest) {
       }
     } else if (client && keywordNormalized) {
       const { error: keywordError } = await supabase
-        .from("ads_keyword_events")
+        .schema("warehouse").from("ads_keyword_events")
         .upsert(
           {
             source: "ghl",
@@ -370,7 +370,7 @@ export async function POST(req: NextRequest) {
       if (keywordError) {
         if (missingColumn(keywordError, "source_event_id")) {
           const { error: fallbackError } = await supabase
-            .from("ads_keyword_events")
+            .schema("warehouse").from("ads_keyword_events")
             .upsert(
               {
                 source: "ghl",
@@ -453,7 +453,7 @@ export async function GET(req: NextRequest) {
     const supabase = getServiceSupabase();
 
     let query = supabase
-      .from("ghl_appointments")
+      .schema("warehouse").from("ghl_appointments")
       .select("*")
       .gte("start_time", dayStart)
       .lte("start_time", dayEnd)

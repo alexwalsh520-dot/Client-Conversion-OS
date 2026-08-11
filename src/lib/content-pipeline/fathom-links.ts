@@ -170,6 +170,6 @@ export async function linkFathomCalls(sb: Sb): Promise<{ linked: number; calls: 
     });
   }
 
-  if (rows.length) await sb.from("fathom_call_links").upsert(rows, { onConflict: "fathom_id" });
+  if (rows.length) await sb.schema("warehouse").from("fathom_call_links").upsert(rows, { onConflict: "fathom_id" });
   return { linked: rows.length, calls: (calls as Row[] | null)?.length || 0, sales_with_link: salesWithLink, method_counts };
 }

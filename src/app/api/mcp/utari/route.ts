@@ -423,7 +423,7 @@ async function handle(
   if (method === "initialize") {
     // Echo the client's requested protocol version (it knows what it supports); fall back to a recent one.
     const pv = (params?.protocolVersion as string) || "2025-06-18";
-    return { jsonrpc: "2.0", id, result: { protocolVersion: pv, capabilities: { tools: { listChanged: false } }, serverInfo: { name: "utari-ccos-foundation", version: "2.2.0" } } };
+    return { jsonrpc: "2.0", id, result: { protocolVersion: pv, capabilities: { tools: { listChanged: false } }, serverInfo: { name: "utari-ccos-foundation", version: "2.3.0" } } };
   }
   if (method === "notifications/initialized" || method === "notifications/cancelled") return null;
   if (method === "ping") return { jsonrpc: "2.0", id, result: {} };
