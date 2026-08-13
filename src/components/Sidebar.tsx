@@ -37,6 +37,7 @@ import {
   Film,
   Timer,
   Magnet,
+  ClipboardCheck,
 } from "lucide-react";
 
 const navItems = [
@@ -54,6 +55,7 @@ const navItems = [
   { href: "/accountant", label: "Accountant", icon: Calculator },
   { href: "/sop", label: "SOPs", icon: BookOpen },
   // Private single-owner tabs — gated to ownerEmail in canViewItem (overrides admin).
+  { href: "/micromanager", label: "Micromanager", icon: ClipboardCheck, ownerEmail: "alexwalsh520@gmail.com" },
   { href: "/supplements", label: "Supplements", icon: Pill, ownerEmail: "matthew@clientconversion.io" },
   { href: "/invoicing-payouts", label: "Invoicing & Payouts", icon: Receipt, ownerEmail: "matthew@clientconversion.io" },
 ];

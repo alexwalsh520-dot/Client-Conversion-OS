@@ -26,6 +26,13 @@ import {
   dmThreadsForKeyword,
   SCHEMA_DOC,
 } from "@/lib/utari/foundation";
+import {
+  mmPendingCalls,
+  mmGetReviewPrompt,
+  mmSubmitCallReview,
+  mmPendingDms,
+  mmSubmitDmReview,
+} from "@/lib/micromanager";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -175,6 +182,20 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { action: { type: "string", enum: ["createProject", "createGroup", "createItem", "createBatch", "restoreBatch"] }, projectId: { type: "string" }, groupId: { type: "string" }, batchId: { type: "string" }, name: { type: "string" }, client: { type: "string" }, kind: { type: "string" }, label: { type: "string" }, copyText: { type: "string" }, bodyMd: { type: "string" }, imageDirection: { type: "string" }, bucket: { type: "string" }, style: { type: "string" }, status: { type: "string" }, description: { type: "string" }, note: { type: "string" } }, required: ["action"] } },
   { name: "factory_update", description: "Update one Factory item (pass id) or one group (pass groupId). Item fields: label, bodyMd, copyText, imageDirection, status, stage(copy_written|image_generated|revision|completed), imageUrl, bucket, style, tags[], approve(true=>completed), revisionNote, groupIdSet(move to a group), sortOrder. Group fields: name, collapsed, sortOrder, kind, description. This is how you write a rewritten draft back.",
     inputSchema: { type: "object", properties: { id: { type: "string" }, groupId: { type: "string" }, label: { type: "string" }, bodyMd: { type: "string" }, copyText: { type: "string" }, imageDirection: { type: "string" }, status: { type: "string" }, stage: { type: "string" }, imageUrl: { type: "string" }, bucket: { type: "string" }, style: { type: "string" }, tags: { type: "array", items: { type: "string" } }, approve: { type: "boolean" }, revisionNote: { type: "string" }, groupIdSet: { type: "string" }, sortOrder: { type: "number" }, name: { type: "string" }, collapsed: { type: "boolean" }, kind: { type: "string" }, description: { type: "string" } }, required: [] } },
+
+  // ---- Micromanager (Alex's sales-manager page): daily call-review pipeline ----
+  // Utari owns the ANALYSIS (its own cron, its own model budget). CCOS owns storage + display.
+  // Daily loop: mm_pending_calls -> mm_get_review_prompt -> run prompt per call -> mm_submit_call_review.
+  { name: "mm_pending_calls", description: "Sales calls (Fathom transcripts) that have NO Micromanager review yet, newest first, full transcript included. This is the daily work queue: for each call, run the review prompt from mm_get_review_prompt and write the result back with mm_submit_call_review. Default limit 3, max 10 (transcripts are large).",
+    inputSchema: { type: "object", properties: { limit: { type: "number", description: "how many pending calls to return with transcripts (1-10, default 3)" } } } },
+  { name: "mm_get_review_prompt", description: "The exact 'Sales Manager' call-review prompt to run against each pending call's transcript, the submit contract (which fields mm_submit_call_review expects), and the current closer/setter scripts for adherence grading (null until Alex saves one).",
+    inputSchema: { type: "object", properties: {} } },
+  { name: "mm_submit_call_review", description: "Write one finished call review back to CCOS. Upserts by fathom_id (safe to re-run). review_md is the full markdown review; grade is 0-100 overall; adherence_score/adherence_notes only when a closer script exists.",
+    inputSchema: { type: "object", properties: { fathom_id: { type: "string" }, review_md: { type: "string" }, grade: { type: "number" }, closer: { type: "string" }, prospect_name: { type: "string" }, outcome: { type: "string", description: "won | lost | follow-up | no-show | unclear" }, adherence_score: { type: "number" }, adherence_notes: { type: "string" }, model: { type: "string", description: "model that produced the review, e.g. opus" } }, required: ["fathom_id", "review_md"] } },
+  { name: "mm_pending_dms", description: "Setter DM conversations with no script-adherence review yet (returns the setter script alongside). Empty until Alex saves a setter DM script on the Micromanager page. Grade each conversation against the script and submit via mm_submit_dm_review. Default limit 5, max 20.",
+    inputSchema: { type: "object", properties: { limit: { type: "number" } } } },
+  { name: "mm_submit_dm_review", description: "Write one setter DM adherence review back. Upserts by dm_transcript_id.",
+    inputSchema: { type: "object", properties: { dm_transcript_id: { type: "string" }, setter_name: { type: "string" }, adherence_score: { type: "number" }, review_md: { type: "string" }, model: { type: "string" } }, required: ["dm_transcript_id", "adherence_score"] } },
 ];
 
 // Keyword-level funnel = sum of its placements' primitives, ratios recomputed from the sums (a keyword
@@ -397,6 +418,16 @@ async function callTool(
       return getOrganicContent(client, { id: a.id as string | undefined, since: a.since as string | undefined, until: a.until as string | undefined, band: a.band as string | undefined, limit: a.limit as number | undefined, include_grades: a.include_grades === true });
     case "describe_schema":
       return SCHEMA_DOC;
+    case "mm_pending_calls":
+      return mmPendingCalls(sb, a.limit as number);
+    case "mm_get_review_prompt":
+      return mmGetReviewPrompt(sb);
+    case "mm_submit_call_review":
+      return mmSubmitCallReview(sb, a);
+    case "mm_pending_dms":
+      return mmPendingDms(sb, a.limit as number);
+    case "mm_submit_dm_review":
+      return mmSubmitDmReview(sb, a);
     default:
       throw new Error("unknown tool: " + name);
   }
