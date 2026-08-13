@@ -19,6 +19,7 @@ import {
   X,
   Pencil,
   MessageSquare,
+  Link2,
 } from "lucide-react";
 import "./factory.css";
 import Workspace from "./Workspace";
@@ -239,6 +240,25 @@ export default function FactoryClient() {
   const approve = (id: string) => patchItem(id, { approve: true });
   const sendRevision = (id: string, note: string) => patchItem(id, { revisionNote: note });
 
+  // Get-or-mint the public share link for the active project and put it on the
+  // clipboard. The link opens the no-login client review board (/p/factory).
+  const [shareState, setShareState] = useState<"idle" | "busy" | "copied" | "failed">("idle");
+  const shareProject = useCallback(async () => {
+    if (!activeProject || shareState === "busy") return;
+    setShareState("busy");
+    try {
+      const res = await fetch(`/api/factory/share-link?projectId=${activeProject.id}`);
+      if (!res.ok) throw new Error();
+      const j = await res.json();
+      if (!j.url) throw new Error();
+      await navigator.clipboard.writeText(j.url);
+      setShareState("copied");
+    } catch {
+      setShareState("failed");
+    }
+    window.setTimeout(() => setShareState("idle"), 2000);
+  }, [activeProject, shareState]);
+
   function exportCompleted() {
     if (!activeProject) return;
     window.location.href = `/api/factory?export=completed&projectId=${activeProject.id}`;
@@ -339,6 +359,15 @@ export default function FactoryClient() {
               <span className="fc-canvas-badge">Canvas board</span>
             ) : (
             <div className="fc-viewtoggle">
+              <button
+                className="fc-vt-btn"
+                onClick={shareProject}
+                disabled={shareState === "busy"}
+                title="Copy a no-login review link for this project"
+              >
+                <Link2 size={14} />
+                {shareState === "copied" ? "Link copied" : shareState === "failed" ? "Could not copy" : "Share"}
+              </button>
               <button
                 className={`fc-vt-btn ${view === "workspace" ? "fc-vt-active" : ""}`}
                 onClick={() => setView("workspace")}
