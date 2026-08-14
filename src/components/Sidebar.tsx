@@ -5,74 +5,24 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import {
-  Home,
-  Users,
-  Megaphone,
-  Rocket,
   Settings,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
   LogOut,
-  BarChart3,
-  Calculator,
   Menu,
   X,
   Monitor,
-  Sparkles,
-  BookOpen,
-  FileText,
-  Star,
-  Receipt,
-  Clapperboard,
-  Handshake,
-  Utensils,
-  UserRound,
   EyeOff,
-  Pill,
-  Trophy,
-  FlaskConical,
-  MessageCircle,
-  Factory,
-  Film,
-  Timer,
-  Magnet,
-  ClipboardCheck,
 } from "lucide-react";
-
-const navItems = [
-  { href: "/", label: "Home", icon: Home },
-  { href: "/outreach-runs", label: "Client Acquisition", icon: Rocket },
-  { href: "/studio-2/auto-outreach-test", label: "Auto Outreach", icon: FileText },
-  { href: "/sales-hub", label: "Sales Hub", icon: BarChart3 },
-  { href: "/time-to-eat", label: "Time to Eat", icon: Utensils },
-  { href: "/setter-response-time", label: "Setter Response Time", icon: Timer },
-  { href: "/lead-magnet", label: "Lead Magnet Funnel", icon: Magnet },
-  { href: "/coaching", label: "Coaching", icon: Users },
-  { href: "/partner-onboarding", label: "Client Onboarding", icon: Handshake },
-  { href: "/testimonials", label: "Testimonials", icon: Star },
-  { href: "/testimonials/videos", label: "Video Testimonials", icon: Clapperboard },
-  { href: "/accountant", label: "Accountant", icon: Calculator },
-  { href: "/sop", label: "SOPs", icon: BookOpen },
-  // Private single-owner tabs — gated to ownerEmail in canViewItem (overrides admin).
-  { href: "/micromanager", label: "Micromanager", icon: ClipboardCheck, ownerEmail: "alexwalsh520@gmail.com" },
-  { href: "/supplements", label: "Supplements", icon: Pill, ownerEmail: "matthew@clientconversion.io" },
-  { href: "/invoicing-payouts", label: "Invoicing & Payouts", icon: Receipt, ownerEmail: "matthew@clientconversion.io" },
-];
-
-const marketingNavItems = [
-  { href: "/cmo", label: "CMO", icon: UserRound },
-  { href: "/ads", label: "Ads", icon: Megaphone },
-  { href: "/ads-v2", label: "Ads v2", icon: Megaphone },
-  { href: "/manager-ads", label: "Manager Ads View", icon: BarChart3 },
-  { href: "/dms", label: "DMs", icon: MessageCircle },
-  { href: "/content", label: "Content", icon: Film },
-  { href: "/lab", label: "Lab", icon: FlaskConical },
-  { href: "/factory", label: "Factory", icon: Factory },
-  { href: "/ads-leaderboard", label: "Ads Leaderboard", icon: Trophy },
-  { href: "/live-ads", label: "Live Ads", icon: Monitor },
-  { href: "/studio-2", label: "Studio 2.0", icon: Sparkles },
-];
+import {
+  NAV_ITEMS,
+  MARKETING_NAV_ITEMS,
+  HIDDEN_TABS_EVENT,
+  readHiddenTabs,
+  writeHiddenTabs,
+  canViewApp,
+} from "@/lib/sidebar-apps";
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -88,15 +38,24 @@ export default function Sidebar() {
     return localStorage.getItem("force-desktop-view") === "true";
   });
   const [marketingOpen, setMarketingOpen] = useState(true);
-  // per-user hidden tabs (two-finger click any tab → Hide; reveal/unhide from the bottom)
-  const [hidden, setHidden] = useState<string[]>(() => {
-    if (typeof window === "undefined") return [];
-    try { return JSON.parse(localStorage.getItem("sidebar-hidden-tabs") || "[]"); } catch { return []; }
-  });
-  const [showHidden, setShowHidden] = useState(false);
+  // per-user hidden tabs (two-finger click any tab -> Hide; add them back in Settings -> Apps)
+  const [hidden, setHidden] = useState<string[]>(() => readHiddenTabs());
   const [menu, setMenu] = useState<{ href: string; label: string; x: number; y: number; hidden: boolean } | null>(null);
-  const persistHidden = (next: string[]) => { setHidden(next); localStorage.setItem("sidebar-hidden-tabs", JSON.stringify(next)); };
-  const toggleHide = (href: string) => { persistHidden(hidden.includes(href) ? hidden.filter((h) => h !== href) : [...hidden, href]); setMenu(null); };
+  const toggleHide = (href: string) => {
+    writeHiddenTabs(hidden.includes(href) ? hidden.filter((h) => h !== href) : [...hidden, href]);
+    setMenu(null);
+  };
+  // Settings -> Apps writes the same key, so re-read whenever it changes.
+  useEffect(() => {
+    const sync = () => setHidden(readHiddenTabs());
+    sync();
+    window.addEventListener(HIDDEN_TABS_EVENT, sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener(HIDDEN_TABS_EVENT, sync);
+      window.removeEventListener("storage", sync);
+    };
+  }, []);
   useEffect(() => {
     if (!menu) return;
     const close = () => setMenu(null);
@@ -117,28 +76,12 @@ export default function Sidebar() {
     return pathname === href || pathname.startsWith(href + "/");
   };
 
-  const canViewItem = (item: { href: string; adminOnly?: boolean; ownerEmail?: string }) => {
-    // ownerEmail restricts a tab to exactly one person — overrides the admin bypass.
-    if (item.ownerEmail) return userEmail === item.ownerEmail.toLowerCase();
-    if (item.adminOnly) return isAdmin;
-    return (
-      !hasPermissions ||
-      isAdmin ||
-      allowedTabs?.includes(item.href) ||
-      (item.href === "/time-to-eat" && allowedTabs?.includes("/sales-hub")) ||
-      // Setter Response Time rides on Sales Hub access (it's the front-facing
-      // cut of the same response-times data).
-      (item.href === "/setter-response-time" && allowedTabs?.includes("/sales-hub")) ||
-      // Lead Magnet Funnel rides on Sales Hub access the same way.
-      (item.href === "/lead-magnet" && allowedTabs?.includes("/sales-hub")) ||
-      // Video Testimonials manager rides on Coaching access (view + download).
-      (item.href === "/testimonials/videos" && allowedTabs?.includes("/coaching"))
-    );
-  };
+  const viewer = { isAdmin, userEmail, allowedTabs, hasPermissions };
+  const canViewItem = (item: { href: string; adminOnly?: boolean; ownerEmail?: string; label: string; icon: React.ComponentType<{ size?: number }> }) =>
+    canViewApp(item, viewer);
   const isHidden = (href: string) => hidden.includes(href);
-  const visibleNavItems = navItems.filter(canViewItem).filter((i) => !isHidden(i.href));
-  const visibleMarketingItems = marketingNavItems.filter(canViewItem).filter((i) => !isHidden(i.href));
-  const hiddenItems = [...navItems, ...marketingNavItems].filter((i) => canViewItem(i) && isHidden(i.href));
+  const visibleNavItems = NAV_ITEMS.filter(canViewItem).filter((i) => !isHidden(i.href));
+  const visibleMarketingItems = MARKETING_NAV_ITEMS.filter(canViewItem).filter((i) => !isHidden(i.href));
   const marketingActive = visibleMarketingItems.some((item) => isActive(item.href));
 
   // Apply/remove force-desktop class on html element
@@ -290,23 +233,6 @@ export default function Sidebar() {
 
         {/* Bottom section */}
         <div className="sidebar-bottom">
-          {/* Hidden tabs (revealable) */}
-          {hiddenItems.length > 0 && (
-            <div className="sidebar-section">
-              <button type="button" className="sidebar-section-label sidebar-section-toggle" onClick={() => setShowHidden((s) => !s)} title="Hidden tabs">
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                  <EyeOff size={14} />{!collapsed && <span>Hidden ({hiddenItems.length})</span>}
-                </span>
-                {!collapsed && <ChevronDown size={13} className={`sidebar-section-chevron ${showHidden ? "sidebar-section-chevron-open" : ""}`} />}
-              </button>
-              {showHidden && (
-                <div className="sidebar-section-links" style={{ opacity: 0.6 }}>
-                  {hiddenItems.map((item) => renderLink(item, true))}
-                </div>
-              )}
-            </div>
-          )}
-
           {/* Settings */}
           {renderLink({ href: "/settings", label: "Settings", icon: Settings })}
 

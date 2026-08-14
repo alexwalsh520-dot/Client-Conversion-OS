@@ -6,6 +6,7 @@ import Link from "next/link";
 import ThemeToggle from "@/components/ThemeToggle";
 import AiUsageMeter from "@/components/AiUsageMeter";
 import OrganicKeywordsPanel from "@/components/OrganicKeywordsPanel";
+import AppsPanel from "@/components/AppsPanel";
 import {
   Settings,
   Users,
@@ -79,6 +80,7 @@ const TAB_LABELS: Record<string, string> = {
   "/sop": "SOPs",
   "/cmo": "CMO",
   "/dms": "DMs",
+  "/icp": "ICP",
   "/content": "Content",
   "/lab": "Lab",
   "/factory": "Factory",
@@ -377,6 +379,9 @@ export default function SettingsPage() {
           User management and integrations
         </p>
       </div>
+
+      {/* Apps — add back anything hidden from the sidebar */}
+      <AppsPanel />
 
       {/* Organic keywords */}
       <OrganicKeywordsPanel />
