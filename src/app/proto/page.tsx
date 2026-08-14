@@ -21,8 +21,14 @@ export default function ProtoHome() {
       <Card>
         <div style={{ fontSize: "var(--p-font)", color: "var(--p-text-2)", lineHeight: 1.65 }}>
           <p style={{ marginBottom: 10 }}>
-            Pick a preset along the top, or open the dials and push spacing, radius and type around yourself. Whatever you
-            land on applies to all five screens at once, so you are judging a direction rather than a page.
+            Pick a theme along the top, then open the options for typefaces, sidebar shapes, surface treatment, table
+            rows and the small polish switches. Whatever you land on applies to all five screens at once, so you are
+            judging a direction rather than a page.
+          </p>
+          <p style={{ marginBottom: 10 }}>
+            The three that change the feel most, in order: the <b>typeface</b>, the <b>sidebar shape</b>, and
+            <b> aligned digits</b> — which lines decimal points up down a column and is the cheapest thing here that
+            makes money tables look properly built.
           </p>
           <p style={{ margin: 0 }}>
             These are faithful replicas, not the live pages. They exist so a design can be judged safely and quickly. Once
