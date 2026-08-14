@@ -1792,6 +1792,15 @@ body.metric-dragging {
   padding: 4px 6px;
   border-radius: 6px;
 }
+.adprev-retry {
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+.adprev-retry:hover {
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+}
 .adprev-name {
   margin-top: 8px;
   padding: 0 2px 2px;

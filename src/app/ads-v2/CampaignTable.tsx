@@ -499,7 +499,7 @@ function NodeRows({
   const dotClass = node.clientKey === "jake" ? "jake" : "tyson";
 
   const nameEl =
-    node.level === "ad" && (node.previewImageUrl || node.hasVideo) ? (
+    node.level === "ad" && (node.previewImageUrl || node.hasVideo || AD_ID_RE.test(node.id)) ? (
       <AdNamePreview node={node} className={isFlat ? "flat-name" : "camp-name"} />
     ) : (
       <span className={isFlat ? "flat-name" : "camp-name"} title={node.name}>
@@ -593,10 +593,43 @@ function NodeRows({
 
 // The ad-name video preview. The card stays open while the pointer is over the
 // name OR the card, with a short grace while traveling between them. Clicking
-// the name pins the card and reveals a play button; Escape or a click outside
-// closes it. The video file loads ONLY when play is clicked; an uncached video
-// shows the high-res thumbnail plus a "video not cached yet" note.
+// the name pins the card; Escape or a click outside closes it.
+//
+// Playback is guaranteed: opening the card resolves the media LIVE through
+// /api/ads-v2/media/[adId] (our stored copy first, else a fresh source URL
+// straight from Meta), so a video plays even when the snapshot is stale, the
+// background cache hasn't caught up, or the file was too big to store. A URL
+// that fails mid-play self-heals by re-resolving fresh once.
 const PREVIEW_GRACE_MS = 250;
+const AD_ID_RE = /^\d{5,25}$/;
+
+interface LiveMedia {
+  isVideo: boolean;
+  videoUrl: string | null;
+  thumbUrl: string | null;
+  source: "stored" | "meta" | "none";
+}
+
+// One in-flight/settled resolution per ad for the whole session; a refresh
+// (used when a URL fails to play) replaces the memo with a fresh resolve.
+const mediaMemo = new Map<string, Promise<LiveMedia>>();
+
+function fetchAdMedia(adId: string, clientKey: string, refresh: boolean): Promise<LiveMedia> {
+  if (!refresh) {
+    const hit = mediaMemo.get(adId);
+    if (hit) return hit;
+  }
+  const qs = `client=${encodeURIComponent(clientKey)}${refresh ? "&refresh=1" : ""}`;
+  const p = fetch(`/api/ads-v2/media/${adId}?${qs}`).then((r) => {
+    if (!r.ok) throw new Error(`media ${r.status}`);
+    return r.json() as Promise<LiveMedia>;
+  });
+  p.catch(() => {
+    if (mediaMemo.get(adId) === p) mediaMemo.delete(adId);
+  });
+  mediaMemo.set(adId, p);
+  return p;
+}
 
 function AdNamePreview({ node, className }: { node: AdsV2Node; className: string }) {
   const nameRef = useRef<HTMLSpanElement | null>(null);
@@ -606,9 +639,29 @@ function AdNamePreview({ node, className }: { node: AdsV2Node; className: string
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const thumb = node.previewImageUrl;
-  const video = node.videoUrl;
-  const isVideo = node.hasVideo;
+  const [live, setLive] = useState<LiveMedia | null>(null);
+  const [mediaErr, setMediaErr] = useState(false);
+  const retriedRef = useRef(false);
+  const requestedRef = useRef(false);
+  const canResolve = AD_ID_RE.test(node.id);
+
+  const loadMedia = useCallback(
+    (refresh: boolean) => {
+      if (!canResolve) return;
+      fetchAdMedia(node.id, node.clientKey, refresh)
+        .then((m) => {
+          setLive(m);
+          if (refresh && !m.videoUrl) setMediaErr(true);
+        })
+        .catch(() => setMediaErr(true));
+    },
+    [canResolve, node.id, node.clientKey],
+  );
+
+  // Live values win (fresh); snapshot values are the instant fallback.
+  const thumb = live?.thumbUrl || node.previewImageUrl;
+  const video = live?.videoUrl || node.videoUrl;
+  const isVideo = node.hasVideo || Boolean(live?.isVideo);
 
   const place = () => {
     const r = nameRef.current?.getBoundingClientRect();
@@ -629,6 +682,15 @@ function AdNamePreview({ node, className }: { node: AdsV2Node; className: string
     cancelClose();
     place();
     setOpen(true);
+    // Resolve media the moment the card opens, so play is instant by the time
+    // it's clicked. Once per mount; failures retry on the next hover.
+    if (!requestedRef.current) {
+      requestedRef.current = true;
+      loadMedia(false);
+    } else if (mediaErr && !video) {
+      setMediaErr(false);
+      loadMedia(true);
+    }
   };
   const pin = () => {
     place();
@@ -676,23 +738,61 @@ function AdNamePreview({ node, className }: { node: AdsV2Node; className: string
             onMouseEnter={cancelClose}
             onMouseLeave={scheduleClose}
           >
-            {playing && video ? (
+            {playing && video && !mediaErr ? (
               // eslint-disable-next-line jsx-a11y/media-has-caption
-              <video className="adprev-media" src={video} controls autoPlay />
+              <video
+                className="adprev-media"
+                src={video}
+                controls
+                autoPlay
+                playsInline
+                onError={() => {
+                  // A stored object gone missing or an expired Meta URL:
+                  // re-resolve fresh ONCE and swap the src in place.
+                  if (retriedRef.current) {
+                    setMediaErr(true);
+                    setPlaying(false);
+                  } else {
+                    retriedRef.current = true;
+                    loadMedia(true);
+                  }
+                }}
+              />
             ) : (
               <div className="adprev-thumbwrap">
                 {thumb ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img className="adprev-media" src={thumb} alt="Ad creative" />
                 ) : (
-                  <div className="adprev-nothumb">No preview</div>
+                  <div className="adprev-nothumb">{canResolve && !live && !mediaErr ? "Loading preview…" : "No preview"}</div>
                 )}
-                {isVideo && video && (
-                  <button className="adprev-play" onClick={() => setPlaying(true)} aria-label="Play video">
+                {playing && !video && !mediaErr && <div className="adprev-note">Loading video…</div>}
+                {isVideo && !playing && !mediaErr && (
+                  <button
+                    className="adprev-play"
+                    onClick={() => {
+                      pin();
+                      setPlaying(true);
+                    }}
+                    aria-label="Play video"
+                  >
                     <span className="adprev-play-tri" />
                   </button>
                 )}
-                {isVideo && !video && <div className="adprev-note">Video not cached yet</div>}
+                {isVideo && mediaErr && (
+                  <button
+                    className="adprev-note adprev-retry"
+                    onClick={() => {
+                      setMediaErr(false);
+                      retriedRef.current = false;
+                      pin();
+                      setPlaying(true);
+                      loadMedia(true);
+                    }}
+                  >
+                    Video failed to load — tap to retry
+                  </button>
+                )}
               </div>
             )}
             <div className="adprev-name">{node.name}</div>

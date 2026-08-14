@@ -34,7 +34,7 @@ interface AdCreative {
     video_id?: string;
     thumbnail_url?: string;
     image_url?: string;
-    object_story_spec?: { video_data?: { video_id?: string; image_url?: string } };
+    object_story_spec?: { page_id?: string; video_data?: { video_id?: string; image_url?: string } };
   };
 }
 
@@ -70,7 +70,56 @@ function videoIdOf(ad: AdCreative): string | null {
   );
 }
 
-async function resolveVideoSource(videoId: string, token: string): Promise<{ source?: string; picture?: string } | null> {
+function pageIdOf(ad: AdCreative): string | null {
+  return ad.creative?.object_story_spec?.page_id || null;
+}
+
+// The ads token can read `source` ONLY for videos uploaded to the ad account's
+// own library. Every real creator ad is built from a PAGE video (IG DM funnel),
+// and Meta silently omits `source` for those — the reason the cache sat at
+// "no_source" for every video ad. The page's own token CAN read it, and a
+// system-user ads token with the page as an owned asset can mint one. So:
+// try the ads token, then fall back to a derived page token.
+const pageTokenCache = new Map<string, string | null>();
+
+async function getPageToken(pageId: string, adsToken: string): Promise<string | null> {
+  const hit = pageTokenCache.get(pageId);
+  if (hit !== undefined) return hit;
+  let token: string | null = null;
+  try {
+    const res = await fetch(`${GRAPH}/${pageId}?fields=access_token&access_token=${adsToken}`, { cache: "no-store" });
+    if (res.ok) token = ((await res.json()) as { access_token?: string }).access_token || null;
+  } catch {
+    token = null;
+  }
+  pageTokenCache.set(pageId, token);
+  return token;
+}
+
+// Old creatives sometimes carry a bare video_id with no object_story_spec, so
+// there is no page_id to derive a token from. The token's own page list
+// (me/accounts) names every page it manages — for a creator system user that
+// is exactly their page — so those are tried too.
+const tokenPagesCache = new Map<string, string[]>();
+
+async function getManagedPageIds(adsToken: string): Promise<string[]> {
+  const hit = tokenPagesCache.get(adsToken);
+  if (hit !== undefined) return hit;
+  let ids: string[] = [];
+  try {
+    const res = await fetch(`${GRAPH}/me/accounts?fields=id&limit=25&access_token=${adsToken}`, { cache: "no-store" });
+    if (res.ok) {
+      const json = (await res.json()) as { data?: { id: string }[] };
+      ids = (json.data || []).map((p) => p.id);
+    }
+  } catch {
+    ids = [];
+  }
+  tokenPagesCache.set(adsToken, ids);
+  return ids;
+}
+
+async function fetchVideoFields(videoId: string, token: string): Promise<{ source?: string; picture?: string } | null> {
   try {
     const res = await fetch(`${GRAPH}/${videoId}?fields=source,picture&access_token=${token}`, { cache: "no-store" });
     if (!res.ok) return null;
@@ -78,6 +127,26 @@ async function resolveVideoSource(videoId: string, token: string): Promise<{ sou
   } catch {
     return null;
   }
+}
+
+async function resolveVideoSource(
+  videoId: string,
+  token: string,
+  pageId?: string | null,
+): Promise<{ source?: string; picture?: string } | null> {
+  const direct = await fetchVideoFields(videoId, token);
+  if (direct?.source) return direct;
+  const candidates = pageId ? [pageId] : [];
+  for (const managed of await getManagedPageIds(token)) {
+    if (!candidates.includes(managed)) candidates.push(managed);
+  }
+  for (const candidate of candidates) {
+    const pageToken = await getPageToken(candidate, token);
+    if (!pageToken) continue;
+    const viaPage = await fetchVideoFields(videoId, pageToken);
+    if (viaPage?.source) return { source: viaPage.source, picture: viaPage.picture || direct?.picture };
+  }
+  return direct;
 }
 
 interface MediaResult {
@@ -124,7 +193,7 @@ export async function runMediaSync(now: Date = new Date()): Promise<MediaResult>
 
       const acct = normalizeAdAccountId(account);
       const fields =
-        "id,name,effective_status,creative{id,video_id,thumbnail_url,image_url,object_story_spec{video_data{video_id,image_url}}}";
+        "id,name,effective_status,creative{id,video_id,thumbnail_url,image_url,object_story_spec{page_id,video_data{video_id,image_url}}}";
       // Active ads first (backfill priority), then everything (newest-first per
       // Meta's default order).
       const passes = [
@@ -198,7 +267,7 @@ async function storeOneVideoAd(
   token: string,
   result: MediaResult,
 ): Promise<void> {
-  const src = await resolveVideoSource(videoId, token);
+  const src = await resolveVideoSource(videoId, token, pageIdOf(ad));
   const thumbUrl = src?.picture || ad.creative?.thumbnail_url || ad.creative?.image_url || null;
 
   // High-res thumbnail (small, always try).
@@ -232,6 +301,128 @@ async function storeOneVideoAd(
     result.perClient[clientKey].stored += 1;
   }
   if (storedThumb) result.thumbsStored += 1;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ON-DEMAND RESOLUTION — the hover card's guarantee that play always works.
+// Stored copy first (our storage, never expires). If the video isn't stored
+// yet (new ad, oversized file, sync lag) resolve a FRESH source URL from Meta
+// right now and hand that back for immediate playback; the caller kicks off a
+// background store so the next play is served from our storage.
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface OnDemandMedia {
+  isVideo: boolean;
+  /** Playable right now: stored copy when we have one, else a fresh Meta source. */
+  videoUrl: string | null;
+  thumbUrl: string | null;
+  /** Where videoUrl came from; "meta" means fresh + not yet stored. */
+  source: "stored" | "meta" | "none";
+}
+
+interface MediaRow {
+  client_key: string | null;
+  is_video: boolean | null;
+  video_id: string | null;
+  stored_video_url: string | null;
+  stored_thumb_url: string | null;
+  stored_image_url: string | null;
+}
+
+async function fetchAdCreative(adId: string, token: string): Promise<AdCreative | null> {
+  try {
+    const fields =
+      "creative{video_id,thumbnail_url,image_url,object_story_spec{page_id,video_data{video_id,image_url}}}";
+    const res = await fetch(`${GRAPH}/${adId}?fields=${fields}&access_token=${token}`, { cache: "no-store" });
+    if (!res.ok) return null;
+    const ad = (await res.json()) as AdCreative;
+    ad.id = adId;
+    return ad;
+  } catch {
+    return null;
+  }
+}
+
+export async function resolveAdMediaNow(
+  adId: string,
+  opts: { clientKeyHint?: string; skipStored?: boolean } = {},
+): Promise<OnDemandMedia> {
+  const db = getServiceSupabase();
+  const { data } = await db
+    .from("ad_creative_image")
+    .select("client_key,is_video,video_id,stored_video_url,stored_thumb_url,stored_image_url")
+    .eq("ad_id", adId)
+    .maybeSingle();
+  const row = (data as MediaRow | null) || null;
+  const thumb = row?.stored_thumb_url || row?.stored_image_url || null;
+
+  if (!opts.skipStored && row?.stored_video_url) {
+    return { isVideo: true, videoUrl: row.stored_video_url, thumbUrl: thumb, source: "stored" };
+  }
+
+  const clientKey = row?.client_key || opts.clientKeyHint || null;
+  const creator = ACTIVE_CREATORS.find((c) => c.key === clientKey);
+  const token = creator ? firstEnv(creator.tokenEnv) : null;
+  if (!token) {
+    // No token to ask Meta with; the stored copy (if any) is all we have.
+    return {
+      isVideo: Boolean(row?.is_video),
+      videoUrl: row?.stored_video_url || null,
+      thumbUrl: thumb,
+      source: row?.stored_video_url ? "stored" : "none",
+    };
+  }
+
+  // The creative fetch also carries page_id, which unlocks `source` for
+  // page-owned videos (every real creator ad) via a derived page token.
+  const ad = await fetchAdCreative(adId, token);
+  const videoId = row?.video_id || (ad ? videoIdOf(ad) : null);
+  if (!videoId) return { isVideo: Boolean(row?.is_video), videoUrl: null, thumbUrl: thumb, source: "none" };
+
+  const src = await resolveVideoSource(videoId, token, ad ? pageIdOf(ad) : null);
+  return {
+    isVideo: true,
+    videoUrl: src?.source || null,
+    thumbUrl: src?.picture || thumb,
+    source: src?.source ? "meta" : "none",
+  };
+}
+
+/**
+ * Best-effort background store of one ad's video + thumb into our storage
+ * (fire-and-forget from the on-demand route via `after()`). Never throws.
+ */
+export async function storeAdVideoInBackground(adId: string, clientKeyHint?: string): Promise<void> {
+  try {
+    const db = getServiceSupabase();
+    const { data } = await db
+      .from("ad_creative_image")
+      .select("client_key,video_id,stored_video_url")
+      .eq("ad_id", adId)
+      .maybeSingle();
+    const row = (data as Pick<MediaRow, "client_key" | "video_id" | "stored_video_url"> | null) || null;
+    if (row?.stored_video_url) return; // already stored
+    const clientKey = row?.client_key || clientKeyHint || null;
+    const creator = ACTIVE_CREATORS.find((c) => c.key === clientKey);
+    const token = creator ? firstEnv(creator.tokenEnv) : null;
+    if (!token || !creator) return;
+    const ad = await fetchAdCreative(adId, token);
+    const videoId = row?.video_id || (ad ? videoIdOf(ad) : null);
+    if (!videoId) return;
+    const result: MediaResult = {
+      clients: [],
+      videosStored: 0,
+      thumbsStored: 0,
+      scanned: 0,
+      skippedAlready: 0,
+      bytes: 0,
+      budgetHit: false,
+      perClient: { [creator.key]: { videoAds: 0, stored: 0 } },
+    };
+    await storeOneVideoAd(db, creator.key, ad || { id: adId }, videoId, token, result);
+  } catch {
+    // Background convenience only; the fresh Meta URL already served playback.
+  }
 }
 
 async function downloadThumb(db: Db, adId: string, url: string, result: MediaResult): Promise<string | null> {
