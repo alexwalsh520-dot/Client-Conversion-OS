@@ -29,6 +29,16 @@ type PersonRow = {
   raw_lines: string[];
 };
 
+type HighlightRow = {
+  section: string;
+  section_pos: number;
+  position: number;
+  kind: string;
+  quote: string;
+  person_name: string | null;
+  said_on: string | null;
+};
+
 type QuoteRow = {
   fathom_id: string;
   theme: string;
@@ -69,6 +79,28 @@ export async function GET(): Promise<NextResponse> {
     if (data.length < page) break;
   }
 
+  // Sharpest lines: hand-picked, grouped under the frames Alex named. Editorial
+  // selection, verbatim words — see data/icp-sharpest-lines.md.
+  const { data: highlightRows, error: highlightError } = await sb
+    .from("icp_highlights")
+    .select("section,section_pos,position,kind,quote,person_name,said_on")
+    .order("section_pos", { ascending: true })
+    .order("position", { ascending: true });
+
+  if (highlightError) {
+    return NextResponse.json({ error: highlightError.message }, { status: 500 });
+  }
+
+  const highlightSections: { section: string; items: { kind: string; quote: string; who: string | null; date: string | null }[] }[] = [];
+  for (const h of (highlightRows ?? []) as HighlightRow[]) {
+    let group = highlightSections[highlightSections.length - 1];
+    if (!group || group.section !== h.section) {
+      group = { section: h.section, items: [] };
+      highlightSections.push(group);
+    }
+    group.items.push({ kind: h.kind, quote: h.quote, who: h.person_name, date: h.said_on });
+  }
+
   // Theme order follows how many people raised it, so the loudest is first.
   const themeTotals = new Map<string, number>();
   for (const q of quotes) themeTotals.set(q.theme, (themeTotals.get(q.theme) ?? 0) + 1);
@@ -86,6 +118,7 @@ export async function GET(): Promise<NextResponse> {
   const rows = (people ?? []) as PersonRow[];
 
   return NextResponse.json({
+    highlights: highlightSections,
     people: rows.map((p) => ({
       id: p.fathom_id,
       name: p.name,

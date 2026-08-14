@@ -24,15 +24,19 @@ type Person = {
   rawLines: string[];
   quotes: Quote[];
 };
+type Highlight = { kind: string; quote: string; who: string | null; date: string | null };
+type HighlightSection = { section: string; items: Highlight[] };
 type Corpus = {
+  highlights: HighlightSection[];
   people: Person[];
   themes: { theme: string; count: number }[];
   totals: { people: number; quotes: number; words: number };
 };
 
-type TabKey = "people" | "themes" | "search" | "about";
+type TabKey = "sharpest" | "people" | "themes" | "search" | "about";
 
 const TABS: { key: TabKey; label: string }[] = [
+  { key: "sharpest", label: "Sharpest lines" },
   { key: "people", label: "By person" },
   { key: "themes", label: "By theme" },
   { key: "search", label: "Search everything" },
@@ -58,7 +62,7 @@ function Quotation({ quote, context }: { quote: string; context?: string | null 
 export default function IcpPage() {
   const [data, setData] = useState<Corpus | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<TabKey>("people");
+  const [tab, setTab] = useState<TabKey>("sharpest");
 
   const [personFilter, setPersonFilter] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -183,6 +187,39 @@ export default function IcpPage() {
           </button>
         ))}
       </div>
+
+      {/* ---------------- Sharpest lines ---------------- */}
+      {tab === "sharpest" && (
+        <div style={{ maxWidth: "80ch" }}>
+          <p style={{ fontSize: 13.5, color: "var(--text-muted)", marginBottom: 24 }}>
+            Hand-picked from all {data.totals.quotes.toLocaleString()} quotes, grouped under the frames you named.
+            The picking is editorial. The words are not: every line is exactly what he said.
+          </p>
+          {data.highlights.map((section) => (
+            <div key={section.section}>
+              <h3 className="section-title" style={{ fontSize: 16 }}>{section.section}</h3>
+              {section.items.map((item, i) =>
+                item.kind === "note" ? (
+                  <p key={i} style={{ fontSize: 13.5, color: "var(--text-muted)", margin: "4px 0 16px" }}>
+                    {item.quote}
+                  </p>
+                ) : (
+                  <div key={i} style={{ borderLeft: "2px solid var(--border)", padding: "2px 0 2px 16px", marginBottom: 15 }}>
+                    <div style={{ fontSize: 15, lineHeight: 1.62, color: "var(--text-primary)" }}>
+                      &ldquo;{item.quote}&rdquo;
+                    </div>
+                    {item.who && (
+                      <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginTop: 6 }}>
+                        {item.who}{item.date ? `, ${item.date}` : ""}
+                      </div>
+                    )}
+                  </div>
+                )
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ---------------- By person ---------------- */}
       {tab === "people" && (
