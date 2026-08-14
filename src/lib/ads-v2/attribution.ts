@@ -11,6 +11,8 @@
 //   * A person decision always outranks an automatic one.
 // ─────────────────────────────────────────────────────────────────────────
 
+import { ACTIVE_CREATORS, type CreatorKey } from "@/lib/creators";
+
 export type KeywordClass = "paid" | "organic" | "none";
 
 export type LinkMethod =
@@ -435,4 +437,18 @@ function shiftIso(iso: string, days: number): string {
   const dt = new Date(Date.UTC(y, m - 1, d));
   dt.setUTCDate(dt.getUTCDate() + days);
   return dt.toISOString().slice(0, 10);
+}
+
+// The tracker sheet's creator column ("Tyson Sonnek", "Jake Divijak") mapped
+// by first name onto the active roster. The sheet decides WHO a call belongs
+// to; keyword resolution only ever decides WHICH AD (Alex, 2026-08-13).
+// Retired creators intentionally resolve to null: their rows stay
+// unattributed rather than being credited to a dead account.
+const CLIENT_BY_FIRST_NAME = new Map<string, CreatorKey>(
+  ACTIVE_CREATORS.map((c) => [c.name.toLowerCase(), c.key]),
+);
+
+export function clientFromSheetOffer(offer: string | null | undefined): CreatorKey | null {
+  const first = (offer || "").trim().split(/\s+/)[0]?.toLowerCase() || "";
+  return first ? (CLIENT_BY_FIRST_NAME.get(first) ?? null) : null;
 }

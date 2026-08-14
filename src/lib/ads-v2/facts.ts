@@ -16,6 +16,7 @@ import { etDay, todayEt, shiftDay } from "./time";
 import { normalizeKeyword } from "./keyword";
 import {
   classifyKeyword,
+  clientFromSheetOffer,
   resolveSaleKeyword,
   stampDm,
   stampBooking,
@@ -414,11 +415,12 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
     manychat_subscriber_id: string | null;
     setter: string | null;
     call_type: string | null;
+    offer: string | null;
   }>((from, to) =>
     db
       .from("sales_tracker_rows")
       .select(
-        "id, sheet_row_key, date, prospect_name, call_taken_status, outcome, closer, contracted_revenue_cents, collected_revenue_cents, manychat_subscriber_id, setter, call_type:raw_payload->>callType",
+        "id, sheet_row_key, date, prospect_name, call_taken_status, outcome, closer, contracted_revenue_cents, collected_revenue_cents, manychat_subscriber_id, setter, call_type:raw_payload->>callType, offer:raw_payload->>offer",
       )
       .gte("date", factFrom)
       .lte("date", saleTo)
@@ -509,6 +511,26 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
       awaiting = true;
     }
 
+    // The sheet's creator column decides WHO a call belongs to; keyword
+    // resolution only ever decides WHICH AD (Alex, 8/13). A row the resolver
+    // cannot place is still credited to the sheet's creator (ad-level review
+    // continues), and a row where the two disagree keeps the sheet's creator
+    // and sends the keyword to review: a cross-creator keyword on a tracker
+    // row is a wrong-link paste, not proof.
+    const sheetClient = clientFromSheetOffer(r.offer);
+    let clientKey = client;
+    if (sheetClient) {
+      if (!clientKey) {
+        clientKey = sheetClient;
+      } else if (clientKey !== sheetClient) {
+        clientKey = sheetClient;
+        keyword = null;
+        method = "none";
+        isOrganic = false;
+        awaiting = true;
+      }
+    }
+
     // The sales tracker is ONE team-wide sheet written in USD (US closers, US
     // ticket prices), no matter which creator the sale belongs to. A creator's
     // `currency` describes what META BILLS THEIR AD ACCOUNT (spend side only);
@@ -519,7 +541,7 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
     const collected = Number(r.collected_revenue_cents || 0);
     saleFacts.push({
       sale_key: r.sheet_row_key || r.id,
-      client_key: client,
+      client_key: clientKey,
       keyword_normalized: keyword,
       method,
       is_organic: isOrganic,
@@ -543,7 +565,7 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
       // the sheet is blank but their ManyChat id is known.
       setter_name:
         (r.setter || "").trim() || (pasted ? setterBySubscriber.get(pasted) ?? null : null) || null,
-      evidence: { source: "sales_tracker_rows", method, keyword, sale_day: saleDay },
+      evidence: { source: "sales_tracker_rows", method, keyword, sale_day: saleDay, sheet_client: sheetClient },
       ...(() => {
         const s = stampSale(method, keyword, pasted);
         return { evidence_key: s.evidenceKey, evidence_detail: s.evidenceDetail, blank_reason: s.blankReason };
@@ -592,6 +614,19 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
     await db.rpc("adsv2_booking_bridge_recovery");
   } catch (err) {
     console.error("[adsv2] identity bridge upkeep failed, continuing:", err);
+  }
+
+  // Tracker weld (Alex, 8/13). The sheet's ManyChat paste is the richest
+  // identity we hold, so after the ladder and the bridge have done their
+  // hard-key best, the tracker gets the last word: it welds its subscriber id
+  // onto same-creator bookings that match by name (typo-tolerant), and gives
+  // off-calendar calls a clearly-evidenced booking fact of their own so
+  // Booked counts reality, not just the pinned calendars. Wrapped for the
+  // same reason as the bridge: a weld problem must never fail the money sync.
+  try {
+    await db.rpc("adsv2_tracker_weld", { p_from: factFrom, p_to: bookTo });
+  } catch (err) {
+    console.error("[adsv2] tracker weld failed, continuing:", err);
   }
 
   // Fill any booking setter the in-memory lookup could not see. That lookup is
