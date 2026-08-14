@@ -5,7 +5,6 @@ import { useSession } from "next-auth/react";
 import Link from "next/link";
 import ThemeToggle from "@/components/ThemeToggle";
 import AiUsageMeter from "@/components/AiUsageMeter";
-import OrganicKeywordsPanel from "@/components/OrganicKeywordsPanel";
 import AppsPanel from "@/components/AppsPanel";
 import {
   Settings,
@@ -382,9 +381,6 @@ export default function SettingsPage() {
 
       {/* Apps — add back anything hidden from the sidebar */}
       <AppsPanel />
-
-      {/* Organic keywords */}
-      <OrganicKeywordsPanel />
 
       {/* Appearance */}
       <div
