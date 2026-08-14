@@ -110,6 +110,8 @@ export default function Sidebar() {
   };
 
   // Don't render on login or public pages
+  // The design prototype ships its own shell and has no session.
+  if (pathname === "/proto" || pathname.startsWith("/proto/")) return null;
   if (pathname.startsWith("/p/")) return null;
   if (pathname.startsWith("/super-doc/")) return null;
   if (pathname.startsWith("/studio-2/upload/")) return null;

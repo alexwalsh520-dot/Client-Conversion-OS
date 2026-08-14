@@ -74,6 +74,8 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
   const isLocalAutoOutreachTest =
     pathname === "/studio-2/auto-outreach-test" && isLocalDev;
   const isPublicPage =
+    pathname === "/proto" ||
+    pathname.startsWith("/proto/") ||
     pathname === "/login" ||
     pathname === "/review" ||
     pathname === "/voice-notes" ||
