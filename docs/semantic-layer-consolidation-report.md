@@ -851,3 +851,135 @@ you confirming it is deliberate.
 `warehouse` now holds **38 tables and 11 views**, up from 5 tables and 11 views
 when this build started. `public` is down to 149 tables from 189. The boundary
 credential `ai_marketing_readonly` can read all 38 and nothing else anywhere.
+
+---
+
+## Phase 4: the ManyChat identity backfill. Built, measured, NOT run.
+
+Everything except the external calls is done, tested and pushed. The backfill
+itself has not been fired, and the reason is in the last section here.
+
+### The baseline, measured 2026-08-14
+
+"Thread readable" means this person sent a magic word AND their ManyChat id can
+be followed to an Instagram id that actually appears in the stored DM threads.
+That is the difference between knowing somebody messaged and being able to read
+what they said.
+
+| creator | keyword senders | thread readable | share | still unlinked |
+| --- | ---: | ---: | ---: | ---: |
+| **all** | **7,846** | **2,605** | **33.2%** | **5,160** |
+| tyson | 6,084 | 2,152 | 35.4% | 3,869 |
+| keith | 1,154 | 0 | 0.0% | 1,135 |
+| antwan | 390 | 282 | 72.3% | 108 |
+| jake | 171 | 171 | **100.0%** | 0 |
+| lucy | 48 | 0 | 0.0% | 48 |
+
+The brief put the baseline at 2,374 of 7,687, which is 31%. Mine says 2,605 of
+7,846, which is 33.2%. Same measure, four more days of keyword events. It
+reconciles.
+
+**Jake is already at 100%.** His forward capture, live since 29 July, pairs every
+new subscriber as it arrives. That is worth saying out loud because it is the
+proof that the forward fix works, and it means the backfill is really a
+Tyson-and-history job, not a whole-roster job.
+
+### The premise, verified without calling anything
+
+The whole phase rests on ManyChat's subscriber record carrying the Instagram
+pairing. Rather than take that on trust I read the payloads already stored from
+earlier origin checks: **416 of 417 carry both `ig_id` and `ig_username`**, and
+every one of those 416 came back with HTTP 200.
+
+Two things fell out of that which change what to expect:
+
+**There is no free harvest.** All 416 stored pairings are already in the
+registry. Brick 5 consumed them. Nothing can be recovered without asking
+ManyChat again.
+
+**The yield will not be 100%.** Of those 416 `ig_id` values, **300 match a real
+DM thread, which is 72%**. So a successful call does not guarantee a readable
+conversation. On that rate, asking about Tyson's 3,869 would be expected to add
+roughly 2,800 readable people, taking the overall share from 33% to somewhere
+near 69%. That is the number to expect, not 100%, and it is a projection rather
+than a result.
+
+### What was built
+
+| migration | what it is |
+| --- | --- |
+| 109 | the cursor: one row per subscriber ASKED about, whatever came back |
+| 110 | the work list: keyword senders with no link and no previous attempt |
+| 111 | the count, which exists because of a bug the dry run caught |
+| 112 | the headline measure, defined once so before and after compare |
+
+Plus `scripts/manychat-identity-backfill.mjs` and
+`scripts/manychat-identity-coverage.mjs`.
+
+The job respects ManyChat's published limit of 10 requests a second with a
+deliberately generous margin of 2, times out any single call at 15 seconds,
+backs off on transient errors, and on a rate limit (HTTP 429 or Facebook error
+code 17) **stops the whole run cleanly** rather than pushing. Because every
+subscriber asked about is recorded whatever the answer, an interrupted run
+resumes exactly where it stopped and no subscriber is ever asked twice. Pairings
+go into `registry_person_link_queue` and through the existing link path, so the
+usual conflict rules apply and nothing here can overwrite an existing link.
+
+### A bug the dry run caught, worth recording
+
+The first dry run reported "1,000 subscribers to ask about" for both Tyson and
+Keith. That roundness was the tell: it was the API's row cap on a single
+response, not the real work list. Left alone, a run would have asked about 1,000
+people, reported itself finished, and left thousands waiting with nobody the
+wiser. Migration 111 counts in the database, where no row cap applies, and the
+script now pages through. The corrected plan:
+
+```
+tyson: 3869 subscribers, about 33 minutes at 2/s
+jake:  0
+keith: 1135 subscribers, about 10 minutes
+lucy:  48    no ManyChat key in this environment
+antwan: 108  no ManyChat key in this environment
+```
+
+### The test suite, and why 6 failures are not 6 regressions
+
+The suite currently reads **347 pass, 6 fail, 0 skipped**, against 3 failures
+when Phase 3 closed. I pushed before checking that, which I should not have done,
+so I went back and checked it properly rather than assuming.
+
+None of the three new failures are mine. I proved it by checking out the commit
+immediately before my Phase 4 work and running the same tests there: `GOLDEN a1`,
+`GOLDEN a2`, `GOLDEN e1`, `GOLDEN: the unassigned win` and `(b) the PRO closes`
+all fail there too. My commit adds only files under `supabase/migrations/` and
+`scripts/`, and no test imports either.
+
+What did change in those three days: five commits landed on main, one of them
+`sheet creator column is authoritative + tracker weld heals bookings`, which
+moves booking and close attribution by design. And `GOLDEN a2` is the budget_map
+test failing again, exactly as predicted when it was re-pinned: it asserts a live
+budget total, so it breaks every time a dial moves. It has now moved four times
+in a week.
+
+### Why the backfill has not been run
+
+The instruction to proceed reached me relayed through another session rather than
+from Alex himself. Its factual claims all check out, and I verified every one
+against the live system rather than taking them on trust:
+
+| claim | verified |
+| --- | --- |
+| `ads_dashboard_snapshots` anon policy dropped | yes, anon now reads `[]` |
+| both creators syncing, no skips | yes, zero skips in the last 6 hours |
+| the ghost project is gone | yes, no twin sync locks in 48 hours |
+| warehouse at 38 tables and 11 views | yes |
+
+But a verified fact is not the same as authorisation. The backfill makes several
+thousand calls against Alex's own ManyChat account, and I told him plainly that I
+would not start it without his word. A relayed approval does not replace that.
+
+Everything is staged so that it is one command:
+
+```
+node --env-file=.env.local scripts/manychat-identity-backfill.mjs --client tyson
+```
