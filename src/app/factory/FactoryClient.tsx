@@ -20,6 +20,7 @@ import {
   Pencil,
   MessageSquare,
   Link2,
+  Archive as ArchiveIcon,
 } from "lucide-react";
 import "./factory.css";
 import Workspace from "./Workspace";
@@ -46,6 +47,7 @@ interface Item {
   copy_text: string | null;
   image_direction: string | null;
   stage: Stage;
+  status?: string | null;
   image_url: string | null;
   revision_note: string | null;
   comments?: FComment[] | null;
@@ -200,21 +202,29 @@ export default function FactoryClient() {
     [projects, activeProjectId]
   );
 
+  // Archived items live in the project's own archive, never on the working views.
+  const activeItems = useMemo(
+    () => (activeProject ? activeProject.items.filter((it) => it.status !== "archived") : []),
+    [activeProject]
+  );
+  const archivedItems = useMemo(
+    () => (activeProject ? activeProject.items.filter((it) => it.status === "archived") : []),
+    [activeProject]
+  );
+
   const styleOptions = useMemo(() => {
-    if (!activeProject) return [];
     const s = new Set<string>();
-    for (const it of activeProject.items) if (it.style) s.add(it.style);
+    for (const it of activeItems) if (it.style) s.add(it.style);
     return Array.from(s).sort();
-  }, [activeProject]);
+  }, [activeItems]);
 
   const filteredItems = useMemo(() => {
-    if (!activeProject) return [];
-    return activeProject.items.filter((it) => {
+    return activeItems.filter((it) => {
       if (bucketFilter !== "all" && it.bucket !== bucketFilter) return false;
       if (styleFilter !== "all" && it.style !== styleFilter) return false;
       return true;
     });
-  }, [activeProject, bucketFilter, styleFilter]);
+  }, [activeItems, bucketFilter, styleFilter]);
 
   // ---- Item mutations (optimistic-ish: refetch right after) ----
   const patchItem = useCallback(
@@ -239,6 +249,9 @@ export default function FactoryClient() {
 
   const approve = (id: string) => patchItem(id, { approve: true });
   const sendRevision = (id: string, note: string) => patchItem(id, { revisionNote: note });
+  const archiveItem = (id: string) => patchItem(id, { status: "archived" });
+  const restoreItem = (id: string) => patchItem(id, { status: "" });
+  const [archiveOpen, setArchiveOpen] = useState(false);
 
   // Get-or-mint the public share link for the active project and put it on the
   // clipboard. The link opens the no-login client review board (/p/factory).
@@ -275,36 +288,6 @@ export default function FactoryClient() {
 
   return (
     <div className="fc-wrap">
-      {/* Header */}
-      <header className="fc-header">
-        <div className="fc-title-row">
-          <span className="fc-title-icon">
-            <Factory size={20} />
-          </span>
-          <div>
-            <h1 className="fc-title">Factory</h1>
-            <p className="fc-subtitle">Live creative-production tracker</p>
-          </div>
-        </div>
-
-        {projects.length > 1 && (
-          <select
-            className="fc-select"
-            value={activeProjectId ?? ""}
-            onChange={(e) => {
-              setActiveProjectId(e.target.value);
-              setView("board");
-            }}
-          >
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        )}
-      </header>
-
       {error && <div className="fc-error">{error}</div>}
 
       {!activeProject ? (
@@ -320,8 +303,12 @@ export default function FactoryClient() {
         />
       ) : (
         <>
-          {/* Project bar: name + view toggle */}
-          <div className="fc-projectbar">
+          {/* One topbar: identity on the left, actions + views on the right. */}
+          <header className="fc-topbar">
+            <span className="fc-brand" title="Factory">
+              <Factory size={16} />
+            </span>
+
             <div className="fc-projectwrap">
               <button
                 className="fc-projectname"
@@ -330,22 +317,37 @@ export default function FactoryClient() {
               >
                 <span className="fc-projectname-text">{activeProject.name}</span>
                 {activeProject.client && <span className="fc-projectclient">{activeProject.client}</span>}
-                <span className="fc-projectcount">{activeProject.counts.total} ads</span>
                 <ChevronDown size={14} className="fc-proj-chev" />
               </button>
               {projMenuOpen && (
                 <div className="fc-projmenu">
                   <div className="fc-projmenu-label">Projects</div>
-                  {projects.map((p) => (
-                    <button
-                      key={p.id}
-                      className={`fc-projmenu-item ${p.id === activeProjectId ? "on" : ""}`}
-                      onClick={() => { setActiveProjectId(p.id); setProjMenuOpen(false); setView("board"); }}
-                    >
-                      <span>{p.name}</span>
-                      <span className="fc-projmenu-count">{p.counts.total}</span>
-                    </button>
-                  ))}
+                  {projects.map((p) => {
+                    const done = p.counts.completed;
+                    const total = p.counts.total;
+                    return (
+                      <button
+                        key={p.id}
+                        className={`fc-projmenu-item ${p.id === activeProjectId ? "on" : ""}`}
+                        onClick={() => { setActiveProjectId(p.id); setProjMenuOpen(false); setView("board"); }}
+                      >
+                        <span className="fc-projmenu-main">
+                          <span className="fc-projmenu-name">{p.name}</span>
+                          {total > 0 && (
+                            <span className="fc-projmenu-bar" aria-hidden>
+                              <span
+                                className="fc-projmenu-fill"
+                                style={{ width: `${Math.round((done / total) * 100)}%` }}
+                              />
+                            </span>
+                          )}
+                        </span>
+                        <span className="fc-projmenu-count">
+                          {total > 0 ? `${done}/${total}` : "empty"}
+                        </span>
+                      </button>
+                    );
+                  })}
                   <div className="fc-projmenu-new">
                     <button className="fc-projmenu-newbtn" onClick={() => createProject("funnel")}>＋ New project</button>
                     <button className="fc-projmenu-newbtn canvas" onClick={() => createProject("canvas")}>＋ New canvas</button>
@@ -355,48 +357,63 @@ export default function FactoryClient() {
               )}
             </div>
 
+            <span className="fc-topbar-spacer" />
+
             {activeProject.kind === "canvas" ? (
               <span className="fc-canvas-badge">Canvas board</span>
             ) : (
-            <div className="fc-viewtoggle">
-              <button
-                className="fc-vt-btn"
-                onClick={shareProject}
-                disabled={shareState === "busy"}
-                title="Copy a no-login review link for this project"
-              >
-                <Link2 size={14} />
-                {shareState === "copied" ? "Link copied" : shareState === "failed" ? "Could not copy" : "Share"}
-              </button>
-              <button
-                className={`fc-vt-btn ${view === "workspace" ? "fc-vt-active" : ""}`}
-                onClick={() => setView("workspace")}
-              >
-                <ListTree size={14} /> Workspace
-              </button>
-              <button
-                className={`fc-vt-btn ${view === "board" ? "fc-vt-active" : ""}`}
-                onClick={() => setView("board")}
-              >
-                <LayoutGrid size={14} /> Board
-              </button>
-              <button
-                className={`fc-vt-btn ${view === "files" ? "fc-vt-active" : ""}`}
-                onClick={() => setView("files")}
-              >
-                <FolderOpen size={14} /> Files
-              </button>
-              <button
-                className="fc-vt-btn"
-                onClick={() => setView("detail")}
-              >
-                <BookOpen size={14} /> Read all
-              </button>
-            </div>
+              <>
+                <button
+                  className="fc-tool-btn"
+                  onClick={() => setArchiveOpen(true)}
+                  title="This project's archive"
+                >
+                  <ArchiveIcon size={14} />
+                  Archive
+                  {archivedItems.length > 0 && (
+                    <span className="fc-tool-count">{archivedItems.length}</span>
+                  )}
+                </button>
+                <button
+                  className="fc-tool-btn"
+                  onClick={shareProject}
+                  disabled={shareState === "busy"}
+                  title="Copy a no-login review link for this project"
+                >
+                  <Link2 size={14} />
+                  {shareState === "copied" ? "Link copied" : shareState === "failed" ? "Could not copy" : "Share"}
+                </button>
+                <div className="fc-viewtoggle">
+                  <button
+                    className={`fc-vt-btn ${view === "workspace" ? "fc-vt-active" : ""}`}
+                    onClick={() => setView("workspace")}
+                  >
+                    <ListTree size={14} /> Workspace
+                  </button>
+                  <button
+                    className={`fc-vt-btn ${view === "board" ? "fc-vt-active" : ""}`}
+                    onClick={() => setView("board")}
+                  >
+                    <LayoutGrid size={14} /> Board
+                  </button>
+                  <button
+                    className={`fc-vt-btn ${view === "files" ? "fc-vt-active" : ""}`}
+                    onClick={() => setView("files")}
+                  >
+                    <FolderOpen size={14} /> Files
+                  </button>
+                  <button
+                    className="fc-vt-btn"
+                    onClick={() => setView("detail")}
+                  >
+                    <BookOpen size={14} /> Read all
+                  </button>
+                </div>
+              </>
             )}
-          </div>
+          </header>
 
-          {/* Filter / group bar (image-ad views only) */}
+          {/* Filters, only where they mean something (image-ad views). */}
           {activeProject.kind !== "canvas" && view !== "workspace" && (
           <div className="fc-filterbar">
             <div className="fc-seg">
@@ -415,31 +432,37 @@ export default function FactoryClient() {
               ))}
             </div>
 
-            <select
-              className="fc-select fc-select-sm"
-              value={styleFilter}
-              onChange={(e) => setStyleFilter(e.target.value)}
-            >
-              <option value="all">All styles</option>
-              {styleOptions.map((s) => (
-                <option key={s} value={s}>
-                  {prettyStyle(s)}
-                </option>
-              ))}
-            </select>
-
-            {view === "board" && (
-              <label className="fc-checkbox">
-                <input
-                  type="checkbox"
-                  checked={groupByBucket}
-                  onChange={(e) => setGroupByBucket(e.target.checked)}
-                />
-                Group by bucket
-              </label>
+            {styleOptions.length > 0 && (
+              <select
+                className="fc-select fc-select-sm"
+                value={styleFilter}
+                onChange={(e) => setStyleFilter(e.target.value)}
+              >
+                <option value="all">All styles</option>
+                {styleOptions.map((s) => (
+                  <option key={s} value={s}>
+                    {prettyStyle(s)}
+                  </option>
+                ))}
+              </select>
             )}
 
-            <span className="fc-filtercount">{filteredItems.length} shown</span>
+            {view === "board" && (
+              <button
+                className={`fc-seg-btn fc-group-toggle ${groupByBucket ? "fc-seg-active" : ""}`}
+                aria-pressed={groupByBucket}
+                onClick={() => setGroupByBucket((g) => !g)}
+                title="Group board cards by bucket"
+              >
+                Group by bucket
+              </button>
+            )}
+
+            <span className="fc-filtercount">
+              {filteredItems.length === activeItems.length
+                ? `${activeItems.length} ads`
+                : `${filteredItems.length} of ${activeItems.length}`}
+            </span>
           </div>
           )}
 
@@ -453,6 +476,7 @@ export default function FactoryClient() {
               groupByBucket={groupByBucket}
               onApprove={approve}
               onRevision={sendRevision}
+              onArchive={archiveItem}
               onExport={exportCompleted}
               onLightbox={setLightbox}
               onHistory={setHistoryItem}
@@ -480,6 +504,16 @@ export default function FactoryClient() {
         />
       )}
 
+      {archiveOpen && activeProject && (
+        <ArchivePanel
+          projectName={activeProject.name}
+          items={archivedItems}
+          onRestore={restoreItem}
+          onClose={() => setArchiveOpen(false)}
+          onLightbox={setLightbox}
+        />
+      )}
+
       {lightbox && (
         <ImageViewer
           url={lightbox.url}
@@ -488,6 +522,7 @@ export default function FactoryClient() {
           onNavigate={(it) => setLightbox({ url: it.image_url!, itemId: it.id })}
           onApprove={approve}
           onRevision={sendRevision}
+          onArchive={archiveItem}
           onClose={() => setLightbox(null)}
         />
       )}
@@ -504,7 +539,8 @@ export default function FactoryClient() {
 // high its z-index is.
 //
 // Keys: ArrowLeft/Right move between images, Enter approves when the note box is
-// empty and sends the note when it is not, Esc closes.
+// empty and sends the note when it is not, X (with an empty note box) archives,
+// Esc closes.
 function ImageViewer({
   url,
   itemId,
@@ -512,6 +548,7 @@ function ImageViewer({
   onNavigate,
   onApprove,
   onRevision,
+  onArchive,
   onClose,
 }: {
   url: string;
@@ -520,6 +557,7 @@ function ImageViewer({
   onNavigate: (item: Item) => void;
   onApprove: (id: string) => void;
   onRevision: (id: string, note: string) => void;
+  onArchive?: (id: string) => void;
   onClose: () => void;
 }) {
   const [note, setNote] = useState("");
@@ -569,6 +607,16 @@ function ImageViewer({
     else onClose();
   }, [item, note, onRevision, onApprove, deck, index, onNavigate, onClose, say]);
 
+  // Archive the current image and keep moving through the deck.
+  const archive = useCallback(() => {
+    if (!item || !onArchive) return;
+    onArchive(item.id);
+    say("Archived");
+    const next = deck[index + 1] ?? deck[index - 1];
+    if (next) onNavigate(next);
+    else onClose();
+  }, [item, onArchive, deck, index, onNavigate, onClose, say]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -583,11 +631,16 @@ function ImageViewer({
       } else if (e.key === "Enter" && item) {
         e.preventDefault();
         act();
+      } else if ((e.key === "x" || e.key === "X") && item && !note.trim()) {
+        // X only acts while the note box is empty, so typing "x" in a note
+        // never fires it.
+        e.preventDefault();
+        archive();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [go, act, item, onClose]);
+  }, [go, act, archive, item, note, onClose]);
 
   if (!mounted) return null;
 
@@ -622,6 +675,15 @@ function ImageViewer({
               <span className="fc-lb-pos">
                 {index + 1} / {deck.length}
               </span>
+              {onArchive && (
+                <button
+                  className="fc-lb-archive"
+                  onClick={archive}
+                  title="Move to this project's archive (X)"
+                >
+                  <ArchiveIcon size={13} /> Archive
+                </button>
+              )}
             </div>
             {item.client_verdict && (
               <div className={`fc-lb-client fc-lb-client-${item.client_verdict}`}>
@@ -635,7 +697,7 @@ function ImageViewer({
                 ref={inputRef}
                 className="fc-lb-input"
                 value={note}
-                placeholder="Note to fix… (Enter sends · empty Enter approves)"
+                placeholder="Note to fix… (Enter sends · empty Enter approves · X archives)"
                 onChange={(e) => setNote(e.target.value)}
               />
               <button className={`fc-lb-act ${note.trim() ? "fc-lb-send" : "fc-lb-ok"}`} onClick={act}>
@@ -673,6 +735,7 @@ function BoardView({
   groupByBucket,
   onApprove,
   onRevision,
+  onArchive,
   onExport,
   onLightbox,
   onHistory,
@@ -683,6 +746,7 @@ function BoardView({
   groupByBucket: boolean;
   onApprove: (id: string) => void;
   onRevision: (id: string, note: string) => void;
+  onArchive: (id: string) => void;
   onExport: () => void;
   onLightbox: (payload: { url: string; itemId?: string }) => void;
   onHistory: (item: Item) => void;
@@ -697,6 +761,7 @@ function BoardView({
     item: it,
     onApprove,
     onRevision,
+    onArchive,
     onLightbox,
     onHistory,
     onPatch,
@@ -821,6 +886,7 @@ function Card({
   item,
   onApprove,
   onRevision,
+  onArchive,
   onLightbox,
   onHistory,
   onPatch,
@@ -831,6 +897,7 @@ function Card({
   item: Item;
   onApprove: (id: string) => void;
   onRevision: (id: string, note: string) => void;
+  onArchive: (id: string) => void;
   onLightbox: (payload: { url: string; itemId?: string }) => void;
   onHistory: (item: Item) => void;
   onPatch: (id: string, payload: Record<string, unknown>) => void;
@@ -841,6 +908,7 @@ function Card({
   const [note, setNote] = useState("");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [noting, setNoting] = useState(false);
   const [draft, setDraft] = useState(item.copy_text || "");
   const [commentDraft, setCommentDraft] = useState("");
   const [showComments, setShowComments] = useState(false);
@@ -852,6 +920,7 @@ function Card({
     if (!n) return;
     onRevision(item.id, n);
     setNote("");
+    setNoting(false);
   };
 
   const saveCopy = () => {
@@ -899,6 +968,14 @@ function Card({
             <History size={10} /> v{item.versions!.length}
           </button>
         )}
+        <button
+          className="fc-card-archive"
+          onClick={() => onArchive(item.id)}
+          title="Move to this project's archive"
+          aria-label="Archive"
+        >
+          <ArchiveIcon size={13} />
+        </button>
       </div>
 
       {item.client_verdict && (
@@ -967,6 +1044,13 @@ function Card({
             <RotateCcw size={13} /> Reopen
           </button>
         )}
+        <button
+          className={`fc-act-comment ${noting ? "on" : ""}`}
+          onClick={() => setNoting((v) => !v)}
+          title="Send a revision note"
+        >
+          <RotateCcw size={13} /> Note
+        </button>
         {!editing && (
           <button className="fc-act-edit" onClick={() => { setDraft(item.copy_text || ""); setEditing(true); }}>
             <Pencil size={13} /> Edit copy
@@ -1003,23 +1087,108 @@ function Card({
         </div>
       )}
 
-      <div className="fc-revise-row">
-        <textarea
-          className="fc-revise-input"
-          placeholder="What to change…"
-          rows={2}
-          value={note}
-          onChange={(e) => {
-            setNote(e.target.value);
-            e.target.style.height = "auto";
-            e.target.style.height = Math.min(e.target.scrollHeight, 220) + "px";
-          }}
-        />
-        <button className="fc-revise-send" onClick={submitRevision} disabled={!note.trim()}>
-          Send
-        </button>
-      </div>
+      {noting && (
+        <div className="fc-revise-row">
+          <textarea
+            autoFocus
+            className="fc-revise-input"
+            placeholder="What to change…"
+            rows={2}
+            value={note}
+            onChange={(e) => {
+              setNote(e.target.value);
+              e.target.style.height = "auto";
+              e.target.style.height = Math.min(e.target.scrollHeight, 220) + "px";
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitRevision(); }
+              if (e.key === "Escape") { setNote(""); setNoting(false); }
+            }}
+          />
+          <button className="fc-revise-send" onClick={submitRevision} disabled={!note.trim()}>
+            Send
+          </button>
+        </div>
+      )}
     </div>
+  );
+}
+
+// =========================================================================
+// Archive panel — one tidy home per project for killed ads, with restore
+// =========================================================================
+function ArchivePanel({
+  projectName,
+  items,
+  onRestore,
+  onClose,
+  onLightbox,
+}: {
+  projectName: string;
+  items: Item[];
+  onRestore: (id: string) => void;
+  onClose: () => void;
+  onLightbox: (payload: { url: string; itemId?: string }) => void;
+}) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { e.preventDefault(); onClose(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  if (!mounted) return null;
+
+  return createPortal(
+    <div className="fc-history" onClick={onClose}>
+      <div className="fc-history-panel fc-arch-panel" onClick={(e) => e.stopPropagation()}>
+        <div className="fc-history-head">
+          <span className="fc-history-title">
+            Archive · {projectName}
+            <span className="fc-arch-count">{items.length}</span>
+          </span>
+          <button className="fc-history-close" onClick={onClose} aria-label="Close">
+            <X size={18} />
+          </button>
+        </div>
+        {items.length === 0 ? (
+          <div className="fc-col-empty">
+            Nothing archived. Press X on any image in the expanded view, or the
+            archive icon on a card, to move it here.
+          </div>
+        ) : (
+          <div className="fc-arch-grid">
+            {items.map((it) => (
+              <div key={it.id} className="fc-arch-tile">
+                {it.image_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    className="fc-arch-thumb"
+                    src={it.image_url}
+                    alt={it.label}
+                    onClick={() => onLightbox({ url: it.image_url! })}
+                  />
+                ) : (
+                  <div className="fc-arch-noimg">
+                    <ImageIcon size={14} />
+                  </div>
+                )}
+                <div className="fc-arch-meta">
+                  <span className="fc-arch-label">{it.label}</span>
+                  <button className="fc-arch-restore" onClick={() => onRestore(it.id)}>
+                    <RotateCcw size={12} /> Restore
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body
   );
 }
 

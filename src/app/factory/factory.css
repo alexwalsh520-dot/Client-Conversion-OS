@@ -9,39 +9,61 @@
   color: var(--text-primary);
 }
 
-/* ---- Header ---- */
-.fc-header {
+/* ---- Topbar: one row owns identity (left) and actions/views (right) ---- */
+.fc-topbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 20px;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
 }
-.fc-title-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.fc-title-icon {
+.fc-brand {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
   background: var(--accent-soft);
   color: var(--accent);
+  flex: none;
 }
-.fc-title {
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -0.5px;
-  margin: 0;
+.fc-topbar-spacer {
+  flex: 1 1 auto;
 }
-.fc-subtitle {
+.fc-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text-secondary);
   font-size: 12.5px;
-  color: var(--text-muted);
-  margin: 2px 0 0;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.fc-tool-btn:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+.fc-tool-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.fc-tool-count {
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
 }
 
 .fc-error {
@@ -60,14 +82,7 @@
   text-align: center;
 }
 
-/* ---- Project bar ---- */
-.fc-projectbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
-}
+/* ---- Project switcher ---- */
 .fc-projectname {
   display: inline-flex;
   align-items: center;
@@ -153,6 +168,36 @@
 .fc-projmenu-count {
   font-size: 11px;
   color: var(--text-muted);
+  flex: none;
+  margin-left: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.fc-projmenu-main {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  flex: 1;
+}
+.fc-projmenu-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fc-projmenu-bar {
+  display: block;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+.fc-projmenu-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  opacity: 0.75;
+  transition: width 0.3s ease;
 }
 .fc-projmenu-hint {
   font-size: 11px;
@@ -1450,3 +1495,181 @@
 .fc-projmenu-newbtn:hover { border-color: var(--accent); color: var(--accent); }
 .fc-projmenu-newbtn.canvas { color: var(--accent); border-color: var(--accent-soft); }
 .fc-canvas-badge { font-size: 12px; font-weight: 700; color: var(--accent); background: var(--accent-soft); border-radius: 8px; padding: 6px 12px; }
+
+/* ================================================================
+   Facelift: group toggle, card archive, lightbox archive, project
+   archive panel, motion polish
+   ================================================================ */
+
+/* Standalone "Group by bucket" toggle (lives outside a .fc-seg) */
+.fc-group-toggle {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 7px 13px;
+}
+.fc-group-toggle:hover {
+  border-color: var(--border-hover);
+}
+.fc-group-toggle.fc-seg-active {
+  border-color: transparent;
+}
+
+/* Card head: quiet archive control, revealed by hover, always reachable */
+.fc-card-head {
+  position: relative;
+}
+.fc-card-archive {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+.fc-card:hover .fc-card-archive,
+.fc-card-archive:focus-visible {
+  opacity: 1;
+}
+.fc-card-archive:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
+/* Lightbox: archive sits with the meta, clear of the approve path */
+.fc-lb-archive {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.fc-lb-archive:hover {
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+  background: var(--bg-card-hover);
+}
+
+/* Archive panel (reuses the history overlay chrome) */
+.fc-arch-panel {
+  width: min(880px, 94vw);
+}
+.fc-arch-count {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+.fc-arch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+  padding: 4px 2px 2px;
+  max-height: 62vh;
+  overflow-y: auto;
+}
+.fc-arch-tile {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.fc-arch-thumb {
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  object-fit: cover;
+  cursor: zoom-in;
+  display: block;
+}
+.fc-arch-noimg {
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  background: var(--bg-card);
+}
+.fc-arch-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 9px;
+}
+.fc-arch-label {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fc-arch-restore {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.fc-arch-restore:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Motion: overlays arrive, they don't pop */
+.fc-lightbox,
+.fc-history {
+  animation: fc-fade-in 0.16s ease-out;
+}
+.fc-lb-stage,
+.fc-history-panel {
+  animation: fc-rise-in 0.18s cubic-bezier(0.2, 0.8, 0.25, 1);
+}
+@keyframes fc-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes fc-rise-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fc-lightbox,
+  .fc-history,
+  .fc-lb-stage,
+  .fc-history-panel {
+    animation: none;
+  }
+  .fc-projmenu-fill {
+    transition: none;
+  }
+}
