@@ -322,32 +322,18 @@ export default function FactoryClient() {
               {projMenuOpen && (
                 <div className="fc-projmenu">
                   <div className="fc-projmenu-label">Projects</div>
-                  {projects.map((p) => {
-                    const done = p.counts.completed;
-                    const total = p.counts.total;
-                    return (
-                      <button
-                        key={p.id}
-                        className={`fc-projmenu-item ${p.id === activeProjectId ? "on" : ""}`}
-                        onClick={() => { setActiveProjectId(p.id); setProjMenuOpen(false); setView("board"); }}
-                      >
-                        <span className="fc-projmenu-main">
-                          <span className="fc-projmenu-name">{p.name}</span>
-                          {total > 0 && (
-                            <span className="fc-projmenu-bar" aria-hidden>
-                              <span
-                                className="fc-projmenu-fill"
-                                style={{ width: `${Math.round((done / total) * 100)}%` }}
-                              />
-                            </span>
-                          )}
-                        </span>
-                        <span className="fc-projmenu-count">
-                          {total > 0 ? `${done}/${total}` : "empty"}
-                        </span>
-                      </button>
-                    );
-                  })}
+                  {projects.map((p) => (
+                    <button
+                      key={p.id}
+                      className={`fc-projmenu-item ${p.id === activeProjectId ? "on" : ""}`}
+                      onClick={() => { setActiveProjectId(p.id); setProjMenuOpen(false); setView("board"); }}
+                    >
+                      <span className="fc-projmenu-name">{p.name}</span>
+                      <span className="fc-projmenu-count">
+                        {p.counts.total > 0 ? `${p.counts.completed}/${p.counts.total}` : "empty"}
+                      </span>
+                    </button>
+                  ))}
                   <div className="fc-projmenu-new">
                     <button className="fc-projmenu-newbtn" onClick={() => createProject("funnel")}>＋ New project</button>
                     <button className="fc-projmenu-newbtn canvas" onClick={() => createProject("canvas")}>＋ New canvas</button>

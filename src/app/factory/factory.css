@@ -172,32 +172,10 @@
   margin-left: 12px;
   font-variant-numeric: tabular-nums;
 }
-.fc-projmenu-main {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  min-width: 0;
-  flex: 1;
-}
 .fc-projmenu-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.fc-projmenu-bar {
-  display: block;
-  height: 3px;
-  border-radius: 999px;
-  background: var(--border);
-  overflow: hidden;
-}
-.fc-projmenu-fill {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
-  background: var(--accent);
-  opacity: 0.75;
-  transition: width 0.3s ease;
 }
 .fc-projmenu-hint {
   font-size: 11px;
@@ -1668,8 +1646,5 @@
   .fc-lb-stage,
   .fc-history-panel {
     animation: none;
-  }
-  .fc-projmenu-fill {
-    transition: none;
   }
 }
