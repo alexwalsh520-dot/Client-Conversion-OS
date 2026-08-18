@@ -148,18 +148,41 @@ export default function TodosClient() {
   const [showStructured, setShowStructured] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
-  // Match the artifact viewer's reading size. claude.ai renders at a larger
-  // effective zoom on big monitors than our domain does, so the same page
-  // reads smaller here. Scale the embedded page up on wide screens; laptop
-  // widths render 1:1 (Alex confirmed the MacBook size is right).
+  // Match the artifact viewer's reading size. Browsers keep zoom per website,
+  // so the same page can read bigger on claude.ai than here. Wide screens get
+  // a scaled default, and the A- / A+ control lets Alex set the exact size he
+  // likes; his choice is remembered on this device and wins over the default.
+  const [frameZoom, setFrameZoom] = useState<number | null>(() => {
+    if (typeof window === "undefined") return null;
+    const v = parseFloat(window.localStorage.getItem("todos-frame-zoom") ?? "");
+    return Number.isFinite(v) && v >= 0.7 && v <= 2 ? v : null;
+  });
+  const effectiveZoom = useCallback(() => {
+    if (frameZoom !== null) return frameZoom;
+    const w = window.innerWidth;
+    return w >= 2200 ? 1.35 : w >= 1700 ? 1.25 : 1;
+  }, [frameZoom]);
   const applyFrameZoom = useCallback(() => {
     const doc = iframeRef.current?.contentDocument;
     if (!doc?.documentElement) return;
-    const w = window.innerWidth;
-    const zoom = w >= 2200 ? "1.35" : w >= 1700 ? "1.25" : "1";
-    (doc.documentElement.style as CSSStyleDeclaration & { zoom: string }).zoom = zoom;
-  }, []);
+    (doc.documentElement.style as CSSStyleDeclaration & { zoom: string }).zoom =
+      String(effectiveZoom());
+  }, [effectiveZoom]);
+  const nudgeZoom = useCallback(
+    (dir: 1 | -1 | 0) => {
+      if (dir === 0) {
+        window.localStorage.removeItem("todos-frame-zoom");
+        setFrameZoom(null);
+        return;
+      }
+      const next = Math.min(2, Math.max(0.7, Math.round((effectiveZoom() + dir * 0.1) * 100) / 100));
+      window.localStorage.setItem("todos-frame-zoom", String(next));
+      setFrameZoom(next);
+    },
+    [effectiveZoom]
+  );
   useEffect(() => {
+    applyFrameZoom();
     window.addEventListener("resize", applyFrameZoom);
     return () => window.removeEventListener("resize", applyFrameZoom);
   }, [applyFrameZoom]);
@@ -297,6 +320,18 @@ export default function TodosClient() {
         <div className="td-custom">
           <div className="td-custom-bar">
             <span>Custom page for {prettyDay(day)}, built by Claude</span>
+            <span className="td-zoom">
+              <button type="button" onClick={() => nudgeZoom(-1)} aria-label="Smaller text">A-</button>
+              <button
+                type="button"
+                className="td-zoom-val"
+                onClick={() => nudgeZoom(0)}
+                title="Reset to automatic size"
+              >
+                {Math.round(effectiveZoom() * 100)}%
+              </button>
+              <button type="button" onClick={() => nudgeZoom(1)} aria-label="Bigger text">A+</button>
+            </span>
             <button type="button" onClick={() => setShowStructured(true)}>Structured view</button>
           </div>
           <iframe
