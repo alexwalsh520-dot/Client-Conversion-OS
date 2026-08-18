@@ -252,6 +252,15 @@ body {
   overflow: hidden;
 }
 
+/* ToDos custom-page mode: a Claude-shipped page owns the whole viewport, same
+   as the artifact viewer. The shell's 1100px cap stays for the structured list
+   (no .td-full there). Overflow stays visible so the iframe page scrolls. */
+.main-content:has(.todos-page.td-full) {
+  padding: 0;
+  max-width: none;
+  margin: 0;
+}
+
 /* Full-bleed for the public Ads Leaderboard pages (contestant flow + public
    board). Kills the centered max-width + padding so the dark premium UI fills
    the viewport edge-to-edge. Keeps overflow visible so the page scrolls. */
