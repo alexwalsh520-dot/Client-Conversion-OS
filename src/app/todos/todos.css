@@ -1,0 +1,291 @@
+/* ToDos workspace: the "While You Were Out" artifact design language.
+   Scoped under .todos-page so it never leaks into the rest of the app. */
+.todos-page {
+  --td-bg: #0e0e11;
+  --td-panel: #151519;
+  --td-line: #232329;
+  --td-line2: #2e2e36;
+  --td-text: #eceaf0;
+  --td-muted: #98959f;
+  --td-faint: #67646f;
+  --td-gold: #c9a96e;
+  --td-gold-dim: #8f7a52;
+  --td-good: #4ade80;
+  --td-bad: #f87171;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 8px 4px 80px;
+  color: var(--td-text);
+}
+.td-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.td-kicker {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--td-faint);
+}
+.td-head h1 {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-top: 4px;
+}
+.td-daystrip {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.td-daychip {
+  background: var(--td-panel);
+  border: 1px solid var(--td-line);
+  color: var(--td-muted);
+  border-radius: 999px;
+  padding: 6px 13px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.td-daychip:hover {
+  border-color: var(--td-gold-dim);
+  color: var(--td-text);
+}
+.td-daychip.on {
+  background: rgba(201, 169, 110, 0.16);
+  border-color: var(--td-gold);
+  color: var(--td-gold);
+}
+.td-daychip.new {
+  color: var(--td-gold);
+  border-style: dashed;
+}
+.td-loading {
+  color: var(--td-faint);
+  padding: 40px 0;
+  font-size: 14px;
+}
+.td-title {
+  width: 100%;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--td-line);
+  color: var(--td-text);
+  font-size: 19px;
+  font-weight: 700;
+  padding: 8px 2px;
+  outline: none;
+  margin-bottom: 14px;
+}
+.td-title:focus {
+  border-bottom-color: var(--td-gold-dim);
+}
+.td-card {
+  background: var(--td-panel);
+  border: 1px solid var(--td-line);
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin-bottom: 14px;
+}
+.td-bl {
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--td-faint);
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.td-notes {
+  width: 100%;
+  background: none;
+  border: 0;
+  color: var(--td-text);
+  font-size: 14px;
+  line-height: 1.6;
+  outline: none;
+  resize: vertical;
+  font-family: inherit;
+}
+.td-sechead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.td-sectitle {
+  flex: 1;
+  min-width: 120px;
+  background: none;
+  border: 0;
+  color: var(--td-text);
+  font-size: 15px;
+  font-weight: 700;
+  outline: none;
+}
+.td-sectitle::placeholder {
+  color: var(--td-faint);
+}
+.td-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--td-muted);
+  font-size: 12.5px;
+}
+.td-timer-mins {
+  width: 44px;
+  background: none;
+  border: 1px solid var(--td-line2);
+  border-radius: 6px;
+  color: var(--td-muted);
+  font-size: 12px;
+  padding: 3px 6px;
+  text-align: center;
+}
+.td-timer-disp {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--td-text);
+  min-width: 44px;
+}
+.td-timer.done .td-timer-disp {
+  color: var(--td-bad);
+}
+.td-timer button {
+  background: none;
+  border: 1px solid var(--td-line2);
+  color: var(--td-muted);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.td-timer button:hover {
+  color: var(--td-gold);
+  border-color: var(--td-gold-dim);
+}
+.td-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--td-line);
+}
+.td-check {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  margin-top: 3px;
+  border-radius: 6px;
+  border: 1px solid var(--td-line2);
+  background: none;
+  color: var(--td-good);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  line-height: 1;
+}
+.td-check:hover {
+  border-color: var(--td-gold-dim);
+}
+.td-item.done .td-check {
+  background: rgba(74, 222, 128, 0.12);
+  border-color: var(--td-good);
+}
+.td-itembody {
+  flex: 1;
+  min-width: 0;
+}
+.td-itemtext {
+  width: 100%;
+  background: none;
+  border: 0;
+  color: var(--td-text);
+  font-size: 14px;
+  outline: none;
+}
+.td-item.done .td-itemtext {
+  color: var(--td-faint);
+  text-decoration: line-through;
+}
+.td-itemnote {
+  width: 100%;
+  background: none;
+  border: 0;
+  color: var(--td-muted);
+  font-size: 12.5px;
+  outline: none;
+  margin-top: 2px;
+}
+.td-itemnote::placeholder {
+  color: transparent;
+}
+.td-item:hover .td-itemnote::placeholder,
+.td-itemnote:focus::placeholder {
+  color: var(--td-faint);
+}
+.td-x {
+  background: none;
+  border: 0;
+  color: var(--td-faint);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 4px;
+  opacity: 0;
+}
+.td-item:hover .td-x,
+.td-sechead:hover .td-x {
+  opacity: 1;
+}
+.td-x:hover {
+  color: var(--td-bad);
+}
+.td-add {
+  background: none;
+  border: 0;
+  color: var(--td-gold);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 8px 0 0;
+}
+.td-addsection {
+  width: 100%;
+  background: none;
+  border: 1px dashed var(--td-line2);
+  border-radius: 10px;
+  color: var(--td-gold);
+  font-size: 13.5px;
+  font-weight: 700;
+  padding: 12px;
+  cursor: pointer;
+  margin-bottom: 14px;
+}
+.td-addsection:hover {
+  border-color: var(--td-gold-dim);
+}
+.td-statusbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--td-faint);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.td-save.saving {
+  color: var(--td-gold);
+}
+.td-save.saved {
+  color: var(--td-good);
+}
+.td-save.error {
+  color: var(--td-bad);
+}
