@@ -23,8 +23,8 @@ type TodoSection = {
   timerMins?: number;
   items: TodoItem[];
 };
-type DayData = { sections: TodoSection[] };
-type DayRow = { day: string; title: string | null; notes: string | null; data: DayData };
+type DayData = { sections: TodoSection[]; pageState?: unknown };
+type DayRow = { day: string; title: string | null; notes: string | null; data: DayData; html?: string | null };
 type DayStub = { day: string; title: string | null };
 
 function uid() {
@@ -144,6 +144,9 @@ export default function TodosClient() {
   const [data, setData] = useState<DayData>({ sections: [] });
   const [loading, setLoading] = useState(true);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [customHtml, setCustomHtml] = useState<string | null>(null);
+  const [showStructured, setShowStructured] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadedDay = useRef<string | null>(null);
 
@@ -165,6 +168,8 @@ export default function TodosClient() {
       const row: DayRow | null = j.row ?? null;
       setTitle(row?.title ?? "");
       setNotes(row?.notes ?? "");
+      setCustomHtml(row?.html ?? null);
+      setShowStructured(false);
       const dd = row?.data;
       setData(dd && Array.isArray(dd.sections) ? dd : { sections: [] });
       loadedDay.current = d;
@@ -178,6 +183,7 @@ export default function TodosClient() {
   useEffect(() => {
     refreshDays();
   }, [refreshDays]);
+
   useEffect(() => {
     loadDay(day);
   }, [day, loadDay]);
@@ -203,6 +209,24 @@ export default function TodosClient() {
     },
     [day, refreshDays]
   );
+
+  // Custom-page bridge: the Claude-shipped page posts {type:"todos-state", state}
+  // as the person interacts; we persist it into data.pageState. On load we hand
+  // the saved state back with {type:"todos-init", state}.
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      const msg = e.data as { type?: string; state?: unknown } | null;
+      if (!msg || msg.type !== "todos-state") return;
+      if (iframeRef.current && e.source !== iframeRef.current.contentWindow) return;
+      setData((prev) => {
+        const next = { ...prev, pageState: msg.state };
+        queueSave(title, notes, next);
+        return next;
+      });
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, [queueSave, title, notes]);
 
   const update = useCallback(
     (fn: (d: DayData) => DayData) => {
@@ -253,8 +277,34 @@ export default function TodosClient() {
 
       {loading ? (
         <div className="td-loading">Loading {prettyDay(day)}...</div>
+      ) : customHtml && !showStructured ? (
+        <div className="td-custom">
+          <div className="td-custom-bar">
+            <span>Custom page for {prettyDay(day)}, built by Claude</span>
+            <button type="button" onClick={() => setShowStructured(true)}>Structured view</button>
+          </div>
+          <iframe
+            ref={iframeRef}
+            className="td-frame"
+            title={`ToDos ${day}`}
+            sandbox="allow-scripts allow-same-origin allow-modals"
+            srcDoc={customHtml}
+            onLoad={() => {
+              iframeRef.current?.contentWindow?.postMessage(
+                { type: "todos-init", state: data.pageState ?? null },
+                "*"
+              );
+            }}
+          />
+        </div>
       ) : (
         <>
+          {customHtml && (
+            <div className="td-custom-bar">
+              <span>This day has a Claude-built page.</span>
+              <button type="button" onClick={() => setShowStructured(false)}>Open it</button>
+            </div>
+          )}
           <input
             className="td-title"
             placeholder={`Name this day (${prettyDay(day)})`}

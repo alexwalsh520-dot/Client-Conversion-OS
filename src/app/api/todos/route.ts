@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
   if (day) {
     const { data, error } = await sb
       .from("todo_days")
-      .select("day, title, notes, data, updated_at")
+      .select("day, title, notes, data, html, updated_at")
       .eq("day", day)
       .maybeSingle();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
   if (!(await requireOwner())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  let body: { day?: string; title?: string; notes?: string; data?: unknown };
+  let body: { day?: string; title?: string; notes?: string; data?: unknown; html?: string | null };
   try {
     body = await req.json();
   } catch {
@@ -55,16 +55,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "day (YYYY-MM-DD) is required" }, { status: 400 });
   }
   const sb = getServiceSupabase();
-  const { error } = await sb.from("todo_days").upsert(
-    {
-      day: body.day,
-      title: body.title ?? null,
-      notes: body.notes ?? null,
-      data: body.data ?? { sections: [] },
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "day" }
-  );
+  const row: Record<string, unknown> = {
+    day: body.day,
+    title: body.title ?? null,
+    notes: body.notes ?? null,
+    data: body.data ?? { sections: [] },
+    updated_at: new Date().toISOString(),
+  };
+  if ("html" in body) row.html = body.html;
+  const { error } = await sb.from("todo_days").upsert(row, { onConflict: "day" });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
