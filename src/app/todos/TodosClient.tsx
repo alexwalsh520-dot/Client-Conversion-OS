@@ -147,6 +147,22 @@ export default function TodosClient() {
   const [customHtml, setCustomHtml] = useState<string | null>(null);
   const [showStructured, setShowStructured] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+
+  // Match the artifact viewer's reading size. claude.ai renders at a larger
+  // effective zoom on big monitors than our domain does, so the same page
+  // reads smaller here. Scale the embedded page up on wide screens; laptop
+  // widths render 1:1 (Alex confirmed the MacBook size is right).
+  const applyFrameZoom = useCallback(() => {
+    const doc = iframeRef.current?.contentDocument;
+    if (!doc?.documentElement) return;
+    const w = window.innerWidth;
+    const zoom = w >= 2200 ? "1.35" : w >= 1700 ? "1.25" : "1";
+    (doc.documentElement.style as CSSStyleDeclaration & { zoom: string }).zoom = zoom;
+  }, []);
+  useEffect(() => {
+    window.addEventListener("resize", applyFrameZoom);
+    return () => window.removeEventListener("resize", applyFrameZoom);
+  }, [applyFrameZoom]);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadedDay = useRef<string | null>(null);
 
@@ -290,6 +306,7 @@ export default function TodosClient() {
             sandbox="allow-scripts allow-same-origin allow-modals"
             srcDoc={customHtml}
             onLoad={() => {
+              applyFrameZoom();
               iframeRef.current?.contentWindow?.postMessage(
                 { type: "todos-init", state: data.pageState ?? null },
                 "*"
