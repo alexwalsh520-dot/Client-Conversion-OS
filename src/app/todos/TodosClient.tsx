@@ -249,7 +249,7 @@ export default function TodosClient() {
   );
 
   return (
-    <div className="todos-page fade-up">
+    <div className={"todos-page fade-up" + (customHtml && !showStructured ? " td-full" : "")}>
       <header className="td-head">
         <div>
           <div className="td-kicker">Private · autosaves · any Claude session can plug in</div>

@@ -366,3 +366,22 @@
   border-radius: 10px;
   background: #0e0e11;
 }
+/* Custom-page mode goes full-bleed: the Claude-shipped page owns the width,
+   exactly like the artifact viewer. The 760px column stays for the structured list. */
+.todos-page.td-full {
+  max-width: none;
+  padding: 0;
+}
+.todos-page.td-full .td-head {
+  padding: 8px 16px 0;
+  margin-bottom: 8px;
+}
+.todos-page.td-full .td-custom-bar {
+  padding: 0 16px;
+}
+.todos-page.td-full .td-frame {
+  min-height: calc(100vh - 150px);
+  border-radius: 0;
+  border-left: 0;
+  border-right: 0;
+}
