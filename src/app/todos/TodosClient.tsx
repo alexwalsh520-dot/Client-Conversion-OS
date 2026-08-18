@@ -12,6 +12,10 @@ type TodoItem = {
   text: string;
   status: "open" | "done";
   note?: string;
+  /** Ask Jezza AI (the Jeremy advisor MCP) about this task. A Claude session
+   * picks up pending questions, consults Jezza with the workspace context doc,
+   * and writes the answer back here. */
+  jezza?: { q?: string; a?: string; status?: "pending" | "answered" };
 };
 type TodoSection = {
   id: string;
@@ -355,6 +359,30 @@ export default function TodosClient() {
                         })
                       }
                     />
+                    <div className="td-jezza-row">
+                      <input
+                        className="td-jezzaq"
+                        value={it.jezza?.q ?? ""}
+                        placeholder="Ask Jezza AI about this task..."
+                        onChange={(e) =>
+                          update((d) => {
+                            const item = d.sections[si].items[ii];
+                            const q = e.target.value;
+                            item.jezza = q
+                              ? { ...(item.jezza ?? {}), q, status: item.jezza?.a ? item.jezza.status : "pending" }
+                              : undefined;
+                            return d;
+                          })
+                        }
+                      />
+                      {it.jezza?.q && !it.jezza?.a && <span className="td-jezza-pending">queued for Jezza</span>}
+                    </div>
+                    {it.jezza?.a && (
+                      <div className="td-jezza-answer">
+                        <span className="td-jezza-tag">Jezza AI</span>
+                        {it.jezza.a}
+                      </div>
+                    )}
                   </div>
                   <button
                     type="button"

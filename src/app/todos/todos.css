@@ -289,3 +289,53 @@
 .td-save.error {
   color: var(--td-bad);
 }
+/* Jezza AI (Jeremy advisor) on a task: question input, pending chip, answer note */
+.td-jezza-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.td-jezzaq {
+  flex: 1;
+  background: none;
+  border: 0;
+  color: #7fc7bd;
+  font-size: 12.5px;
+  outline: none;
+  margin-top: 2px;
+}
+.td-jezzaq::placeholder {
+  color: transparent;
+}
+.td-item:hover .td-jezzaq::placeholder,
+.td-jezzaq:focus::placeholder {
+  color: rgba(127, 199, 189, 0.55);
+}
+.td-jezza-pending {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(127, 199, 189, 0.8);
+  border: 1px solid rgba(127, 199, 189, 0.35);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.td-jezza-answer {
+  margin-top: 6px;
+  border-left: 2px solid rgba(127, 199, 189, 0.5);
+  padding: 4px 10px;
+  font-size: 13px;
+  color: var(--td-muted);
+  white-space: pre-wrap;
+}
+.td-jezza-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #7fc7bd;
+  margin-right: 8px;
+}
