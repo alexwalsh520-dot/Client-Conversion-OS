@@ -1,10 +1,16 @@
 /**
  * GET /api/cron/weekly-meetings-report
  *
- * Fires every Monday ~1 AM PKT (20:00 UTC Sunday) per vercel.json, covering the
- * week that just closed. Counts meetings by the date they were logged (so late
- * entries aren't missed), breaks them down per coach, and DMs the report to
- * Saeed via the coaching Slack bot. Idempotent via an app_settings marker.
+ * NO LONGER ON A CRON SCHEDULE. The meetings numbers now ship inside the Sunday
+ * 4 PM PKT check-in digest (see src/lib/check-in/weekly-digest.ts), against the
+ * same week window as the check-in data, so this standalone DM would be a
+ * duplicate. The route is kept for manual triggering with a Bearer CRON_SECRET,
+ * and still reports the LAST COMPLETED Mon-Sun week rather than the in-progress
+ * one, which is why it is not simply pointed at the new time.
+ *
+ * Counts meetings by the date they were logged (so late entries aren't missed),
+ * breaks them down per coach, and DMs the report to Saeed via the coaching
+ * Slack bot. Idempotent via an app_settings marker.
  *
  * Auth mirrors the other cron routes: trust `x-vercel-cron` set by Vercel cron,
  * OR a `Bearer CRON_SECRET` Authorization header (for manual triggering).

@@ -16,14 +16,16 @@
 
 import { getServiceSupabase } from "@/lib/supabase";
 import { openDmChannel, postBlocks, ADMIN_SLACK_USER_ID } from "@/lib/slack/coaching-bot";
+import { PKT_OFFSET_MS, pktDateStr } from "@/lib/pkt-week";
 
-const PKT_OFFSET_MS = 5 * 60 * 60 * 1000; // UTC+5
 const DAY_MS = 24 * 60 * 60 * 1000;
 const LAST_SENT_KEY = "meetings_report_last_week_start";
 
-// Calendar date (YYYY-MM-DD) in Pakistan time for a UTC instant (ms).
-function pktDateStr(instantMs: number): string {
-  return new Date(instantMs + PKT_OFFSET_MS).toISOString().slice(0, 10);
+export interface MeetingsWindow {
+  startMs: number; // inclusive
+  endMs: number; // exclusive
+  startDate: string; // PKT YYYY-MM-DD
+  endDate: string; // PKT YYYY-MM-DD
 }
 
 export interface MeetingsWeek {
@@ -61,7 +63,22 @@ export function getReportWindow(now: Date = new Date()): {
 }
 
 export async function gatherMeetingsWeek(now: Date = new Date()): Promise<MeetingsWeek> {
-  const { startMs, endMs, startDate, endDate } = getReportWindow(now);
+  return gatherMeetingsInWindow(getReportWindow(now));
+}
+
+/**
+ * Count logged meetings inside an arbitrary window, keyed on created_at
+ * (the date the meeting was LOGGED, not the session date) so the numbers
+ * match the standalone report's long-standing semantics.
+ *
+ * Split out from gatherMeetingsWeek so the Sunday check-in digest can
+ * ask for the in-progress week (Mon 00:00 PKT to the cron firing moment)
+ * rather than the last completed one.
+ */
+export async function gatherMeetingsInWindow(
+  win: MeetingsWindow
+): Promise<MeetingsWeek> {
+  const { startMs, endMs, startDate, endDate } = win;
   const db = getServiceSupabase();
 
   const { data, error } = await db

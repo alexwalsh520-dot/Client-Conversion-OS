@@ -19,7 +19,13 @@ import {
   computeCoachProgressBoost,
   type CheckInSubmissionRow,
 } from "@/lib/check-in/types";
+import { getThisWeekMondayPktMs } from "@/lib/pkt-week";
 import CoachDigestToggle from "./CoachDigestToggle";
+
+// Percentage points added to a coach's overall score for each meeting
+// they logged this week. Uncapped per spec: 4 meetings = +20, 12 = +60.
+// The overall score still tops out at 100.
+const MEETING_LOG_BOOST_POINTS = 5;
 
 interface Props {
   clients: Client[];
@@ -57,6 +63,16 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
   }, []);
   // Get unique coaches from clients
   const coaches = [...new Set(clients.map((c) => c.coachName).filter(Boolean))];
+
+  // Start of the current Mon-Sun week in Pakistan time. Meetings logged
+  // inside this window feed the meeting boost below. Same boundary the
+  // Sunday weekly digest uses, so the two never disagree about which
+  // meetings belong to "this week".
+  // Pinned at mount rather than read during render: re-reading the clock
+  // on every render is impure, and pinning also stops the boost shifting
+  // under the user if the tab is left open across a Monday boundary.
+  const [nowMs] = useState(() => Date.now());
+  const weekStartMs = getThisWeekMondayPktMs(new Date(nowMs));
 
   // Total active clients across ALL coaches
   const totalActiveClients = clients.filter((c) => c.status === "active").length;
@@ -101,12 +117,27 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
     const clientProgressBoost = cpBoost.boostPct;
     const clientProgressSubmissionCount = cpBoost.submissionCount;
 
+    // Meeting boost: +5 per meeting LOGGED this week. Keyed on createdAt
+    // (the date it was logged) to match the weekly report's long-standing
+    // semantics, since coaches routinely log meetings days after the
+    // session. Falls back to meetingDate on older rows with no createdAt.
+    const meetingsThisWeek = coachMeetings.filter((m) => {
+      const stamp = m.createdAt ?? m.meetingDate;
+      if (!stamp) return false;
+      const t = new Date(stamp).getTime();
+      // Bounded on both sides, same as the digest's query. The upper
+      // bound matters only for the meetingDate fallback, which can be a
+      // future-dated session; created_at itself is never ahead of now.
+      return !Number.isNaN(t) && t >= weekStartMs && t <= nowMs;
+    }).length;
+    const meetingBoost = meetingsThisWeek * MEETING_LOG_BOOST_POINTS;
+
     // Overall % = milestone % + Daily Coacher boost + Client Progress
-    // boost, capped at 100. Each component is shown in the breakdown so
-    // the contribution of each part stays transparent.
+    // boost + meeting boost, capped at 100. Each component is shown in
+    // the breakdown so the contribution of each part stays transparent.
     const overallScore = Math.min(
       100,
-      milestoneRate + dailyCoacherBoost + clientProgressBoost
+      milestoneRate + dailyCoacherBoost + clientProgressBoost + meetingBoost
     );
 
     return {
@@ -121,6 +152,8 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
       clientProgressScore,
       clientProgressBoost,
       clientProgressSubmissionCount,
+      meetingsThisWeek,
+      meetingBoost,
       overallScore,
       totalMeetings: coachMeetings.length,
       eodSubmissions: coachEODs.length,
@@ -168,7 +201,7 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
       <div className="section">
         <h2 className="section-title">
           <Trophy size={16} />
-          Coach Rankings (Milestones + Daily Coacher + Client Progress)
+          Coach Rankings (Milestones + Daily Coacher + Client Progress + Meetings)
         </h2>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
           {ranked.map((coach, idx) => (
@@ -193,11 +226,16 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
                     {" "}+ {coach.clientProgressBoost}% Client Progress
                   </span>
                 )}
+                {coach.meetingBoost > 0 && (
+                  <span style={{ color: "var(--accent)" }}>
+                    {" "}+ {coach.meetingBoost}% Meetings ({coach.meetingsThisWeek} this week)
+                  </span>
+                )}
               </div>
               <div style={{ fontSize: 12, color: "var(--text-secondary)", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
                 <span>Active Clients: <strong>{coach.activeClients}</strong></span>
                 <span>Completed: <strong>{coach.completedClients}</strong></span>
-                <span>Meetings: <strong>{coach.totalMeetings}</strong></span>
+                <span>Meetings: <strong>{coach.totalMeetings}</strong> ({coach.meetingsThisWeek} this wk)</span>
                 <span>EOD Reports: <strong>{coach.eodSubmissions}</strong></span>
                 <span>Written Testimonial: <strong>{coach.trustPilot}</strong></span>
                 <span>Videos: <strong>{coach.videoTestimonials}</strong></span>
@@ -271,6 +309,7 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
                 <th>Milestone %</th>
                 <th>Daily Coacher</th>
                 <th>Client Progress</th>
+                <th>Meetings (wk)</th>
                 <th>Overall %</th>
                 <th>Written</th>
                 <th>Video</th>
@@ -307,6 +346,20 @@ export default function CoachPerformanceTab({ clients, milestones, meetings, eod
                             (+{coach.clientProgressBoost}%)
                           </span>
                         )}
+                      </>
+                    ) : (
+                      <span style={{ color: "var(--text-muted)" }}>—</span>
+                    )}
+                  </td>
+                  <td>
+                    {coach.meetingsThisWeek > 0 ? (
+                      <>
+                        <span style={{ color: "var(--accent)" }}>
+                          {coach.meetingsThisWeek}
+                        </span>
+                        <span style={{ color: "var(--text-muted)", fontSize: 11, marginLeft: 6 }}>
+                          (+{coach.meetingBoost}%)
+                        </span>
                       </>
                     ) : (
                       <span style={{ color: "var(--text-muted)" }}>—</span>

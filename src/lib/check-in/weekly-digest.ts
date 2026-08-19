@@ -6,17 +6,28 @@
 // for everything else in CCOS, no reason to split notifications).
 //
 // Contents (in order):
-//   1. KPI fields: submissions, avg score, attention-needed count, % missing
-//   2. AI-generated executive summary (Claude Sonnet 4.5, 300-400 words)
+//   1. KPI fields: submissions, avg score, attention-needed count,
+//      % missing, meetings logged
+//   2. AI-generated summary (Claude Sonnet 4.5, 300-400 words), written
+//      as Saeed speaking directly TO the coaching team
 //   3. Attention Needed: clients with this week's avg < 60
 //   4. Coach Engagement: per-coach % of active clients missing this week
-//   5. Missing Check-Ins: grouped by coach, full list
-//   6. End-date-needs-fixing flag (clients with negative days_left who
+//   5. Meetings Logged: per-coach counts for the same seven days
+//   6. Missing Check-Ins: grouped by coach, full list
+//   7. End-date-needs-fixing flag (clients with negative days_left who
 //      still submitted — likely their CCOS record is stale)
 //
 // Week boundary: This Monday 00:00 PKT → cron firing moment (Sun 4 PM PKT).
 // Last 8 hours of Sunday data are knowingly excluded; clients almost
 // never submit Sunday evening anyway.
+//
+// The meetings numbers used to ship as their own Slack DM at 1 AM PKT
+// Monday covering the week that had just closed. They are now folded in
+// here against the SAME window as the check-in data, so both halves of
+// the report always describe the same seven days.
+//
+// Coach names render through displayCoachName, so Farrukh reads as Mark
+// in this report while the stored data stays untouched.
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getServiceSupabase } from "@/lib/supabase";
@@ -28,8 +39,17 @@ import {
 } from "@/lib/slack/coaching-bot";
 import { ATTENTION_NEEDED_THRESHOLD } from "@/lib/check-in/types";
 import { stripDashes } from "@/lib/daily-coacher/text-cleanup";
+import { displayCoachName } from "@/lib/coach-aliases";
+import {
+  PKT_OFFSET_MS,
+  getThisWeekMondayPktMs,
+  pktDateStr,
+} from "@/lib/pkt-week";
+import {
+  gatherMeetingsInWindow,
+  type MeetingsWeek,
+} from "@/lib/meetings/weekly-report";
 
-const PKT_OFFSET_MS = 5 * 60 * 60 * 1000; // PKT = UTC+5, no DST
 const MODEL = "claude-sonnet-4-5-20250929";
 const APP_BASE_URL =
   process.env.NEXT_PUBLIC_APP_URL ||
@@ -104,21 +124,23 @@ export interface DigestData {
   totalMissingClients: number;
   netAvgScore: number | null;
   endDateFlagged: PerClientThisWeek[];
+  /** Meetings logged in the same Mon 00:00 PKT → now window, counted by
+   *  the date they were logged. Folded in from the old standalone
+   *  Weekly Meetings Report. */
+  meetings: MeetingsWeek;
 }
 
 // ---------------------------------------------------------------------------
 // Week boundary computation
 // ---------------------------------------------------------------------------
 
-/** Returns this Monday at 00:00 PKT, expressed as a UTC Date object. */
+/** Returns this Monday at 00:00 PKT, expressed as a UTC Date object.
+ *  Thin wrapper over the shared PKT week math so the Coach Rankings tab
+ *  (browser) and this digest (server) can never drift apart. Kept
+ *  exported for the tough-nutrition-sleep report, which reuses it to
+ *  stay on the same window. */
 export function getThisWeekMondayPkt(now: Date = new Date()): Date {
-  const nowPkt = new Date(now.getTime() + PKT_OFFSET_MS);
-  const dayOfWeek = nowPkt.getUTCDay(); // 0=Sun, 1=Mon, ..., 6=Sat
-  const daysBack = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-  const mondayPkt = new Date(nowPkt);
-  mondayPkt.setUTCDate(mondayPkt.getUTCDate() - daysBack);
-  mondayPkt.setUTCHours(0, 0, 0, 0);
-  return new Date(mondayPkt.getTime() - PKT_OFFSET_MS);
+  return new Date(getThisWeekMondayPktMs(now));
 }
 
 function formatDatePkt(d: Date): string {
@@ -146,6 +168,16 @@ export async function gatherDigestData(now: Date = new Date()): Promise<DigestDa
   const supabase = getServiceSupabase();
   const weekStartUtc = getThisWeekMondayPkt(now);
 
+  // 0. Meetings logged in the same window as the check-in data below.
+  //    Same query the standalone Weekly Meetings Report used, just
+  //    pointed at the in-progress week instead of the closed one.
+  const meetings = await gatherMeetingsInWindow({
+    startMs: weekStartUtc.getTime(),
+    endMs: now.getTime(),
+    startDate: pktDateStr(weekStartUtc.getTime()),
+    endDate: pktDateStr(now.getTime()),
+  });
+
   // 1. All submissions this week
   const { data: subsData } = await supabase
     .from("client_check_ins")
@@ -153,6 +185,12 @@ export async function gatherDigestData(now: Date = new Date()): Promise<DigestDa
       "id, client_id, client_name, coach_name, q1_overall, q2_strength, q3_lifestyle, q4_progress, q5_open_response, score_0_100, submitted_at"
     )
     .gt("submitted_at", weekStartUtc.toISOString())
+    // Upper bound on the window. A no-op for the live cron (nothing is
+    // submitted in the future), but without it the report cannot be
+    // replayed for a past week: it would sweep up every submission since
+    // that week started. It also keeps this half of the report on the
+    // same window semantics as the meetings half, which is bounded.
+    .lte("submitted_at", now.toISOString())
     .order("submitted_at", { ascending: true });
   const submissions = (subsData ?? []) as CheckInRow[];
 
@@ -291,6 +329,7 @@ export async function gatherDigestData(now: Date = new Date()): Promise<DigestDa
     totalMissingClients,
     netAvgScore,
     endDateFlagged,
+    meetings,
   };
 }
 
@@ -310,7 +349,7 @@ function buildSummaryPrompt(d: DigestData): string {
     : d.submissions
         .map((s) => {
           const datePkt = formatDatePkt(new Date(s.submitted_at));
-          const coach = s.coach_name ?? "(no coach)";
+          const coach = displayCoachName(s.coach_name) ?? "(no coach)";
           const para = s.q5_open_response?.trim()
             ? `  paragraph: ${s.q5_open_response.trim().replace(/\n/g, " ")}`
             : "  paragraph: (none)";
@@ -318,48 +357,59 @@ function buildSummaryPrompt(d: DigestData): string {
         })
         .join("\n\n");
 
+  const meetingsByCoach = new Map(
+    d.meetings.perCoach.map((c) => [c.coach, c.count])
+  );
+
   const coachStats = d.perCoach
     .map((c) => {
+      const name = displayCoachName(c.coachName) ?? c.coachName;
       const avgPart =
         c.coachAvgScore !== null
           ? `, ${c.submittedClientCount} submitted (avg ${c.coachAvgScore}/100)`
           : "";
-      return `  ${c.coachName}: ${c.missingClientCount}/${c.activeClientCount} missing (${c.missingPct}%)${avgPart}`;
+      const meetingPart = `, ${meetingsByCoach.get(c.coachName) ?? 0} meetings logged`;
+      return `  ${name}: ${c.missingClientCount}/${c.activeClientCount} missing (${c.missingPct}%)${avgPart}${meetingPart}`;
     })
     .join("\n");
 
-  return `You are summarizing this week's CCOS client check-in forms for Saeed, the manager of the entire coaching operation. Saeed reads this Slack DM Sunday evening and uses it to know which clients and which coaches need attention this coming week.
+  return `You are writing as Saeed, the manager of the entire CCOS coaching operation. This is his weekly message to his coaching team about the client check-in forms that came in this week.
+
+Write it AS Saeed, speaking DIRECTLY TO his coaches. First person for Saeed ("I", "my"), second person for the coaches ("you", "your clients"). Address the team as a group, and name individual coaches when something is specifically about them. Never refer to Saeed in the third person, never address the reader as Saeed, and never describe the team from the outside.
 
 WEEK: ${formatDatePkt(d.weekStartPkt)} to ${formatDatePkt(d.weekEndPkt)}
 TOTAL SUBMISSIONS: ${d.submissions.length}
 NET AVG SCORE: ${d.netAvgScore ?? "N/A"}/100
 ACTIVE CLIENTS WITH POSITIVE DAYS LEFT: ${d.totalActiveClientsWithDaysLeft}
 MISSING CHECK-INS: ${d.totalMissingClients}/${d.totalActiveClientsWithDaysLeft}
+TOTAL MEETINGS LOGGED: ${d.meetings.total}
 
 ALL SUBMISSIONS THIS WEEK:
 ${subsBlock}
 
-PER-COACH MISSING %:
+PER-COACH MISSING %, AVG SCORE, MEETINGS LOGGED:
 ${coachStats || "(no active clients)"}
 
-WRITE A 300-400 WORD EXECUTIVE SUMMARY for Saeed covering:
-- Overall mood and health of the client base this week (themes from the numeric scores AND paragraphs)
-- Standout positive feedback (name specific clients + what they said)
-- Standout concerns (name specific clients + what's happening, be candid about who is struggling and why)
-- Coach-level patterns worth investigating (high missing %, clusters of low scores under one coach, etc.)
-- Anything else that would help Saeed manage the team and clients next week
+WRITE A 300-400 WORD MESSAGE TO THE COACHES covering:
+- Where the client base stands this week (themes from the numeric scores AND the paragraphs clients wrote)
+- What went well, naming the coaches and clients responsible and quoting what clients actually said
+- What needs fixing, naming the coaches whose clients are struggling or whose check-ins and meeting logs are missing, and saying plainly what you want done about it
+- Meeting logging: call out who is logging their meetings and who is not
+- What you expect from the team in the coming week
 
 WRITING RULES:
-- Direct manager-to-manager tone. Saeed already knows the team; no need to over-explain.
+- Write the way a manager talks to his own team: direct, specific, no corporate filler, no motivational speech. Praise where it is earned and say the hard thing where it is needed.
+- These are your coaches and you know them. Do not over-explain the system to them.
 - Quote client paragraphs when they capture something specific. Use quotation marks.
+- Use the coach names exactly as they appear above. Do not substitute other names.
 - NO em-dashes or en-dashes. Use commas, periods, parentheses, or restructure.
 - Plain prose paragraphs, not bullet lists. The Slack message already has structured tables below this summary.
-- Output ONLY the summary text. No preamble, no headings, no closing.`;
+- Output ONLY the message text. No preamble, no subject line, no headings, no sign-off.`;
 }
 
 export async function generateSummaryWithClaude(d: DigestData): Promise<string> {
   if (d.submissions.length === 0) {
-    return "No client check-in forms were submitted this week. Every active client with positive days left is on the missing list below. This warrants immediate investigation: either the form link did not go out, the link is broken, or all coaches simultaneously skipped this week's send. Review the coach engagement table below and confirm the link is reaching clients via Everfit before next week.";
+    return "Not a single client check-in form came in this week. Every active client with days left is on the missing list below, which means either the form link never went out, the link is broken, or all of you skipped the send. I need this diagnosed before Monday ends. Check that the link is actually reaching your clients in Everfit, send it again, and tell me which of those three it was.";
   }
 
   const anthropic = new Anthropic({ apiKey: getApiKey() });
@@ -419,7 +469,7 @@ export function buildDigestSlackBlocks(
       type: "header",
       text: {
         type: "plain_text",
-        text: "CCOS Weekly Check-In Digest 📊",
+        text: "CCOS Weekly Check-In & Meetings Report 📊",
         emoji: true,
       },
     },
@@ -440,13 +490,17 @@ export function buildDigestSlackBlocks(
           type: "mrkdwn",
           text: `*Missing this week*\n${totalMissingPct}% (${d.totalMissingClients}/${d.totalActiveClientsWithDaysLeft})`,
         },
+        {
+          type: "mrkdwn",
+          text: `*Meetings logged*\n${d.meetings.total}`,
+        },
       ],
     },
     {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*Summary*\n${truncateForSlack(summary)}`,
+        text: `*Message to the team*\n${truncateForSlack(summary)}`,
       },
     },
     { type: "divider" },
@@ -471,7 +525,8 @@ export function buildDigestSlackBlocks(
       const paraSnippet = lastPara
         ? ` — _"${lastPara.replace(/\n/g, " ").slice(0, 140)}${lastPara.length > 140 ? "…" : ""}"_`
         : "";
-      const coach = c.coachName ? ` (${c.coachName})` : "";
+      const coachDisplay = displayCoachName(c.coachName);
+      const coach = coachDisplay ? ` (${coachDisplay})` : "";
       return `${scoreEmoji(c.avgScore)} *${c.clientName}*${coach} — *${c.avgScore}/100*${paraSnippet}`;
     });
     const moreLine = overflow > 0 ? `\n_+${overflow} more in Client Progress tab_` : "";
@@ -501,7 +556,8 @@ export function buildDigestSlackBlocks(
         c.coachAvgScore !== null
           ? `  ·  ${c.submittedClientCount} submitted (avg *${c.coachAvgScore}/100*)`
           : `  ·  0 submitted`;
-      return `${pctEmoji(c.missingPct)} *${c.coachName}* — ${c.missingClientCount}/${c.activeClientCount} missing (*${c.missingPct}%*)${avgPart}`;
+      const name = displayCoachName(c.coachName) ?? c.coachName;
+      return `${pctEmoji(c.missingPct)} *${name}* — ${c.missingClientCount}/${c.activeClientCount} missing (*${c.missingPct}%*)${avgPart}`;
     });
     blocks.push({
       type: "section",
@@ -514,8 +570,35 @@ export function buildDigestSlackBlocks(
     });
   }
 
+  // Meetings Logged — folded in from the old standalone Weekly Meetings
+  // Report, counted by the date the meeting was logged over the same
+  // window as everything else above.
+  if (d.meetings.total === 0) {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: "*Meetings Logged* (by date logged)\n_No meetings were logged this week._",
+      },
+    });
+  } else {
+    const lines = d.meetings.perCoach.map((c) => {
+      const name = displayCoachName(c.coach) ?? c.coach;
+      return `• *${name}* — ${c.count}`;
+    });
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: truncateForSlack(
+          `*Meetings Logged* (by date logged) — *${d.meetings.total}* total\n${lines.join("\n")}`
+        ),
+      },
+    });
+  }
+
   // Submitted Check-Ins per coach — mirrors the Missing section so
-  // Saeed can see WHO showed up as well as who didn't.
+  // the team can see WHO showed up as well as who didn't.
   const coachesWithSubmissions = d.perCoach.filter((c) => c.submittedClientCount > 0);
   if (coachesWithSubmissions.length > 0) {
     blocks.push({
@@ -533,7 +616,7 @@ export function buildDigestSlackBlocks(
         text: {
           type: "mrkdwn",
           text: truncateForSlack(
-            `*${c.coachName}* (${c.submittedClientCount} submitted${avgPart}):\n${names}`
+            `*${displayCoachName(c.coachName) ?? c.coachName}* (${c.submittedClientCount} submitted${avgPart}):\n${names}`
           ),
         },
       });
@@ -568,7 +651,7 @@ export function buildDigestSlackBlocks(
         text: {
           type: "mrkdwn",
           text: truncateForSlack(
-            `*${c.coachName}* (${c.missingClientCount} missing):\n${names}`
+            `*${displayCoachName(c.coachName) ?? c.coachName}* (${c.missingClientCount} missing):\n${names}`
           ),
         },
       });
@@ -578,7 +661,10 @@ export function buildDigestSlackBlocks(
   // End-date-flagged warning, only if any
   if (d.endDateFlagged.length > 0) {
     const names = d.endDateFlagged
-      .map((c) => `${c.clientName}${c.coachName ? ` (${c.coachName})` : ""}`)
+      .map((c) => {
+        const coach = displayCoachName(c.coachName);
+        return `${c.clientName}${coach ? ` (${coach})` : ""}`;
+      })
       .join(", ");
     blocks.push({
       type: "section",
@@ -638,7 +724,7 @@ export async function buildAndSendWeeklyDigest(
     };
   }
 
-  const fallback = `CCOS Weekly Check-In Digest: ${digest.submissions.length} submissions, ${digest.attentionClients.length} need attention.`;
+  const fallback = `CCOS Weekly Report: ${digest.submissions.length} check-ins, ${digest.meetings.total} meetings logged, ${digest.attentionClients.length} clients need attention.`;
   const result = await postBlocks(channel, blocks, fallback);
 
   return {
