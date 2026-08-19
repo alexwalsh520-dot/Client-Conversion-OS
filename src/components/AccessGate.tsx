@@ -144,6 +144,11 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
     // scopes every read AND write to it, so the link cannot reach another
     // project or any other tab. No CCOS login.
     pathname.startsWith("/p/factory/") ||
+    // /p/attribution/<token> is the public, no-login share link for the
+    // Attribution workspace: the human review queue alone. It reaches nothing
+    // else — no sidebar, no ads table, no other tabs — and every read/write is
+    // token-checked by /api/public/attribution/<token>. No CCOS login.
+    pathname.startsWith("/p/attribution/") ||
     isLocalSuperDocEditor ||
     isLocalAutoOutreachTest ||
     pathname.startsWith("/super-doc/") ||

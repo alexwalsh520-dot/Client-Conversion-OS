@@ -92,6 +92,12 @@ html.light .adsv2 {
 }
 .adsv2 .av2-head-actions {
   display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+.adsv2 .av2-actions-row {
+  display: flex;
   align-items: center;
   gap: 8px;
 }
@@ -1808,4 +1814,149 @@ body.metric-dragging {
   line-height: 1.4;
   color: #c8c8ce;
   word-break: break-word;
+}
+
+/* ── Attribution workspace (the + button, and its public share page) ────── */
+.pub-attribution-page {
+  max-width: 860px;
+  margin: 0 auto;
+}
+.adsv2 .aw-note {
+  font-size: 12px;
+  color: var(--text-3);
+  line-height: 1.6;
+  margin-bottom: 14px;
+}
+.adsv2 .aw-name-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.adsv2 .aw-name-label {
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.adsv2 .aw-input {
+  background: var(--bg-1);
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 7px 10px;
+  min-height: 30px;
+  min-width: 0;
+}
+.adsv2 .aw-input:focus {
+  outline: none;
+  border-color: var(--focus);
+}
+.adsv2 .aw-name-row .aw-input {
+  flex: 1;
+  max-width: 320px;
+}
+.adsv2 .aw-saved-note {
+  font-size: 12px;
+  color: var(--green);
+  margin-bottom: 12px;
+}
+.adsv2 .aw-empty {
+  font-size: 13px;
+  color: var(--text-2);
+  border: 1px dashed var(--border-2);
+  border-radius: 8px;
+  padding: 22px;
+  text-align: center;
+}
+.adsv2 .aw-row {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  background: var(--bg-1);
+}
+.adsv2 .aw-row-facts {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-bottom: 10px;
+}
+.adsv2 .aw-day {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-3);
+}
+.adsv2 .aw-prospect {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+.adsv2 .aw-cash {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--gold);
+}
+.adsv2 .aw-tag {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+  border: 1px solid var(--border-2);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.adsv2 .aw-meta {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.adsv2 .aw-link {
+  font-size: 11px;
+  color: var(--blue);
+  text-decoration: none;
+}
+.adsv2 .aw-link:hover {
+  text-decoration: underline;
+}
+.adsv2 .aw-hint {
+  font-size: 10px;
+  color: var(--green-dim);
+}
+.adsv2 .aw-row-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.adsv2 .aw-kw {
+  width: 170px;
+}
+.adsv2 .aw-note-input {
+  flex: 1;
+  min-width: 140px;
+}
+.adsv2 .aw-save:not(:disabled) {
+  color: var(--gold);
+  border-color: var(--gold-dim);
+}
+.adsv2 .aw-err {
+  font-size: 11px;
+  color: var(--red);
+  margin-top: 8px;
+}
+.adsv2 .aw-zero {
+  margin-top: 16px;
+}
+.adsv2 .aw-zero summary {
+  font-size: 12px;
+  color: var(--text-3);
+  cursor: pointer;
+  margin-bottom: 10px;
+}
+.adsv2 .aw-share {
+  margin-top: 20px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
 }

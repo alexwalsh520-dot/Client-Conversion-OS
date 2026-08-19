@@ -8,6 +8,7 @@ import CampaignTable from "./CampaignTable";
 import MetricsBoard from "./MetricsBoard";
 import SettingsGear from "./SettingsGear";
 import AccuracyBadge from "./AccuracyBadge";
+import AttributionPlus from "./AttributionPlus";
 
 function keyOf(account: AdsV2Account, status: AdsV2Status, range: DayRange): string {
   return `${account}|${status}|${range.from}|${range.to}`;
@@ -134,8 +135,11 @@ export default function AdsV2Client({ publicToken, lockedAccount }: AdsV2ClientP
           </div>
         </div>
         <div className="av2-head-actions">
-          {!isPublic && <AccuracyBadge />}
-          <SettingsGear payload={payload} publicMode={isPublic} publicToken={publicToken} />
+          <div className="av2-actions-row">
+            {!isPublic && <AccuracyBadge />}
+            <SettingsGear payload={payload} publicMode={isPublic} publicToken={publicToken} />
+          </div>
+          {!isPublic && <AttributionPlus />}
         </div>
       </div>
 
