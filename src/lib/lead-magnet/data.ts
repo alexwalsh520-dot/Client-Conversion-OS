@@ -33,8 +33,8 @@ const ET = "America/New_York";
 export const CONNECT_MIN_SECONDS = 30;
 /** The team's speed-to-lead target. */
 export const SPEED_TARGET_SECONDS = 60;
-/** How many leads we enrich against GHL concurrently. */
-const GHL_CONCURRENCY = 5;
+/** How many leads we enrich against GHL concurrently (PIT limit: 100 req/10s). */
+const GHL_CONCURRENCY = 8;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -73,8 +73,20 @@ export interface LeadJourney {
   connected: boolean;
   longestCallSec: number | null;
   setter: string | null; // GHL user who made the first dial (name)
-  ghlAppointmentAt: string | null; // appointment activity in GHL (signal only)
-  booking: LeadBooking | null; // sales tracker match — source of truth
+  ghlAppointmentAt: string | null; // first GHL appointment created AFTER the ping
+  booked: boolean; // GHL appointment exists — bookings run through GHL calendar links
+  booking: LeadBooking | null; // sales tracker row (outcome/cash enrichment when logged)
+}
+
+export interface ClientStats {
+  key: string; // e.g. "tyson"
+  label: string; // e.g. "Tyson"
+  leads: number; // = Skool joins (one #fresh-leads ping per join)
+  dialed: number;
+  avgSpeedToLeadSec: number | null;
+  medianSpeedToLeadSec: number | null;
+  booked: number;
+  bookingRate: number | null;
 }
 
 export interface SetterStats {
@@ -115,6 +127,7 @@ export interface LeadMagnetReport {
   generatedAt: string;
   slackError: string | null; // set when #fresh-leads can't be read (setup needed)
   metrics: FunnelMetrics;
+  clients: ClientStats[]; // per-offer split (Tyson / Jake / …) + "all" total row
   setters: SetterStats[];
   leadList: LeadJourney[];
   /** Phone-set tracker rows in range that didn't match any Slack lead. */
@@ -303,24 +316,30 @@ interface GhlEnrichment {
   firstName: string;
   lastName: string;
   calls: LeadCall[];
-  appointmentAt: string | null;
+  appointmentTimes: string[]; // every appointment-created activity (caller filters to post-ping)
 }
 
 async function ghlFetch(path: string, init?: RequestInit): Promise<Response> {
-  return fetch(`${GHL_BASE}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${getGhlToken()}`,
-      Version: GHL_VERSION,
-      "Content-Type": "application/json",
-      ...(init?.headers || {}),
-    },
-    cache: "no-store",
-  });
+  // One retry on rate-limit/server errors — a silently dropped lookup reads as
+  // "this lead was never dialed", which is worse than a slower request.
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(`${GHL_BASE}${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${getGhlToken()}`,
+        Version: GHL_VERSION,
+        "Content-Type": "application/json",
+        ...(init?.headers || {}),
+      },
+      cache: "no-store",
+    });
+    if (attempt >= 2 || (res.status !== 429 && res.status < 500)) return res;
+    await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+  }
 }
 
 async function enrichFromGhl(phone: string | null): Promise<GhlEnrichment> {
-  const empty: GhlEnrichment = { contactId: null, firstName: "", lastName: "", calls: [], appointmentAt: null };
+  const empty: GhlEnrichment = { contactId: null, firstName: "", lastName: "", calls: [], appointmentTimes: [] };
   if (!phone) return empty;
 
   const searchRes = await ghlFetch("/contacts/search", {
@@ -346,7 +365,7 @@ async function enrichFromGhl(phone: string | null): Promise<GhlEnrichment> {
     : [];
 
   const calls: LeadCall[] = [];
-  let appointmentAt: string | null = null;
+  const appointmentTimes: string[] = [];
 
   for (const conv of conversations.slice(0, 5)) {
     const msgRes = await ghlFetch(`/conversations/${conv.id}/messages?limit=100`);
@@ -374,7 +393,7 @@ async function enrichFromGhl(phone: string | null): Promise<GhlEnrichment> {
           userId: msg.userId || null,
         });
       } else if (msg.messageType === "TYPE_ACTIVITY_APPOINTMENT") {
-        if (!appointmentAt || msg.dateAdded < appointmentAt) appointmentAt = msg.dateAdded;
+        appointmentTimes.push(msg.dateAdded);
       }
     }
   }
@@ -385,7 +404,7 @@ async function enrichFromGhl(phone: string | null): Promise<GhlEnrichment> {
     firstName: contact.firstNameLowerCase || "",
     lastName: contact.lastNameLowerCase || "",
     calls,
-    appointmentAt,
+    appointmentTimes: appointmentTimes.sort(),
   };
 }
 
@@ -488,7 +507,7 @@ export async function buildLeadMagnetReport(from: string, to: string): Promise<L
         firstName: "",
         lastName: "",
         calls: [] as LeadCall[],
-        appointmentAt: null,
+        appointmentTimes: [] as string[],
       })),
     ),
     fetchPhoneSetRows(from).catch(() => [] as SheetRow[]),
@@ -522,6 +541,10 @@ export async function buildLeadMagnetReport(from: string, to: string): Promise<L
     const bookingRow = matches.length ? pickBooking(matches) : null;
     if (bookingRow) matches.forEach((row) => claimedRowKeys.add(row));
 
+    // Booked = a GHL appointment created after the ping (the team books through
+    // GHL calendar links). Pre-ping appointments belong to earlier journeys.
+    const appointmentAt = ghl.appointmentTimes.find((t) => t >= cutoff) || null;
+
     return {
       journey: {
         slackTs: lead.slackTs,
@@ -537,7 +560,8 @@ export async function buildLeadMagnetReport(from: string, to: string): Promise<L
         connected: connects.length > 0,
         longestCallSec,
         setter: null as string | null,
-        ghlAppointmentAt: ghl.appointmentAt,
+        ghlAppointmentAt: appointmentAt,
+        booked: appointmentAt !== null,
         booking: bookingRow ? toBooking(bookingRow) : null,
       },
       firstDialUserId: firstDial?.userId || null,
@@ -560,13 +584,16 @@ export async function buildLeadMagnetReport(from: string, to: string): Promise<L
   const speeds = leadList
     .map((l) => l.speedToLeadSec)
     .filter((s): s is number => s !== null);
-  const booked = leadList.filter((l) => l.booking);
-  const decided = booked.filter((l) => l.booking!.callTakenStatus !== "pending");
-  const shows = booked.filter((l) => l.booking!.callTakenStatus === "yes");
-  const wins = booked.filter((l) => l.booking!.outcome === "WIN");
+  // Booked = GHL appointment after the ping. Tracker rows still feed the
+  // sales substats (show/win/cash) for the leads that do get logged there.
+  const bookedLeads = leadList.filter((l) => l.booked);
+  const trackerBooked = leadList.filter((l) => l.booking);
+  const decided = trackerBooked.filter((l) => l.booking!.callTakenStatus !== "pending");
+  const shows = trackerBooked.filter((l) => l.booking!.callTakenStatus === "yes");
+  const wins = trackerBooked.filter((l) => l.booking!.outcome === "WIN");
   const paidWins = wins.filter((l) => l.booking!.cashCollected > 0);
-  const totalCash = booked.reduce((sum, l) => sum + l.booking!.cashCollected, 0);
-  const totalRevenue = booked.reduce((sum, l) => sum + l.booking!.revenue, 0);
+  const totalCash = trackerBooked.reduce((sum, l) => sum + l.booking!.cashCollected, 0);
+  const totalRevenue = trackerBooked.reduce((sum, l) => sum + l.booking!.revenue, 0);
   const dialed = leadList.filter((l) => l.dials > 0);
   const connected = leadList.filter((l) => l.connected);
 
@@ -574,7 +601,7 @@ export async function buildLeadMagnetReport(from: string, to: string): Promise<L
     leads: leadList.length,
     dialed: dialed.length,
     connected: connected.length,
-    booked: booked.length,
+    booked: bookedLeads.length,
     decided: decided.length,
     shows: shows.length,
     wins: wins.length,
@@ -590,7 +617,7 @@ export async function buildLeadMagnetReport(from: string, to: string): Promise<L
       leadList.length,
     ),
     pickupRate: ratio(connected.length, dialed.length),
-    bookingRate: ratio(booked.length, leadList.length),
+    bookingRate: ratio(bookedLeads.length, leadList.length),
     showRate: ratio(shows.length, decided.length),
     closeRate: ratio(wins.length, shows.length),
     aov: paidWins.length ? totalCash / paidWins.length : null,
@@ -626,9 +653,9 @@ export async function buildLeadMagnetReport(from: string, to: string): Promise<L
       }
       if (lead.connected) s.pickups += 1;
     }
-    if (lead.booking) {
+    if (lead.booked) {
       const bookingSetter =
-        (lead.booking.setter && titleCaseName(lead.booking.setter)) || lead.setter;
+        (lead.booking?.setter && titleCaseName(lead.booking.setter)) || lead.setter;
       if (bookingSetter) setterFor(bookingSetter).bookings += 1;
     }
   }
@@ -642,12 +669,49 @@ export async function buildLeadMagnetReport(from: string, to: string): Promise<L
     }))
     .sort((a, b) => b.leadsDialed - a.leadsDialed || b.bookings - a.bookings);
 
+  // Per-client cut, keyed off the ping's Offer field ("Tyson Sonnek" /
+  // "Jake Divljak" / anything new lands in its own row). "All" totals last.
+  const clientLabel = (offer: string | null) => {
+    const key = nameKey(offer);
+    if (key.includes("tyson")) return "Tyson";
+    if (key.includes("jake")) return "Jake";
+    return (offer || "Unknown").trim();
+  };
+  const clientStatsFor = (label: string, group: LeadJourney[]): ClientStats => {
+    const groupSpeeds = group
+      .map((l) => l.speedToLeadSec)
+      .filter((s): s is number => s !== null);
+    const groupBooked = group.filter((l) => l.booked).length;
+    return {
+      key: nameKey(label) || "unknown",
+      label,
+      leads: group.length,
+      dialed: group.filter((l) => l.dials > 0).length,
+      avgSpeedToLeadSec: groupSpeeds.length
+        ? Math.round(groupSpeeds.reduce((a, b) => a + b, 0) / groupSpeeds.length)
+        : null,
+      medianSpeedToLeadSec: median(groupSpeeds),
+      booked: groupBooked,
+      bookingRate: ratio(groupBooked, group.length),
+    };
+  };
+  const byClient = new Map<string, LeadJourney[]>();
+  for (const lead of leadList) {
+    const label = clientLabel(lead.offer);
+    byClient.set(label, [...(byClient.get(label) || []), lead]);
+  }
+  const clients: ClientStats[] = [...byClient.entries()]
+    .map(([label, group]) => clientStatsFor(label, group))
+    .sort((a, b) => b.leads - a.leads);
+  if (clients.length > 1) clients.push({ ...clientStatsFor("All", leadList), key: "all" });
+
   return {
     from,
     to,
     generatedAt: new Date().toISOString(),
     slackError,
     metrics,
+    clients,
     setters,
     leadList: leadList.sort((a, b) => b.pingAt.localeCompare(a.pingAt)),
     unmatchedBookings,
