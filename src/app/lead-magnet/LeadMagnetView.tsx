@@ -55,6 +55,14 @@ interface ClientStats {
   medianSpeedToLeadSec: number | null;
   booked: number;
   bookingRate: number | null;
+  notLogged: number;
+  decided: number;
+  shows: number;
+  wins: number;
+  cash: number;
+  showRate: number | null;
+  closeRate: number | null;
+  aov: number | null;
 }
 
 interface Report {
@@ -130,6 +138,11 @@ function fmtDuration(seconds: number | null) {
 function fmtPct(rate: number | null) {
   if (rate === null || !Number.isFinite(rate)) return "—";
   return `${Math.round(rate * 100)}%`;
+}
+
+function fmtMoney(amount: number | null) {
+  if (amount === null || !Number.isFinite(amount)) return "—";
+  return `$${amount.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 }
 
 function fmtEtTime(iso: string) {
@@ -328,6 +341,9 @@ export default function LeadMagnetView() {
                   <th style={th}>Dialed</th>
                   <th style={th}>Avg Speed to Lead</th>
                   <th style={th}>Booking Rate</th>
+                  <th style={th}>Show Rate</th>
+                  <th style={th}>Close Rate</th>
+                  <th style={th}>AOV</th>
                 </tr>
               </thead>
               <tbody>
@@ -370,11 +386,39 @@ export default function LeadMagnetView() {
                         <span style={{ fontWeight: 600, fontSize: 16 }}>{fmtPct(c.bookingRate)}</span>
                         <span style={{ color: "var(--text-muted)", fontSize: 12 }}> ({c.booked} booked)</span>
                       </td>
+                      <td style={{ padding: "12px 14px", color: "var(--text-primary)", whiteSpace: "nowrap" }}>
+                        <span style={{ fontWeight: 600 }}>{fmtPct(c.showRate)}</span>
+                        <span style={{ color: "var(--text-muted)", fontSize: 12 }}>
+                          {" "}({c.shows} of {c.decided})
+                        </span>
+                      </td>
+                      <td style={{ padding: "12px 14px", color: "var(--text-primary)", whiteSpace: "nowrap" }}>
+                        <span style={{ fontWeight: 600 }}>{fmtPct(c.closeRate)}</span>
+                        <span style={{ color: "var(--text-muted)", fontSize: 12 }}>
+                          {" "}({c.wins} won)
+                        </span>
+                      </td>
+                      <td style={{ padding: "12px 14px", color: "var(--text-primary)", whiteSpace: "nowrap" }}>
+                        <span style={{ fontWeight: 600 }}>{fmtMoney(c.aov)}</span>
+                        <span style={{ color: "var(--text-muted)", fontSize: 12 }}>
+                          {" "}(cash {fmtMoney(c.cash)})
+                        </span>
+                      </td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
+            {(() => {
+              const totalNotLogged = data.clients.find((c) => c.key === "all")?.notLogged
+                ?? data.clients.reduce((sum, c) => sum + c.notLogged, 0);
+              return totalNotLogged > 0 ? (
+                <p style={{ color: "var(--text-muted)", fontSize: 12, padding: "10px 14px", margin: 0 }}>
+                  {totalNotLogged} booked call{totalNotLogged === 1 ? "" : "s"} have no sales-tracker
+                  row yet — they don&apos;t count toward show/close/AOV until the team logs them.
+                </p>
+              ) : null;
+            })()}
           </div>
 
           {/* ── Lead-by-lead receipts ── */}
@@ -382,7 +426,7 @@ export default function LeadMagnetView() {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-                  {["Lead In (ET)", "Name", "Client", "Setter", "Speed to Lead", "Dials", "Booked"].map((h) => (
+                  {["Lead In (ET)", "Name", "Client", "Setter", "Speed to Lead", "Dials", "Booked", "Call Taken", "Outcome", "Cash"].map((h) => (
                     <th key={h} style={th}>
                       {h}
                     </th>
@@ -392,7 +436,7 @@ export default function LeadMagnetView() {
               <tbody>
                 {data.leadList.length === 0 ? (
                   <tr>
-                    <td colSpan={7} style={{ padding: 24, textAlign: "center", color: "var(--text-muted)" }}>
+                    <td colSpan={10} style={{ padding: 24, textAlign: "center", color: "var(--text-muted)" }}>
                       No lead-magnet leads in this range.
                     </td>
                   </tr>
@@ -430,6 +474,40 @@ export default function LeadMagnetView() {
                         ) : (
                           <span style={{ color: "var(--text-muted)" }}>—</span>
                         )}
+                      </td>
+                      <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>
+                        {!lead.booked ? (
+                          <span style={{ color: "var(--text-muted)" }}>—</span>
+                        ) : !lead.booking ? (
+                          <span style={{ color: "var(--warning)" }} title="Booked in GHL but no sales-tracker row yet">
+                            not logged
+                          </span>
+                        ) : lead.booking.callTakenStatus === "yes" ? (
+                          <span style={{ color: "var(--success)" }}>Showed</span>
+                        ) : lead.booking.callTakenStatus === "no" ? (
+                          <span style={{ color: "var(--danger)" }}>No show</span>
+                        ) : (
+                          <span style={{ color: "var(--warning)" }}>Upcoming</span>
+                        )}
+                      </td>
+                      <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>
+                        {lead.booking?.outcome ? (
+                          <span
+                            style={{
+                              color: lead.booking.outcome === "WIN" ? "var(--success)" : "var(--text-secondary)",
+                              fontWeight: lead.booking.outcome === "WIN" ? 600 : 400,
+                            }}
+                          >
+                            {lead.booking.outcome}
+                          </span>
+                        ) : (
+                          <span style={{ color: "var(--text-muted)" }}>—</span>
+                        )}
+                      </td>
+                      <td style={{ padding: "10px 14px", whiteSpace: "nowrap", color: "var(--text-primary)" }}>
+                        {lead.booking && lead.booking.cashCollected > 0
+                          ? fmtMoney(lead.booking.cashCollected)
+                          : "—"}
                       </td>
                     </tr>
                   ))
