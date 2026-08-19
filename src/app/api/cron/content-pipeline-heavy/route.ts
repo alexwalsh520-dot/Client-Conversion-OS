@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { cronBaseUrl } from "@/lib/cron-base-url";
 import { runPipelineSteps } from "@/lib/content-pipeline/run-steps";
 import { ACTIVE_CREATORS } from "@/lib/creators";
+import { POST_GRADING_ENABLED } from "@/lib/content/ai-spend-config";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -34,9 +35,12 @@ export async function GET(req: NextRequest) {
     })),
     // Transcribe + permanently store reels still missing either. The single slowest step.
     { path: "/api/content/transcribe?limit=12", timeoutMs: 120000 },
-    // Buyer DNA: research newly-closed buyers + grade new posts vs the locked ICP. Bounded per run.
+    // Buyer DNA: research newly-closed buyers. Bounded per run.
     ...ACTIVE_CREATORS.map((c) => ({ path: `/api/buyer-dna/dossiers/run?creator=${c.key}&limit=15`, timeoutMs: 60000 })),
-    ...ACTIVE_CREATORS.map((c) => ({ path: `/api/buyer-dna/grade/run?creator=${c.key}&limit=15`, timeoutMs: 60000 })),
+    // Post grading vs the locked ICP is off on cost grounds — see POST_GRADING_ENABLED.
+    ...(POST_GRADING_ENABLED
+      ? ACTIVE_CREATORS.map((c) => ({ path: `/api/buyer-dna/grade/run?creator=${c.key}&limit=15`, timeoutMs: 60000 }))
+      : []),
   ], { budgetMs: 280000 });
   return NextResponse.json(result);
 }

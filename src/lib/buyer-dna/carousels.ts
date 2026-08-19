@@ -1,7 +1,7 @@
-// Daily Instagram text carousels for a fitness creator — ONE LLM call generates all 5 carousels for a
+// Daily Instagram text carousels for a fitness creator — ONE LLM call generates the day’s carousels for a
 // creator for one day (~$0.15). Each carousel is one idea aimed at the ONE premium buyer, articulating
 // that buyer's pain better than they can. Grounded in the locked ICP, the buyer-voice overview, and the
-// real dossiers. The generate route never regenerates a day that already has its 5 rows.
+// real dossiers. The generate route never regenerates a day that already has its full set.
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";

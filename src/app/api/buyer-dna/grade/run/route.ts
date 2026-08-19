@@ -6,6 +6,7 @@ import { CONTENT_CREATORS } from "@/lib/instagram-content";
 import { getCurrentIcp } from "@/lib/buyer-dna/icp";
 import { gradePost } from "@/lib/buyer-dna/grade";
 import type { Icp } from "@/lib/buyer-dna/icp";
+import { POST_GRADING_ENABLED } from "@/lib/content/ai-spend-config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,6 +21,11 @@ async function authorized(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   if (!(await authorized(req))) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Disabled on cost grounds — see POST_GRADING_ENABLED in lib/content/ai-spend-config. Guarded HERE as well as at
+  // the cron trigger so a direct call (manual, UI, or a future caller) also cannot spend.
+  if (!POST_GRADING_ENABLED) {
+    return NextResponse.json({ ok: false, disabled: true, feature: "buyer-dna-grade", reason: "Disabled on cost grounds. Re-enable in lib/content/ai-spend-config.ts." });
+  }
   const url = new URL(req.url);
   const slug = (url.searchParams.get("creator") || "").toLowerCase();
   if (!(CONTENT_CREATORS as readonly string[]).includes(slug)) return NextResponse.json({ error: "Unknown creator" }, { status: 400 });

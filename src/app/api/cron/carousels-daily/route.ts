@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cronBaseUrl } from "@/lib/cron-base-url";
 import { ACTIVE_CREATORS } from "@/lib/creators";
+import { carouselsEnabledFor } from "@/lib/content/ai-spend-config";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -10,7 +11,7 @@ export const dynamic = "force-dynamic";
 // one-line change there, not an edit to every cron.
 const CREATORS = ACTIVE_CREATORS.map((c) => c.key);
 
-// Just after midnight America/New_York, put today's 5 carousels in front of each creator so the tab is
+// Just after midnight America/New_York, put today's carousels in front of each enabled creator so the tab is
 // full when the team opens it — rather than waiting on the hourly pipeline, which only reaches its
 // carousels step after the video-ideas pass has spent its budget.
 //
@@ -31,6 +32,8 @@ export async function GET(req: NextRequest) {
   const steps: unknown[] = [];
   let failed = 0;
   for (const creator of CREATORS) {
+    // Carousels are limited to CAROUSEL_CREATORS (Jake only) on cost grounds.
+    if (!carouselsEnabledFor(creator)) continue;
     try {
       const r = await fetch(`${base}/api/content/carousels/generate?creator=${creator}&date=${forDate}`, {
         method: "POST",
