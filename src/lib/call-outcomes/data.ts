@@ -34,7 +34,18 @@ const CALENDAR_HINTS: Array<[RegExp, CreatorKey]> = [[/the forge/i, "tyson"]];
 
 export type OfferKey = CreatorKey | "unassigned";
 
-export type CallType = "Strategy Session" | "Onboarding" | "Other";
+/**
+ * Onboarding splits in two and the halves mean opposite things:
+ *   Rep Onboarding    — run by a closer.
+ *   Client Onboarding — run by the onboarding specialist, for high-ticket
+ *                       customers who have ALREADY paid. Pure fulfilment; it
+ *                       must never touch a sales rate.
+ */
+export type CallType =
+  | "Strategy Session"
+  | "Rep Onboarding"
+  | "Client Onboarding"
+  | "Other";
 
 export interface CallOutcome {
   appointmentId: string;
@@ -65,15 +76,16 @@ export interface Stats {
 }
 
 /**
- * Sales calls and onboarding calls are counted SEPARATELY, never blended.
- * Onboarding calls are on the calendar and belong in the recap, but they are
- * fulfilment, not selling — folding them into one show rate produced a headline
- * "15% taken" for a day whose sales calls actually ran 33%.
+ * The three kinds are counted SEPARATELY, never blended. They are all on the
+ * calendar and all belong in the recap, but only the sales segment is selling:
+ * folding onboarding into one show rate produced a headline "15% taken" for a
+ * day whose sales calls actually ran 33%.
  */
 export interface Segmented {
   all: Stats;
   sales: Stats;
-  onboarding: Stats;
+  repOnboarding: Stats;
+  clientOnboarding: Stats;
 }
 
 export interface OfferBlock extends Segmented {
@@ -142,10 +154,36 @@ function closerFromPayload(a: ApptRow): string | null {
   return name || null;
 }
 
-function callTypeOf(calendarName: string | null): CallType {
-  const t = (calendarName || "").toLowerCase();
-  if (t.includes("onboarding")) return "Onboarding";
-  if (t.includes("strategy session")) return "Strategy Session";
+/**
+ * Who runs client onboarding. Overridable so the report survives the role
+ * changing hands without a deploy.
+ */
+function onboardingSpecialists(): string[] {
+  const raw = process.env.ONBOARDING_SPECIALISTS?.trim();
+  return (raw ? raw.split(",") : ["Nicole Okpala"])
+    .map((n) => n.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/**
+ * The ASSIGNEE decides which kind of onboarding call this is, not the calendar
+ * name: the two kinds are named "Onboarding Call with The Forge" and
+ * "Onboarding Call w/ The Forge", and keying on "with" vs "w/" would break the
+ * moment someone renames a calendar. By assignee the split is exact — since
+ * July every specialist-run onboarding is hers and every other one is a rep's.
+ */
+function callTypeOf(a: ApptRow): CallType {
+  const cal = (a.calendar_name || "").toLowerCase();
+
+  if (cal.includes("onboarding")) {
+    const who = (closerFromPayload(a) || "").toLowerCase();
+    if (who) return onboardingSpecialists().includes(who) ? "Client Onboarding" : "Rep Onboarding";
+    // Unassigned: every "7 Day schedule" onboarding on record is the
+    // specialist's, so an empty assignee still lands on the right side.
+    return cal.includes("7 day") ? "Client Onboarding" : "Rep Onboarding";
+  }
+
+  if (cal.includes("strategy session")) return "Strategy Session";
   return "Other";
 }
 
@@ -220,7 +258,10 @@ function typeAgrees(apptType: CallType, sheetType: string | null | undefined): b
   const t = (sheetType || "").trim().toLowerCase();
   if (!t) return true;
   const sheetIsOnboarding = t.includes("onboarding");
-  if (apptType === "Onboarding") return sheetIsOnboarding;
+  // The tracker has one "Onboarding Call" type covering both kinds.
+  if (apptType === "Rep Onboarding" || apptType === "Client Onboarding") {
+    return sheetIsOnboarding;
+  }
   // Strategy Sessions and the personal/reschedule calendars both land in the
   // tracker as strategy sessions, misc chats or follow-ups — anything but
   // onboarding.
@@ -271,8 +312,11 @@ function statsFor(calls: CallOutcome[]): Stats {
 function segment(calls: CallOutcome[]): Segmented {
   return {
     all: statsFor(calls),
-    sales: statsFor(calls.filter((c) => c.callType !== "Onboarding")),
-    onboarding: statsFor(calls.filter((c) => c.callType === "Onboarding")),
+    sales: statsFor(
+      calls.filter((c) => c.callType === "Strategy Session" || c.callType === "Other"),
+    ),
+    repOnboarding: statsFor(calls.filter((c) => c.callType === "Rep Onboarding")),
+    clientOnboarding: statsFor(calls.filter((c) => c.callType === "Client Onboarding")),
   };
 }
 
@@ -297,7 +341,8 @@ export async function buildCallOutcomesReport(day: string): Promise<CallOutcomes
   const calls: CallOutcome[] = appts.map((a) => {
     const prospect = (a.contact_name || "").trim() || "(no name)";
     const available = sheet.filter((r) => !claimed.has(r));
-    const row = matchSheetRow(prospect, callTypeOf(a.calendar_name), day, available);
+    const callType = callTypeOf(a);
+    const row = matchSheetRow(prospect, callType, day, available);
     if (row) claimed.add(row);
 
     const hit = bestNameMatch(prospect, reschedules, (r) => r.prospect);
@@ -309,7 +354,7 @@ export async function buildCallOutcomesReport(day: string): Promise<CallOutcomes
       startsAt: a.start_time,
       etTime: etClock(a.start_time),
       calendarName: a.calendar_name || "",
-      callType: callTypeOf(a.calendar_name),
+      callType,
       offer: offerForAppointment(a),
       // The sheet's Closer column is hand-maintained and wins; GHL's assigned
       // user is only a fallback for calls nobody has logged yet.

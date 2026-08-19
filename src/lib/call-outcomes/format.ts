@@ -26,26 +26,50 @@ function longDay(day: string): string {
   }).format(new Date(`${day}T12:00:00Z`));
 }
 
-/** One offer's or one segment's numbers, in the compact house style. */
-function statLine(s: Stats): string {
-  const bits = [
-    `taken ${s.taken}/${s.scheduled} (${pct(s.taken, s.scheduled)})`,
-    `closed ${s.closed} (${pct(s.closed, s.taken)} of taken)`,
-  ];
+/**
+ * One segment's numbers, in the compact house style. `closed` is omitted for
+ * client onboarding — those customers bought weeks ago, so a close rate there
+ * would be meaningless.
+ */
+function statLine(s: Stats, opts?: { closed?: boolean }): string {
+  const bits = [`taken ${s.taken}/${s.scheduled} (${pct(s.taken, s.scheduled)})`];
+  if (opts?.closed !== false) bits.push(`closed ${s.closed} (${pct(s.closed, s.taken)} of taken)`);
   if (s.rescheduled > 0) bits.push(`rescheduled ${s.rescheduled}`);
   bits.push(`cash ${money(s.cash)}`);
   return bits.join(" · ");
 }
 
-/** "(3 sales · 10 onboarding)", omitted when the day is all one kind. */
+/** "· 6 sales, 2 rep onboarding, 5 client onboarding" — only when it's a mix. */
 function mix(seg: Segmented): string {
-  if (seg.sales.scheduled === 0 || seg.onboarding.scheduled === 0) return "";
-  return ` · ${seg.sales.scheduled} sales, ${seg.onboarding.scheduled} onboarding`;
+  const bits: string[] = [];
+  if (seg.sales.scheduled) bits.push(`${seg.sales.scheduled} sales`);
+  if (seg.repOnboarding.scheduled) bits.push(`${seg.repOnboarding.scheduled} rep onboarding`);
+  if (seg.clientOnboarding.scheduled) {
+    bits.push(`${seg.clientOnboarding.scheduled} client onboarding`);
+  }
+  return bits.length > 1 ? ` · ${bits.join(", ")}` : "";
+}
+
+/** The per-segment lines shared by the summary and each offer block. */
+function segmentLines(seg: Segmented, bold: boolean): string[] {
+  const label = (t: string) => (bold ? `*${t}:*` : `${t}:`);
+  const lines: string[] = [];
+  if (seg.sales.scheduled > 0) lines.push(`${label("Sales")} ${statLine(seg.sales)}`);
+  if (seg.repOnboarding.scheduled > 0) {
+    lines.push(`${label("Rep onboarding")} ${statLine(seg.repOnboarding)}`);
+  }
+  if (seg.clientOnboarding.scheduled > 0) {
+    lines.push(
+      `${label("Client onboarding")} ${statLine(seg.clientOnboarding, { closed: false })}`,
+    );
+  }
+  return lines;
 }
 
 /** Short type tag; Strategy Sessions are the default and stay unlabelled. */
 function typeTag(call: CallOutcome): string | null {
-  if (call.callType === "Onboarding") return "onboarding";
+  if (call.callType === "Rep Onboarding") return "rep onboarding";
+  if (call.callType === "Client Onboarding") return "client onboarding";
   if (call.callType === "Other") return "other";
   return null;
 }
@@ -87,10 +111,10 @@ function callLine(call: CallOutcome): string {
 }
 
 function blockText(block: OfferBlock): string {
-  const lines = [`*${block.label}* — ${block.all.scheduled} scheduled${mix(block)}`];
-
-  if (block.sales.scheduled > 0) lines.push(`Sales: ${statLine(block.sales)}`);
-  if (block.onboarding.scheduled > 0) lines.push(`Onboarding: ${statLine(block.onboarding)}`);
+  const lines = [
+    `*${block.label}* — ${block.all.scheduled} scheduled${mix(block)}`,
+    ...segmentLines(block, false),
+  ];
   if (block.all.unlogged > 0) lines.push(`_${block.all.unlogged} not in the tracker yet_`);
 
   for (const call of block.calls) lines.push(callLine(call));
@@ -105,9 +129,10 @@ export function formatCallOutcomes(report: CallOutcomesReport): string {
     return `${header}\nNo calls were on the calendar.`;
   }
 
-  const summary = [`${totals.all.scheduled} calls scheduled${mix(totals)}`];
-  if (totals.sales.scheduled > 0) summary.push(`*Sales:* ${statLine(totals.sales)}`);
-  if (totals.onboarding.scheduled > 0) summary.push(`*Onboarding:* ${statLine(totals.onboarding)}`);
+  const summary = [
+    `${totals.all.scheduled} calls scheduled${mix(totals)}`,
+    ...segmentLines(totals, true),
+  ];
 
   const parts = [[header, ...summary].join("\n"), ...report.blocks.map(blockText)];
 

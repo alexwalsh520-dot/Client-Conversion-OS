@@ -33,7 +33,7 @@ test("an off-day row of a DIFFERENT call type is rejected", () => {
     name: "Jordan Abernathy", date: "2026-08-17",
     callType: "Miscellaneous Chat", outcome: "WIN", cashCollected: 1000,
   })];
-  assert.equal(matchSheetRow("Jordan Abernathy", "Onboarding", "2026-08-19", rows), null);
+  assert.equal(matchSheetRow("Jordan Abernathy", "Client Onboarding", "2026-08-19", rows), null);
 });
 
 test("a same-day row is taken even when the type differs", () => {
@@ -61,18 +61,27 @@ test("rows beyond the scan window are ignored", () => {
   assert.equal(matchSheetRow("Max Turk", "Strategy Session", "2026-08-19", rows), null);
 });
 
-test("an onboarding booking matches an onboarding row on another day", () => {
+test("either onboarding kind matches the tracker's single onboarding type", () => {
   const rows = [row({ name: "Ryan Grimm", date: "2026-08-18", callType: "Onboarding Call " })];
-  const hit = matchSheetRow("Ryan Grimm", "Onboarding", "2026-08-19", rows);
+  const hit = matchSheetRow("Ryan Grimm", "Rep Onboarding", "2026-08-19", rows);
   assert.equal(hit?.name, "Ryan Grimm");
 });
 
 test("a blank tracker call type matches anything", () => {
   // Older rows predate the "Type of call" column.
   const rows = [row({ name: "Max Turk", date: "2026-08-17", callType: "" })];
-  assert.equal(matchSheetRow("Max Turk", "Onboarding", "2026-08-19", rows)?.name, "Max Turk");
+  assert.equal(matchSheetRow("Max Turk", "Rep Onboarding", "2026-08-19", rows)?.name, "Max Turk");
 });
 
 test("no candidate at all returns null", () => {
   assert.equal(matchSheetRow("Nobody Here", "Strategy Session", "2026-08-19", []), null);
+});
+
+test("a rep-run onboarding never claims a strategy-session row from another day", () => {
+  // Rep onboarding is still onboarding: it must not absorb a sales row.
+  const rows = [row({
+    name: "Curtis Sharrard", date: "2026-08-17",
+    callType: "Strategy Session", outcome: "WIN", cashCollected: 1500,
+  })];
+  assert.equal(matchSheetRow("Curtis Sharrard", "Rep Onboarding", "2026-08-19", rows), null);
 });
