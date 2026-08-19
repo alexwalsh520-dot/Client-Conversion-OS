@@ -137,7 +137,7 @@ export const CREATORS: readonly Creator[] = [
     adAccountEnv: ["META_AD_ACCOUNT_JAKE_DIVLJAK", "META_AD_ACCOUNT_JAKE"],
     tokenEnv: ["META_ACCESS_TOKEN_JAKE_DIVLJAK", "META_ACCESS_TOKEN_JAKE"],
     defaultAdAccountId: "act_304988118349730", // RRF V2 (live lead-magnet campaign)
-    matchTokens: ["jake", "divljak", "recruit ready", "recruitready", "rrf"],
+    matchTokens: ["jake", "divljak", "recruit ready", "recruitready", "rrf", "(jd)"],
   },
 ];
 

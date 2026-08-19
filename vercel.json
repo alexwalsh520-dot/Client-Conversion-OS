@@ -116,6 +116,10 @@
       "schedule": "30 4,5 * * *"
     },
     {
+      "path": "/api/cron/call-outcomes",
+      "schedule": "30 4,5 * * *"
+    },
+    {
       "path": "/api/cron/foundation-sync",
       "schedule": "3 * * * *"
     },
