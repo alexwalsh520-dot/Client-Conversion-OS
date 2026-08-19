@@ -2,23 +2,19 @@
 
 // Lead Magnet Funnel — a normal CCOS tab (sidebar stays, no redirect).
 //
-// The whole funnel on one screen: leads that hit #fresh-leads, how fast the
-// phone setters dialed them (speed to lead vs the 1-minute target), whether
-// anyone picked up, and the sales-tracker truth downstream — booking rate,
-// show rate, close rate, AOV, revenue per lead. Date range: Today / Week to
-// Date / Month to Date / Custom — same preset pattern as Setter Response Time.
+// Minimal by request: a date picker, then one row per client (Tyson / Jake /
+// All) with Leads (= Skool joins — one #fresh-leads ping fires per join),
+// how many of those got dialed, average speed to lead, and booking rate.
+// Bookings come from GHL appointments created after the ping (the team books
+// through GHL calendar links). Dials only exist when placed through the GHL
+// dialer. A per-lead receipts table sits below.
 //
-// Data comes from /api/lead-magnet (live Slack + GHL + sales tracker reads).
-// While the selected range includes today, the view re-pulls every 2 minutes.
+// Data comes from /api/lead-magnet (live Slack + GHL reads — slow for long
+// ranges). While the selected range includes today, the view re-pulls every
+// 5 minutes.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  AlertTriangle,
-  CalendarDays,
-  ChevronRight,
-  Loader2,
-  PhoneCall,
-} from "lucide-react";
+import { AlertTriangle, CalendarDays, Loader2 } from "lucide-react";
 
 interface LeadBooking {
   date: string;
@@ -46,39 +42,19 @@ interface LeadJourney {
   longestCallSec: number | null;
   setter: string | null;
   ghlAppointmentAt: string | null;
+  booked: boolean;
   booking: LeadBooking | null;
 }
 
-interface SetterStats {
-  name: string;
-  leadsDialed: number;
-  dialedWithinTarget: number;
-  avgSpeedToLeadSec: number | null;
-  medianSpeedToLeadSec: number | null;
-  pickups: number;
-  bookings: number;
-}
-
-interface FunnelMetrics {
+interface ClientStats {
+  key: string;
+  label: string;
   leads: number;
   dialed: number;
-  connected: number;
-  booked: number;
-  decided: number;
-  shows: number;
-  wins: number;
-  paidWins: number;
-  totalCash: number;
-  totalRevenue: number;
   avgSpeedToLeadSec: number | null;
   medianSpeedToLeadSec: number | null;
-  withinTargetRate: number | null;
-  pickupRate: number | null;
+  booked: number;
   bookingRate: number | null;
-  showRate: number | null;
-  closeRate: number | null;
-  aov: number | null;
-  revenuePerLead: number | null;
 }
 
 interface Report {
@@ -86,17 +62,14 @@ interface Report {
   to: string;
   generatedAt: string;
   slackError: string | null;
-  metrics: FunnelMetrics;
-  setters: SetterStats[];
+  clients: ClientStats[];
   leadList: LeadJourney[];
-  unmatchedBookings: LeadBooking[];
-  connectMinSeconds: number;
   speedTargetSeconds: number;
 }
 
-const REFRESH_MS = 120_000;
+const REFRESH_MS = 300_000;
 
-// ── ET date helpers (mirror SetterResponseTimesView) ────────────────────────
+// ── ET date helpers ─────────────────────────────────────────────────────────
 
 function etToday(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -159,15 +132,6 @@ function fmtPct(rate: number | null) {
   return `${Math.round(rate * 100)}%`;
 }
 
-function ratio(num: number, den: number): number | null {
-  return den > 0 ? num / den : null;
-}
-
-function fmtMoney(amount: number | null) {
-  if (amount === null || !Number.isFinite(amount)) return "—";
-  return `$${amount.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-}
-
 function fmtEtTime(iso: string) {
   return new Intl.DateTimeFormat("en-US", {
     timeZone: "America/New_York",
@@ -178,8 +142,6 @@ function fmtEtTime(iso: string) {
   }).format(new Date(iso));
 }
 
-// Speed to lead against the 1-minute target: green inside, amber to 5 min,
-// red beyond (or never dialed).
 function speedColor(seconds: number | null, target: number) {
   if (seconds === null) return "var(--danger)";
   if (seconds <= target) return "var(--success)";
@@ -195,10 +157,27 @@ function titleCase(raw: string) {
     .join(" ");
 }
 
+function clientShort(offer: string | null) {
+  const lower = (offer || "").toLowerCase();
+  if (lower.includes("tyson")) return "Tyson";
+  if (lower.includes("jake")) return "Jake";
+  return offer || "—";
+}
+
+const th: React.CSSProperties = {
+  textAlign: "left",
+  padding: "10px 14px",
+  color: "var(--text-muted)",
+  fontSize: 11,
+  textTransform: "uppercase",
+  letterSpacing: 0.5,
+  whiteSpace: "nowrap",
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function LeadMagnetView() {
-  const [preset, setPreset] = useState<PresetKey>("today");
+  const [preset, setPreset] = useState<PresetKey>("mtd");
   const [customFrom, setCustomFrom] = useState(etToday());
   const [customTo, setCustomTo] = useState(etToday());
   const [data, setData] = useState<Report | null>(null);
@@ -249,7 +228,6 @@ export default function LeadMagnetView() {
     return () => window.clearInterval(id);
   }, [load, range.to]);
 
-  const m = data?.metrics;
   const target = data?.speedTargetSeconds ?? 60;
 
   const chip = (active: boolean): React.CSSProperties => ({
@@ -264,19 +242,8 @@ export default function LeadMagnetView() {
     whiteSpace: "nowrap",
   });
 
-  const funnelStages = m
-    ? [
-        { label: "Leads", count: m.leads },
-        { label: "Dialed", count: m.dialed },
-        { label: "Connected", count: m.connected },
-        { label: "Booked", count: m.booked },
-        { label: "Showed", count: m.shows },
-        { label: "Won", count: m.wins },
-      ]
-    : [];
-
   return (
-    <div className="fade-up" style={{ maxWidth: 1150 }}>
+    <div className="fade-up" style={{ maxWidth: 1100 }}>
       {/* ── Date range ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: "4px 0 20px" }}>
         <CalendarDays size={15} style={{ color: "var(--text-muted)" }} />
@@ -341,234 +308,105 @@ export default function LeadMagnetView() {
       {loading && !data ? (
         <div className="glass-static" style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 60 }}>
           <Loader2 size={20} style={{ animation: "spin 1s linear infinite", color: "var(--text-muted)" }} />
-          <span style={{ marginLeft: 10, color: "var(--text-muted)", fontSize: 14 }}>Loading funnel...</span>
+          <span style={{ marginLeft: 10, color: "var(--text-muted)", fontSize: 14 }}>
+            Loading funnel (live Slack + GHL pull — long ranges take a minute)...
+          </span>
         </div>
       ) : error && !data ? (
         <div className="glass-static" style={{ padding: 24, color: "var(--danger)", fontSize: 14 }}>
           {error}
         </div>
-      ) : m ? (
+      ) : data ? (
         <>
-          {/* ── Speed tiles — Leads · Dialed · Dialed ≤60s · Pickup · Booking · Avg STL ── */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-              gap: 12,
-              marginBottom: 12,
-            }}
-          >
-            <StatTile label="Leads" value={String(m.leads)} />
-            <StatTile
-              label="Leads Dialed"
-              value={String(m.dialed)}
-              sub={`${fmtPct(ratio(m.dialed, m.leads))} of leads · GHL dialer only`}
-            />
-            <StatTile
-              label={`Dialed ≤ ${target}s`}
-              value={String(Math.round((m.withinTargetRate ?? 0) * m.leads))}
-              sub={`${fmtPct(m.withinTargetRate)} of all leads`}
-              color={
-                m.withinTargetRate === null
-                  ? undefined
-                  : m.withinTargetRate >= 0.8
-                    ? "var(--success)"
-                    : m.withinTargetRate >= 0.5
-                      ? "var(--warning)"
-                      : "var(--danger)"
-              }
-            />
-            <StatTile
-              label="Pickup Rate"
-              value={fmtPct(m.pickupRate)}
-              sub={`${m.connected} pickups ÷ ${m.dialed} leads dialed`}
-            />
-            <StatTile
-              label="Booking Rate"
-              value={fmtPct(m.bookingRate)}
-              sub={`${m.booked} of ${m.leads} leads`}
-            />
-            <StatTile
-              label="Avg Speed to Lead"
-              value={fmtDuration(m.avgSpeedToLeadSec)}
-              sub={`median ${fmtDuration(m.medianSpeedToLeadSec)}`}
-              color={speedColor(m.avgSpeedToLeadSec, target)}
-            />
-          </div>
-
-          {/* ── Sales tiles ── */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-              gap: 12,
-              marginBottom: 20,
-            }}
-          >
-            <StatTile
-              label="Show Rate"
-              value={fmtPct(m.showRate)}
-              sub={`${m.shows} of ${m.decided} decided · ${m.booked - m.decided} upcoming`}
-            />
-            <StatTile
-              label="Close Rate"
-              value={fmtPct(m.closeRate)}
-              sub={`${m.wins} won of ${m.shows} shows`}
-            />
-            <StatTile label="Cash Collected" value={fmtMoney(m.totalCash)} sub={`revenue ${fmtMoney(m.totalRevenue)}`} />
-            <StatTile label="AOV" value={fmtMoney(m.aov)} sub={`${m.paidWins} paid wins`} />
-            <StatTile
-              label="Revenue / Lead"
-              value={fmtMoney(m.revenuePerLead)}
-              sub="cash ÷ leads"
-              color={m.revenuePerLead ? "var(--success)" : undefined}
-            />
-          </div>
-
-          {/* ── Funnel strip ── */}
-          <div
-            className="glass-static"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 4,
-              padding: "16px 18px",
-              marginBottom: 20,
-              overflowX: "auto",
-            }}
-          >
-            {funnelStages.map((stage, i) => {
-              const prev = i > 0 ? funnelStages[i - 1].count : null;
-              const conv = prev ? stage.count / prev : null;
-              return (
-                <span key={stage.label} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  {i > 0 && (
-                    <span style={{ display: "flex", flexDirection: "column", alignItems: "center", margin: "0 6px" }}>
-                      <ChevronRight size={14} style={{ color: "var(--text-muted)" }} />
-                      <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                        {prev === 0 ? "—" : fmtPct(conv)}
-                      </span>
-                    </span>
-                  )}
-                  <span style={{ textAlign: "center", minWidth: 72 }}>
-                    <span style={{ display: "block", fontSize: 22, fontWeight: 700, color: "var(--text-primary)" }}>
-                      {stage.count}
-                    </span>
-                    <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>
-                      {stage.label}
-                    </span>
-                  </span>
-                </span>
-              );
-            })}
-          </div>
-
-          {/* ── By setter ── */}
-          {data!.setters.length > 0 && (
-            <div className="glass-static" style={{ padding: 0, overflowX: "auto", marginBottom: 20 }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                <thead>
-                  <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-                    {["Setter", "Leads Dialed", `≤ ${target}s`, "Avg Speed to Lead", "Median", "Pickups", "Bookings"].map((h) => (
-                      <th
-                        key={h}
-                        style={{
-                          textAlign: "left",
-                          padding: "10px 14px",
-                          color: "var(--text-muted)",
-                          fontSize: 11,
-                          textTransform: "uppercase",
-                          letterSpacing: 0.5,
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {data!.setters.map((s) => (
-                    <tr key={s.name} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                      <td style={{ padding: "10px 14px", color: "var(--text-primary)", fontWeight: 600, whiteSpace: "nowrap" }}>
-                        {s.name}
+          {/* ── Per-client metrics ── */}
+          <div className="glass-static" style={{ padding: 0, overflowX: "auto", marginBottom: 20 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+                  <th style={th}>Client</th>
+                  <th style={th}>Leads (Skool Joins)</th>
+                  <th style={th}>Dialed</th>
+                  <th style={th}>Avg Speed to Lead</th>
+                  <th style={th}>Booking Rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.clients.map((c) => {
+                  const isTotal = c.key === "all";
+                  return (
+                    <tr
+                      key={c.key}
+                      style={{
+                        borderBottom: "1px solid rgba(255,255,255,0.05)",
+                        borderTop: isTotal ? "1px solid rgba(255,255,255,0.12)" : undefined,
+                      }}
+                    >
+                      <td style={{ padding: "12px 14px", color: "var(--text-primary)", fontWeight: 700, whiteSpace: "nowrap" }}>
+                        {c.label}
                       </td>
-                      <td style={{ padding: "10px 14px", color: "var(--text-secondary)" }}>{s.leadsDialed}</td>
-                      <td style={{ padding: "10px 14px", color: "var(--text-secondary)" }}>
-                        {s.dialedWithinTarget}
-                        {s.leadsDialed > 0 ? (
-                          <span style={{ color: "var(--text-muted)" }}>
-                            {" "}({fmtPct(ratio(s.dialedWithinTarget, s.leadsDialed))})
-                          </span>
-                        ) : null}
+                      <td style={{ padding: "12px 14px", color: "var(--text-primary)", fontWeight: 600, fontSize: 16 }}>
+                        {c.leads}
+                      </td>
+                      <td style={{ padding: "12px 14px", color: "var(--text-primary)", whiteSpace: "nowrap" }}>
+                        {c.dialed}
+                        <span style={{ color: "var(--text-muted)", fontSize: 12 }}>
+                          {" "}({fmtPct(c.leads ? c.dialed / c.leads : null)})
+                        </span>
                       </td>
                       <td
                         style={{
-                          padding: "10px 14px",
+                          padding: "12px 14px",
                           fontWeight: 600,
                           whiteSpace: "nowrap",
-                          color: speedColor(s.avgSpeedToLeadSec, target),
+                          color: speedColor(c.avgSpeedToLeadSec, target),
                         }}
                       >
-                        {fmtDuration(s.avgSpeedToLeadSec)}
+                        {fmtDuration(c.avgSpeedToLeadSec)}
+                        <span style={{ color: "var(--text-muted)", fontWeight: 400, fontSize: 12 }}>
+                          {" "}· median {fmtDuration(c.medianSpeedToLeadSec)}
+                        </span>
                       </td>
-                      <td style={{ padding: "10px 14px", color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
-                        {fmtDuration(s.medianSpeedToLeadSec)}
-                      </td>
-                      <td style={{ padding: "10px 14px", color: "var(--text-secondary)" }}>{s.pickups}</td>
-                      <td style={{ padding: "10px 14px", color: s.bookings > 0 ? "var(--success)" : "var(--text-secondary)", fontWeight: s.bookings > 0 ? 600 : 400 }}>
-                        {s.bookings}
+                      <td style={{ padding: "12px 14px", color: "var(--text-primary)", whiteSpace: "nowrap" }}>
+                        <span style={{ fontWeight: 600, fontSize: 16 }}>{fmtPct(c.bookingRate)}</span>
+                        <span style={{ color: "var(--text-muted)", fontSize: 12 }}> ({c.booked} booked)</span>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
 
-          {/* ── Lead-by-lead table ── */}
+          {/* ── Lead-by-lead receipts ── */}
           <div className="glass-static" style={{ padding: 0, overflowX: "auto", marginBottom: 20 }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-                  {["Lead In (ET)", "Name", "Setter", "Speed to Lead", "Dials", "Pickup", "Booked", "Call Taken", "Outcome", "Cash"].map(
-                    (h) => (
-                      <th
-                        key={h}
-                        style={{
-                          textAlign: "left",
-                          padding: "10px 14px",
-                          color: "var(--text-muted)",
-                          fontSize: 11,
-                          textTransform: "uppercase",
-                          letterSpacing: 0.5,
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {h}
-                      </th>
-                    ),
-                  )}
+                  {["Lead In (ET)", "Name", "Client", "Setter", "Speed to Lead", "Dials", "Booked"].map((h) => (
+                    <th key={h} style={th}>
+                      {h}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {data!.leadList.length === 0 ? (
+                {data.leadList.length === 0 ? (
                   <tr>
-                    <td colSpan={10} style={{ padding: 24, textAlign: "center", color: "var(--text-muted)" }}>
+                    <td colSpan={7} style={{ padding: 24, textAlign: "center", color: "var(--text-muted)" }}>
                       No lead-magnet leads in this range.
                     </td>
                   </tr>
                 ) : (
-                  data!.leadList.map((lead) => (
+                  data.leadList.map((lead) => (
                     <tr key={lead.slackTs} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
                       <td style={{ padding: "10px 14px", whiteSpace: "nowrap", color: "var(--text-secondary)" }}>
                         {fmtEtTime(lead.pingAt)}
                       </td>
                       <td style={{ padding: "10px 14px", color: "var(--text-primary)", fontWeight: 500, whiteSpace: "nowrap" }}>
                         {titleCase(lead.name)}
-                        {!lead.ghlContactId && (
-                          <span style={{ color: "var(--text-muted)", fontWeight: 400 }}> · no GHL match</span>
-                        )}
+                      </td>
+                      <td style={{ padding: "10px 14px", color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
+                        {clientShort(lead.offer)}
                       </td>
                       <td style={{ padding: "10px 14px", color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
                         {lead.setter || "—"}
@@ -585,61 +423,13 @@ export default function LeadMagnetView() {
                       </td>
                       <td style={{ padding: "10px 14px", color: "var(--text-secondary)" }}>{lead.dials}</td>
                       <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>
-                        {lead.connected ? (
-                          <span style={{ color: "var(--success)", display: "inline-flex", alignItems: "center", gap: 5 }}>
-                            <PhoneCall size={13} /> {fmtDuration(lead.longestCallSec)}
-                          </span>
-                        ) : (
-                          <span style={{ color: "var(--text-muted)" }}>
-                            {lead.dials > 0 ? "no pickup" : "—"}
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>
-                        {lead.booking ? (
-                          <span style={{ color: "var(--text-primary)" }}>
-                            {lead.booking.date.slice(5)} · {titleCase(lead.booking.closer || "?")}
-                          </span>
-                        ) : lead.ghlAppointmentAt ? (
-                          <span style={{ color: "var(--warning)" }} title="Appointment exists in GHL but no phone-set row in the sales tracker yet">
-                            GHL appt only
+                        {lead.booked && lead.ghlAppointmentAt ? (
+                          <span style={{ color: "var(--success)", fontWeight: 600 }}>
+                            {fmtEtTime(lead.ghlAppointmentAt)}
                           </span>
                         ) : (
                           <span style={{ color: "var(--text-muted)" }}>—</span>
                         )}
-                      </td>
-                      <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>
-                        {!lead.booking ? (
-                          <span style={{ color: "var(--text-muted)" }}>—</span>
-                        ) : lead.booking.callTakenStatus === "yes" ? (
-                          <span style={{ color: "var(--success)" }}>Showed</span>
-                        ) : lead.booking.callTakenStatus === "no" ? (
-                          <span style={{ color: "var(--danger)" }}>No show</span>
-                        ) : (
-                          <span style={{ color: "var(--warning)" }}>Upcoming</span>
-                        )}
-                      </td>
-                      <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>
-                        {lead.booking?.outcome ? (
-                          <span
-                            style={{
-                              color:
-                                lead.booking.outcome === "WIN"
-                                  ? "var(--success)"
-                                  : "var(--text-secondary)",
-                              fontWeight: lead.booking.outcome === "WIN" ? 600 : 400,
-                            }}
-                          >
-                            {lead.booking.outcome}
-                          </span>
-                        ) : (
-                          <span style={{ color: "var(--text-muted)" }}>—</span>
-                        )}
-                      </td>
-                      <td style={{ padding: "10px 14px", whiteSpace: "nowrap", color: "var(--text-primary)" }}>
-                        {lead.booking && lead.booking.cashCollected > 0
-                          ? fmtMoney(lead.booking.cashCollected)
-                          : "—"}
                       </td>
                     </tr>
                   ))
@@ -647,53 +437,7 @@ export default function LeadMagnetView() {
               </tbody>
             </table>
           </div>
-
-          {/* ── Phone-set bookings that didn't match a Slack lead ── */}
-          {data!.unmatchedBookings.length > 0 && (
-            <div className="glass-static" style={{ padding: "14px 18px", marginBottom: 20 }}>
-              <p style={{ color: "var(--text-secondary)", fontSize: 13, margin: "0 0 8px", fontWeight: 600 }}>
-                Phone-set bookings in the tracker with no matching #fresh-leads ping (
-                {data!.unmatchedBookings.length})
-              </p>
-              <p style={{ color: "var(--text-muted)", fontSize: 12, margin: "0 0 10px" }}>
-                Usually a name typed differently in the sales tracker than in Slack — these are
-                not counted in the funnel above.
-              </p>
-              {data!.unmatchedBookings.map((b, i) => (
-                <div key={i} style={{ fontSize: 13, color: "var(--text-secondary)", padding: "3px 0" }}>
-                  {b.date} · {titleCase(b.closer || "?")} · {b.callType.trim()} ·{" "}
-                  {b.callTakenStatus === "pending" ? "upcoming" : b.callTakenStatus === "yes" ? "showed" : "no show"}
-                  {b.outcome ? ` · ${b.outcome}` : ""}
-                  {b.cashCollected > 0 ? ` · ${fmtMoney(b.cashCollected)}` : ""}
-                </div>
-              ))}
-            </div>
-          )}
         </>
-      ) : null}
-    </div>
-  );
-}
-
-function StatTile({
-  label,
-  value,
-  sub,
-  color,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  color?: string;
-}) {
-  return (
-    <div className="metric-card">
-      <div className="metric-card-label">{label}</div>
-      <div className="metric-card-value" style={color ? { color } : undefined}>
-        {value}
-      </div>
-      {sub ? (
-        <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 4 }}>{sub}</div>
       ) : null}
     </div>
   );

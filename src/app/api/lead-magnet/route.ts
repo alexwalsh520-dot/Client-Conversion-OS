@@ -12,7 +12,8 @@ import { auth } from "@/auth";
 import { buildLeadMagnetReport } from "@/lib/lead-magnet/data";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+// Live Slack + GHL enrichment over a month of leads runs ~1-2 min.
+export const maxDuration = 300;
 const NO_STORE = { "Cache-Control": "no-store" };
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
