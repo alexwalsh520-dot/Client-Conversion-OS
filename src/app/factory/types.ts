@@ -11,10 +11,33 @@ export type AssetKind =
 
 export interface WComment {
   id: string;
-  author: "alex" | "claude";
+  // "claude" or the commenter's first name in lowercase ("alex", "ahmad", …).
+  // Older rows only ever contain "alex" | "claude".
+  author: string;
   text: string;
   created_at: string;
   resolved?: boolean;
+}
+
+// One row per signed-in user, heartbeat-updated while their Factory tab is open.
+export interface WPresence {
+  email: string;
+  name: string | null;
+  project_id: string | null;
+  item_id: string | null;
+  seen_at: string;
+}
+
+export function authorLabel(author: string): string {
+  if (!author) return "?";
+  if (author === "claude") return "Claude";
+  return author.charAt(0).toUpperCase() + author.slice(1);
+}
+
+// Stable lowercase author id from the session user ("Alex Walsh" -> "alex").
+export function authorIdFrom(name?: string | null, email?: string | null): string {
+  const base = (name || email || "user").split(/[\s@]/)[0].toLowerCase().replace(/[^a-z0-9]/g, "");
+  return base || "user";
 }
 
 export interface WChecklistStep {

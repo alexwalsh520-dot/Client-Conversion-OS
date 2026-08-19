@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { X, Check, History, Trash2, Loader2, Link as LinkIcon, Bold, Italic, List, Heading2, MessageSquarePlus, Tag } from "lucide-react";
-import { WItem, WComment, WChecklistStep, WVersion, STATUS_LABEL, kindMeta, rid } from "./types";
+import { WItem, WComment, WChecklistStep, WVersion, STATUS_LABEL, kindMeta, rid, authorLabel } from "./types";
 
 const stLabel = (s: string) => STATUS_LABEL[s] || s.replace(/_/g, " ");
 
@@ -50,10 +50,16 @@ function toHtml(body: string): string {
 
 export default function DocEditor({
   item,
+  author,
+  othersHere = [],
   onClose,
   onChanged,
 }: {
   item: WItem;
+  // Lowercase first name of the signed-in user ("alex", "ahmad") — stamped on comments.
+  author: string;
+  // First names of anyone else who has THIS doc open right now.
+  othersHere?: string[];
   onClose: () => void;
   onChanged: () => void;
 }) {
@@ -82,6 +88,9 @@ export default function DocEditor({
   const edRef = useRef<HTMLDivElement>(null);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inited = useRef<string>("");
+  // Last time THIS browser changed the comment list — used to hold off adopting
+  // the polled server list until our own write has round-tripped.
+  const commentsTouchedAt = useRef(0);
 
   // Initialize the editable surface once per asset (never on every render — that
   // would fight the contentEditable DOM and wipe the cursor).
@@ -111,6 +120,24 @@ export default function DocEditor({
   }, [item.id, item.body_md, item.copy_text, item.comments, item.checklist, item.label, item.status, item.stage, meta.statuses]);
 
   useEffect(() => () => { if (debounce.current) clearTimeout(debounce.current); }, []);
+
+  // Multiplayer: adopt comments that arrive from the poll (someone else wrote or
+  // deleted one) instead of overwriting them on our next save. We hold off while
+  // a comment is being written/edited here, or right after our own change (so a
+  // stale poll snapshot can't revert it before the PATCH round-trips).
+  useEffect(() => {
+    if (inited.current !== item.id) return; // first load is handled by the init effect
+    if (pending || draftCid) return;
+    if (Date.now() - commentsTouchedAt.current < 4000) return;
+    const remote = (item.comments || []).filter((c) => (c.text || "").trim());
+    const same =
+      remote.length === comments.length &&
+      remote.every((r) => {
+        const l = comments.find((c) => c.id === r.id);
+        return !!l && l.text === r.text && !!l.resolved === !!r.resolved;
+      });
+    if (!same) setComments(remote);
+  }, [item.id, item.comments, comments, pending, draftCid]);
 
   const currentHtml = () => edRef.current?.innerHTML || "";
 
@@ -201,7 +228,8 @@ export default function DocEditor({
       span.setAttribute("data-cid", cid);
       try { pending.range.surroundContents(span); quote = (span.textContent || quote).slice(0, 200); } catch { /* range moved; keep the quote, skip the visual wrap */ }
     }
-    const next = [...comments, { id: cid, author: "alex" as const, text, created_at: new Date().toISOString(), quote } as WComment & { quote: string }];
+    const next = [...comments, { id: cid, author, text, created_at: new Date().toISOString(), quote } as WComment & { quote: string }];
+    commentsTouchedAt.current = Date.now();
     setComments(next);
     setPending(null);
     saveField({ comments: next, bodyMd: currentHtml() });
@@ -210,12 +238,14 @@ export default function DocEditor({
   const saveComment = (cid: string, text: string) => {
     if (!text.trim()) { setDraftCid(null); removeComment(cid); return; } // empty edit = remove it
     const next = comments.map((c) => (c.id === cid ? { ...c, text } : c));
+    commentsTouchedAt.current = Date.now();
     setComments(next);
     setDraftCid(null);
     saveField({ comments: next });
   };
   const removeComment = (cid: string) => {
     const next = comments.filter((c) => c.id !== cid);
+    commentsTouchedAt.current = Date.now();
     setComments(next);
     const el = edRef.current?.querySelector(`[data-cid="${cid}"]`);
     if (el) { const t = document.createTextNode(el.textContent || ""); el.replaceWith(t); }
@@ -302,6 +332,12 @@ export default function DocEditor({
         </div>
 
         {err && <div className="fcw-err">{err}</div>}
+        {othersHere.length > 0 && (
+          <div className="fcw-cowarn">
+            <span className="fcw-presence-dot" />
+            {othersHere.join(" and ")} {othersHere.length === 1 ? "has" : "have"} this doc open too. Comments sync live; if you both type in the body, the last save wins (version history keeps both).
+          </div>
+        )}
 
         <div className="fcw-drawer-body">
           {/* Editor */}
@@ -431,7 +467,7 @@ function CommentCard({ c, onSave, onRemove, editing, draftText, setDraftText, on
         </>
       ) : (
         <>
-          <div className="fcw-comment-head"><span className="fcw-comment-author">{c.author === "claude" ? "Claude" : "Alex"}</span>
+          <div className="fcw-comment-head"><span className="fcw-comment-author">{authorLabel(c.author)}</span>
             <button className="fcw-comment-resolve" onClick={onEdit} title="Edit">edit</button>
             <button className="fcw-comment-resolve" onClick={() => onRemove(c.id)} title="Delete">×</button>
           </div>

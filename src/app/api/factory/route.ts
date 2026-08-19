@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -21,8 +22,27 @@ export const revalidate = 0;
 // PATCH /api/factory  { groupId, ... }    → update one group (rename/collapse/reorder)
 // DELETE /api/factory?type=item|group&id=<id>
 //
-// Service-role client throughout (single-user internal app). No silent failures.
+// Service-role client throughout; every handler requires a signed-in user who
+// is an admin or has /factory in allowed_tabs (the Factory is multi-user).
+// POST { action: "presence" } is the heartbeat; GET returns live presence rows.
+// No silent failures.
 // ---------------------------------------------------------------------------
+
+// The Factory is multi-user now (Alex + collaborators like Ahmad), so the API
+// requires a signed-in user who is an admin OR has /factory in allowed_tabs.
+// Old JWTs without role/allowedTabs pass, mirroring AccessGate's fallback.
+async function requireFactoryUser(): Promise<{ email: string; name: string } | null> {
+  const session = await auth();
+  const user = session?.user;
+  if (!user?.email) return null;
+  if (user.role && user.allowedTabs) {
+    const allowed = user.role === "admin" || user.allowedTabs.includes("/factory");
+    if (!allowed) return null;
+  }
+  return { email: user.email.toLowerCase(), name: user.name || user.email };
+}
+
+const PRESENCE_WINDOW_MS = 25_000;
 
 const STAGES = ["copy_written", "image_generated", "revision", "completed"] as const;
 type Stage = (typeof STAGES)[number];
@@ -66,6 +86,8 @@ interface FactoryProject {
 
 export async function GET(req: NextRequest) {
   try {
+    const viewer = await requireFactoryUser();
+    if (!viewer) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
     const sb = getServiceSupabase();
     const params = req.nextUrl.searchParams;
     const projectId = params.get("projectId");
@@ -203,7 +225,13 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return NextResponse.json({ projects: out });
+    // Who else is in the Factory right now (heartbeats within the window).
+    const { data: presenceRows } = await sb
+      .from("factory_presence")
+      .select("email, name, project_id, item_id, seen_at")
+      .gte("seen_at", new Date(Date.now() - PRESENCE_WINDOW_MS).toISOString());
+
+    return NextResponse.json({ projects: out, presence: presenceRows ?? [] });
   } catch (err) {
     console.error("[/api/factory GET] error", err);
     return NextResponse.json(
@@ -216,10 +244,25 @@ export async function GET(req: NextRequest) {
 // ---------------------------------------------------------------- POST (create)
 export async function POST(req: NextRequest) {
   try {
+    const viewer = await requireFactoryUser();
+    if (!viewer) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
     const sb = getServiceSupabase();
     const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
     if (!body) return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     const action = body.action as string;
+
+    // Heartbeat: "I'm looking at this project / this doc". One row per user.
+    if (action === "presence") {
+      const { error } = await sb.from("factory_presence").upsert({
+        email: viewer.email,
+        name: viewer.name,
+        project_id: (body.projectId as string) || null,
+        item_id: (body.itemId as string) || null,
+        seen_at: new Date().toISOString(),
+      });
+      if (error) throw error;
+      return NextResponse.json({ ok: true });
+    }
 
     if (action === "createProject") {
       const name = (body.name as string)?.trim();
@@ -373,6 +416,8 @@ export async function POST(req: NextRequest) {
 // ---------------------------------------------------------------- PATCH (update)
 export async function PATCH(req: NextRequest) {
   try {
+    const viewer = await requireFactoryUser();
+    if (!viewer) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
     const sb = getServiceSupabase();
     const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
     if (!body) return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
@@ -500,6 +545,8 @@ export async function PATCH(req: NextRequest) {
 // ---------------------------------------------------------------- DELETE
 export async function DELETE(req: NextRequest) {
   try {
+    const viewer = await requireFactoryUser();
+    if (!viewer) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
     const sb = getServiceSupabase();
     const params = req.nextUrl.searchParams;
     const type = params.get("type");

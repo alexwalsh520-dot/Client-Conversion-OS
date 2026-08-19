@@ -6,7 +6,8 @@ import {
   Image as ImageIcon, Video, Mail, FileText, Film, StickyNote, Loader2, Layers, LayoutGrid,
   History, RotateCcw, Save, X, Tag,
 } from "lucide-react";
-import { WProject, WItem, WGroup, WBatch, AssetKind, KIND_META, KIND_ORDER, statusDone, STATUS_LABEL, kindMeta } from "./types";
+import { useSession } from "next-auth/react";
+import { WProject, WItem, WGroup, WBatch, WPresence, AssetKind, KIND_META, KIND_ORDER, statusDone, STATUS_LABEL, kindMeta, authorIdFrom } from "./types";
 import DocEditor from "./DocEditor";
 
 // Nice status label + which pipeline column a status belongs to.
@@ -82,7 +83,11 @@ async function api(method: string, payload?: Record<string, unknown>, qs?: strin
 }
 
 export default function Workspace({ projectId }: { projectId: string }) {
+  const { data: session } = useSession();
+  const myEmail = session?.user?.email?.toLowerCase() || "";
+  const myAuthor = authorIdFrom(session?.user?.name, session?.user?.email);
   const [project, setProject] = useState<WProject | null>(null);
+  const [presence, setPresence] = useState<WPresence[]>([]);
   const [editing, setEditing] = useState<WItem | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [addingGroup, setAddingGroup] = useState(false);
@@ -99,6 +104,7 @@ export default function Workspace({ projectId }: { projectId: string }) {
     try {
       const j = await api("GET", undefined, `?projectId=${projectId}`);
       setProject((j.projects && j.projects[0]) || null);
+      setPresence(j.presence || []);
       setErr(null);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "load failed");
@@ -110,6 +116,31 @@ export default function Workspace({ projectId }: { projectId: string }) {
     pollRef.current = setInterval(load, POLL_MS);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [load]);
+
+  // Presence heartbeat: tell everyone which project (and doc) I'm looking at.
+  // Fires immediately when the open doc changes so the "in this doc" flag is fast.
+  const editingId = editing?.id ?? null;
+  const editingIdRef = useRef<string | null>(null);
+  const sendPresence = useCallback(() => {
+    api("POST", { action: "presence", projectId, itemId: editingIdRef.current }).catch(() => {});
+  }, [projectId]);
+  useEffect(() => { editingIdRef.current = editingId; sendPresence(); }, [editingId, sendPresence]);
+  useEffect(() => {
+    const t = setInterval(sendPresence, 10000);
+    return () => clearInterval(t);
+  }, [sendPresence]);
+
+  // Everyone else who is live in THIS project right now.
+  const others = useMemo(
+    () => presence.filter((p) => p.email !== myEmail && p.project_id === projectId),
+    [presence, myEmail, projectId],
+  );
+  const firstName = (p: WPresence) => (p.name || p.email).split(/[\s@]/)[0];
+  const othersByItem = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of others) if (p.item_id) m.set(p.item_id, firstName(p));
+    return m;
+  }, [others]);
 
   // Keep the open editor's data fresh after saves.
   useEffect(() => {
@@ -215,6 +246,15 @@ export default function Workspace({ projectId }: { projectId: string }) {
         )}
         {busy && <Loader2 size={14} className="fcw-spin fcw-toolbar-busy" />}
         <div className="fcw-toolbar-spacer" />
+        {others.length > 0 && (
+          <div className="fcw-presence" title="Also in this project right now">
+            {others.map((p) => (
+              <span key={p.email} className="fcw-presence-chip">
+                <span className="fcw-presence-dot" />{firstName(p)}
+              </span>
+            ))}
+          </div>
+        )}
         <div className="fcw-modeseg">
           <button className={mode === "groups" ? "on" : ""} onClick={() => setMode("groups")}><Layers size={14} /> Groups</button>
           <button className={mode === "pipeline" ? "on" : ""} onClick={() => setMode("pipeline")}><LayoutGrid size={14} /> Pipeline</button>
@@ -243,7 +283,7 @@ export default function Workspace({ projectId }: { projectId: string }) {
             {!g.collapsed && (
               <div className="fcw-cards">
                 {items.length === 0 && <div className="fcw-group-empty">No assets yet — add one.</div>}
-                {items.map((it) => <AssetCard key={it.id} item={it} onOpen={() => setEditing(it)} />)}
+                {items.map((it) => <AssetCard key={it.id} item={it} onOpen={() => setEditing(it)} liveName={othersByItem.get(it.id)} />)}
               </div>
             )}
           </section>
@@ -254,7 +294,7 @@ export default function Workspace({ projectId }: { projectId: string }) {
         <section className="fcw-group">
           <header className="fcw-group-head"><span className="fcw-group-name fcw-ungrouped">Ungrouped</span><span className="fcw-progress-pill">{ungrouped.length}</span></header>
           <div className="fcw-cards">
-            {ungrouped.map((it) => <AssetCard key={it.id} item={it} onOpen={() => setEditing(it)} />)}
+            {ungrouped.map((it) => <AssetCard key={it.id} item={it} onOpen={() => setEditing(it)} liveName={othersByItem.get(it.id)} />)}
           </div>
         </section>
       )}
@@ -262,7 +302,15 @@ export default function Workspace({ projectId }: { projectId: string }) {
 
       {mode === "pipeline" && <PipelineView items={project.items} groups={groups} onOpen={setEditing} onMove={moveItem} />}
 
-      {editing && <DocEditor item={editing} onClose={() => setEditing(null)} onChanged={load} />}
+      {editing && (
+        <DocEditor
+          item={editing}
+          author={myAuthor}
+          othersHere={others.filter((p) => p.item_id === editing.id).map(firstName)}
+          onClose={() => setEditing(null)}
+          onChanged={load}
+        />
+      )}
       {batchGroup && (
         <BatchPanel
           group={batchGroup}
@@ -418,7 +466,7 @@ function KanbanCard({ item, group, onOpen, dragging, onDragStart, onDragEnd }: {
   );
 }
 
-function AssetCard({ item, onOpen }: { item: WItem; onOpen: () => void }) {
+function AssetCard({ item, onOpen, liveName }: { item: WItem; onOpen: () => void; liveName?: string }) {
   const meta = kindMeta(item.kind);
   const commentCount = (item.comments || []).filter((c) => !c.resolved).length;
   const steps = item.checklist || [];
@@ -431,6 +479,7 @@ function AssetCard({ item, onOpen }: { item: WItem; onOpen: () => void }) {
       <div className="fcw-card-top">
         <span className="fcw-card-kind">{KIND_ICON[meta.icon]}</span>
         <span className="fcw-card-label">{item.label}</span>
+        {liveName && <span className="fcw-presence-chip" title={`${liveName} has this open`}><span className="fcw-presence-dot" />{liveName}</span>}
         <span className={`fcw-card-status fcw-st-${status}`}>{statusText(status)}</span>
       </div>
       {item.kind === "image_ad" && item.image_url ? (

@@ -22,16 +22,19 @@ import {
   Link2,
   Archive as ArchiveIcon,
 } from "lucide-react";
+import { useSession } from "next-auth/react";
 import "./factory.css";
 import Workspace from "./Workspace";
 import CanvasBoard from "./CanvasBoard";
+import { authorIdFrom, authorLabel } from "./types";
 
 // ---- Types mirror the /api/factory response ----
 type Stage = "copy_written" | "image_generated" | "revision" | "completed";
 
 interface FComment {
   id: string;
-  author: "alex" | "claude";
+  // "claude" or the commenter's lowercase first name ("alex", "ahmad", …).
+  author: string;
   text: string;
   created_at: string;
   quote?: string;
@@ -898,6 +901,8 @@ function Card({
   const [draft, setDraft] = useState(item.copy_text || "");
   const [commentDraft, setCommentDraft] = useState("");
   const [showComments, setShowComments] = useState(false);
+  const { data: session } = useSession();
+  const author = authorIdFrom(session?.user?.name, session?.user?.email);
 
   const comments = item.comments || [];
 
@@ -919,7 +924,7 @@ function Card({
     if (!t) return;
     const next = [...comments, {
       id: Math.random().toString(36).slice(2, 10) + Date.now().toString(36),
-      author: "alex" as const, text: t, created_at: new Date().toISOString(),
+      author, text: t, created_at: new Date().toISOString(),
     }];
     setCommentDraft("");
     onPatch(item.id, { comments: next });
@@ -1053,7 +1058,7 @@ function Card({
           {comments.map((c) => (
             <div key={c.id} className={`fc-comment fc-comment-${c.author}`}>
               <div className="fc-comment-head">
-                <span className="fc-comment-author">{c.author === "claude" ? "Claude" : "Alex"}</span>
+                <span className="fc-comment-author">{authorLabel(c.author)}</span>
                 <button className="fc-comment-x" onClick={() => removeComment(c.id)} aria-label="Delete comment">×</button>
               </div>
               <div className="fc-comment-text">{c.text}</div>
