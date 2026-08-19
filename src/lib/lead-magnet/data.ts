@@ -87,6 +87,17 @@ export interface ClientStats {
   medianSpeedToLeadSec: number | null;
   booked: number;
   bookingRate: number | null;
+  // Sales outcomes for the BOOKED leads, from their sales-tracker rows
+  // (matched by name, any call type). Booked calls with no tracker row yet
+  // are counted in notLogged and excluded from the rates.
+  notLogged: number;
+  decided: number; // tracker row with Call Taken filled in (yes or no)
+  shows: number;
+  wins: number;
+  cash: number;
+  showRate: number | null; // shows / decided
+  closeRate: number | null; // wins / shows
+  aov: number | null; // cash / wins with cash > 0
 }
 
 export interface SetterStats {
@@ -429,11 +440,6 @@ async function fetchUserNames(userIds: string[]): Promise<Map<string, string>> {
 // Stage 3 — sales tracker bookings (source of truth)
 // ---------------------------------------------------------------------------
 
-function isPhoneSetRow(row: SheetRow): boolean {
-  // "Phone Set" and "Lead Magnet Phone Set" both count.
-  return nameKey(row.callType).includes("phoneset");
-}
-
 function toBooking(row: SheetRow): LeadBooking {
   return {
     date: row.date,
@@ -447,8 +453,13 @@ function toBooking(row: SheetRow): LeadBooking {
   };
 }
 
-/** All phone-set tracker rows from the month of `from` through the current ET month. */
-async function fetchPhoneSetRows(from: string): Promise<SheetRow[]> {
+/**
+ * All tracker rows (any call type) from the month of `from` through the
+ * current ET month. The team logs lead-magnet calls under whatever type they
+ * pick ("Strategy Session", "Onboarding Call", "Lead Mag Outbound", …), so we
+ * match by name rather than by call type.
+ */
+async function fetchTrackerRows(from: string): Promise<SheetRow[]> {
   const [fromYear, fromMonth] = from.split("-").map(Number);
   const today = etDay(new Date());
   const [toYear, toMonth] = today.split("-").map(Number);
@@ -468,7 +479,7 @@ async function fetchPhoneSetRows(from: string): Promise<SheetRow[]> {
   const rowsByMonth = await Promise.all(
     months.map(({ year, month }) => fetchMonthTabSalesRows(year, month).catch(() => [] as SheetRow[])),
   );
-  return rowsByMonth.flat().filter(isPhoneSetRow);
+  return rowsByMonth.flat();
 }
 
 /**
@@ -500,7 +511,7 @@ export async function buildLeadMagnetReport(from: string, to: string): Promise<L
     else throw err;
   }
 
-  const [enrichments, phoneSetRows] = await Promise.all([
+  const [enrichments, trackerRows] = await Promise.all([
     mapWithConcurrency(slackLeads, GHL_CONCURRENCY, (lead) =>
       enrichFromGhl(lead.phone).catch(() => ({
         contactId: null,
@@ -510,10 +521,8 @@ export async function buildLeadMagnetReport(from: string, to: string): Promise<L
         appointmentTimes: [] as string[],
       })),
     ),
-    fetchPhoneSetRows(from).catch(() => [] as SheetRow[]),
+    fetchTrackerRows(from).catch(() => [] as SheetRow[]),
   ]);
-
-  const claimedRowKeys = new Set<SheetRow>();
 
   const drafts = slackLeads.map((lead, i) => {
     const ghl = enrichments[i];
@@ -535,11 +544,10 @@ export async function buildLeadMagnetReport(from: string, to: string): Promise<L
 
     const ghlName = `${ghl.firstName} ${ghl.lastName}`.trim();
     const keys = new Set([nameKey(lead.slackName), nameKey(ghlName)].filter(Boolean));
-    const matches = phoneSetRows.filter(
+    const matches = trackerRows.filter(
       (row) => keys.has(nameKey(row.name)) && row.date >= lead.dateEt,
     );
     const bookingRow = matches.length ? pickBooking(matches) : null;
-    if (bookingRow) matches.forEach((row) => claimedRowKeys.add(row));
 
     // Booked = a GHL appointment created after the ping (the team books through
     // GHL calendar links). Pre-ping appointments belong to earlier journeys.
@@ -577,9 +585,9 @@ export async function buildLeadMagnetReport(from: string, to: string): Promise<L
     setter: d.firstDialUserId ? userNames.get(d.firstDialUserId) || d.firstDialUserId : null,
   }));
 
-  const unmatchedBookings = phoneSetRows
-    .filter((row) => !claimedRowKeys.has(row) && row.date >= from && row.date <= to)
-    .map(toBooking);
+  // With call-type filtering gone, "unmatched" would just be every other sale
+  // on the tracker — not a useful list. Kept in the payload shape as empty.
+  const unmatchedBookings: LeadBooking[] = [];
 
   const speeds = leadList
     .map((l) => l.speedToLeadSec)
@@ -681,7 +689,13 @@ export async function buildLeadMagnetReport(from: string, to: string): Promise<L
     const groupSpeeds = group
       .map((l) => l.speedToLeadSec)
       .filter((s): s is number => s !== null);
-    const groupBooked = group.filter((l) => l.booked).length;
+    const groupBooked = group.filter((l) => l.booked);
+    const logged = groupBooked.filter((l) => l.booking);
+    const decided = logged.filter((l) => l.booking!.callTakenStatus !== "pending");
+    const groupShows = logged.filter((l) => l.booking!.callTakenStatus === "yes");
+    const groupWins = logged.filter((l) => l.booking!.outcome === "WIN");
+    const groupPaidWins = groupWins.filter((l) => l.booking!.cashCollected > 0);
+    const groupCash = logged.reduce((sum, l) => sum + l.booking!.cashCollected, 0);
     return {
       key: nameKey(label) || "unknown",
       label,
@@ -691,8 +705,16 @@ export async function buildLeadMagnetReport(from: string, to: string): Promise<L
         ? Math.round(groupSpeeds.reduce((a, b) => a + b, 0) / groupSpeeds.length)
         : null,
       medianSpeedToLeadSec: median(groupSpeeds),
-      booked: groupBooked,
-      bookingRate: ratio(groupBooked, group.length),
+      booked: groupBooked.length,
+      bookingRate: ratio(groupBooked.length, group.length),
+      notLogged: groupBooked.length - logged.length,
+      decided: decided.length,
+      shows: groupShows.length,
+      wins: groupWins.length,
+      cash: groupCash,
+      showRate: ratio(groupShows.length, decided.length),
+      closeRate: ratio(groupWins.length, groupShows.length),
+      aov: groupPaidWins.length ? groupCash / groupPaidWins.length : null,
     };
   };
   const byClient = new Map<string, LeadJourney[]>();
