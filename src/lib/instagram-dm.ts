@@ -7,6 +7,7 @@ import {
   markInstagramConnectionWebhookSeen,
   upsertInstagramLeadIdentity,
 } from "@/lib/instagram-connections";
+import { CREATORS_BY_KEY, creatorKeyFromText } from "@/lib/creators";
 
 const INSTAGRAM_CHANNEL = "Instagram DM";
 const DEFAULT_CLIENT_KEY = "matthew_conder";
@@ -489,30 +490,59 @@ async function reclassifyConversation(
   }
 }
 
+// An account we still ingest for: it has a `connected` row AND its creator is still active in the
+// registry. Both halves matter. Without the first, an unknown account silently became
+// DEFAULT_CLIENT_KEY (see below). Without the second, a dropped client keeps flowing: antwan was
+// `active: false` from Jul 2026 yet pushed 76,157 messages through this path in Aug 2026 because
+// nothing here ever consulted the registry.
+function ingestAllowed(clientKey: string): boolean {
+  const creator = creatorKeyFromText(clientKey);
+  // No registry match at all → not one of ours → do not ingest.
+  if (!creator) return false;
+  return CREATORS_BY_KEY[creator]?.active === true;
+}
+
 export async function processInstagramWebhookPayload(payload: Record<string, unknown>) {
   const fallbackConfig = getInstagramWebhookConfig();
   const entries = asRecordArray(payload.entry);
   const messages: ParsedInstagramMessage[] = [];
   const seenConnectedAccounts = new Set<string>();
+  const skipped: Array<{ accountId: string | null; reason: string }> = [];
 
-  if (entries.length === 0) {
+  // NOTE: an entry-less payload can't be attributed to an account, so it can only ever be the
+  // fallback identity. That is a developer/test shape, not creator traffic — gate it the same way.
+  if (entries.length === 0 && ingestAllowed(fallbackConfig.clientKey)) {
     messages.push(...extractParsedMessagesFromPayload(payload, fallbackConfig));
   }
 
   for (const entry of entries) {
     const entryAccountId = asString(entry.id);
     const connection = await getInstagramConnectionByAccountId(entryAccountId);
-    const config: InstagramWebhookConfig = connection
-      ? {
-          ...fallbackConfig,
-          clientKey: connection.client_key,
-          setterName: null,
-          accountId: connection.instagram_user_id || entryAccountId,
-          accountUsername: connection.instagram_username,
-        }
-      : fallbackConfig;
 
-    if (connection?.instagram_user_id) {
+    // HARD DROP on no connection. This used to fall through to `fallbackConfig`, whose clientKey is
+    // DEFAULT_CLIENT_KEY ("matthew_conder") — so a disconnected or unknown account did not stop
+    // sending, it just got FILED UNDER THE WRONG CLIENT. Flipping a connection row to
+    // 'disconnected' would have relabelled that creator's DMs as Matthew's rather than dropping
+    // them. Unattributable traffic is now refused outright.
+    if (!connection) {
+      skipped.push({ accountId: entryAccountId, reason: "no connected account" });
+      continue;
+    }
+
+    if (!ingestAllowed(connection.client_key)) {
+      skipped.push({ accountId: entryAccountId, reason: `creator not active: ${connection.client_key}` });
+      continue;
+    }
+
+    const config: InstagramWebhookConfig = {
+      ...fallbackConfig,
+      clientKey: connection.client_key,
+      setterName: null,
+      accountId: connection.instagram_user_id || entryAccountId,
+      accountUsername: connection.instagram_username,
+    };
+
+    if (connection.instagram_user_id) {
       seenConnectedAccounts.add(connection.instagram_user_id);
     }
 
@@ -521,11 +551,16 @@ export async function processInstagramWebhookPayload(payload: Record<string, unk
     );
   }
 
+  if (skipped.length) {
+    console.warn("[instagram-webhook] dropped entries:", JSON.stringify(skipped));
+  }
+
   if (messages.length === 0) {
     return {
       storedMessages: 0,
       conversations: 0,
       messageIds: [] as string[],
+      skipped,
     };
   }
 
