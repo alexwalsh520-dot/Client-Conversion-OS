@@ -30,6 +30,17 @@ export interface WorkspaceRow {
   closer: string | null;
   manychatLink: string | null;
   hasKeywordEvents: boolean;
+  /** Keywords THIS person actually sent, newest first — one-click answers. */
+  ownKeywords: string[];
+}
+
+export interface KeywordOption {
+  clientKey: string;
+  keyword: string;
+  /** Last day this keyword fired a DM event (ISO), null if never. */
+  lastSeenDay: string | null;
+  /** DM events in the last 30 days; 0 means the keyword is quiet. */
+  events30d: number;
 }
 
 export interface WorkspacePayload {
@@ -37,7 +48,8 @@ export interface WorkspacePayload {
   zeroCash: WorkspaceRow[];
   /** Decisions already saved but not yet applied to the numbers. */
   pendingCount: number;
-  keywords: { clientKey: string; keyword: string }[];
+  /** Sorted by the server: firing-now first, then most recently seen. */
+  keywords: KeywordOption[];
 }
 
 interface QueueRpcRow {
@@ -69,25 +81,64 @@ export async function readWorkspace(db: Db): Promise<WorkspacePayload> {
     ((resolvedRes.data || []) as { sale_key: string }[]).map((r) => r.sale_key),
   );
 
-  const rows = ((queueRes.data || []) as QueueRpcRow[])
-    .filter((r) => !decided.has(r.sale_key))
-    .map(
-      (r): WorkspaceRow => ({
-        saleKey: r.sale_key,
-        day: r.sale_et_day,
-        prospect: r.prospect_name,
-        clientKey: r.client_key,
-        cashUsdCents: Number(r.collected_usd_cents) || 0,
-        callType: r.call_type,
-        setter: r.setter_name,
-        closer: r.closer,
-        manychatLink: r.manychat_link,
-        hasKeywordEvents: r.has_keyword_events === true,
-      }),
-    );
+  const undecided = ((queueRes.data || []) as QueueRpcRow[]).filter(
+    (r) => !decided.has(r.sale_key),
+  );
 
-  const keywords = ((kwRes.data || []) as { client_key: string; keyword_normalized: string }[]).map(
-    (k) => ({ clientKey: k.client_key, keyword: k.keyword_normalized }),
+  // The person's OWN keyword history is the fastest correct answer: if the
+  // queue row has a subscriber, look up what they actually sent so the UI can
+  // offer it as a one-click chip instead of a 199-keyword search.
+  const subscriberIds = [...new Set(undecided.map((r) => r.subscriber_id).filter(Boolean))] as string[];
+  const ownBySubscriber = new Map<string, string[]>();
+  if (subscriberIds.length > 0) {
+    const { data: events } = await db
+      .schema("warehouse")
+      .from("ads_keyword_events")
+      .select("subscriber_id, keyword_normalized, event_at")
+      .in("subscriber_id", subscriberIds)
+      .not("keyword_normalized", "is", null)
+      .order("event_at", { ascending: false });
+    for (const e of (events || []) as {
+      subscriber_id: string | null;
+      keyword_normalized: string | null;
+    }[]) {
+      if (!e.subscriber_id || !e.keyword_normalized) continue;
+      const list = ownBySubscriber.get(e.subscriber_id) || [];
+      if (!list.includes(e.keyword_normalized)) list.push(e.keyword_normalized);
+      ownBySubscriber.set(e.subscriber_id, list);
+    }
+  }
+
+  const rows = undecided.map(
+    (r): WorkspaceRow => ({
+      saleKey: r.sale_key,
+      day: r.sale_et_day,
+      prospect: r.prospect_name,
+      clientKey: r.client_key,
+      cashUsdCents: Number(r.collected_usd_cents) || 0,
+      callType: r.call_type,
+      setter: r.setter_name,
+      closer: r.closer,
+      manychatLink: r.manychat_link,
+      hasKeywordEvents: r.has_keyword_events === true,
+      ownKeywords: (r.subscriber_id && ownBySubscriber.get(r.subscriber_id)) || [],
+    }),
+  );
+
+  const keywords = (
+    (kwRes.data || []) as {
+      client_key: string;
+      keyword_normalized: string;
+      last_seen_day: string | null;
+      events_30d: number | null;
+    }[]
+  ).map(
+    (k): KeywordOption => ({
+      clientKey: k.client_key,
+      keyword: k.keyword_normalized,
+      lastSeenDay: k.last_seen_day,
+      events30d: Number(k.events_30d) || 0,
+    }),
   );
 
   return {

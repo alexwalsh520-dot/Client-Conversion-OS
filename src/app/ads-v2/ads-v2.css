@@ -1924,6 +1924,22 @@ body.metric-dragging {
   font-size: 10px;
   color: var(--green-dim);
 }
+.adsv2 .aw-own-kws {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.adsv2 .aw-own-kw {
+  font-size: 11px;
+  padding: 2px 10px;
+  border-radius: 999px;
+}
+.adsv2 .aw-own-kw-on {
+  color: var(--gold);
+  border-color: var(--gold-dim);
+}
 .adsv2 .aw-row-actions {
   display: flex;
   align-items: center;

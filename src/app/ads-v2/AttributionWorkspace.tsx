@@ -19,13 +19,21 @@ interface Row {
   closer: string | null;
   manychatLink: string | null;
   hasKeywordEvents: boolean;
+  ownKeywords: string[];
+}
+
+interface KeywordOption {
+  clientKey: string;
+  keyword: string;
+  lastSeenDay: string | null;
+  events30d: number;
 }
 
 interface Payload {
   queue: Row[];
   zeroCash: Row[];
   pendingCount: number;
-  keywords: { clientKey: string; keyword: string }[];
+  keywords: KeywordOption[];
 }
 
 const NAME_STORE = "adsv2-attribution-name";
@@ -165,7 +173,7 @@ function WorkspaceRow({
   onSave,
 }: {
   row: Row;
-  keywords: { clientKey: string; keyword: string }[];
+  keywords: KeywordOption[];
   needsName: boolean;
   onSave: (row: Row, keyword: string | null, notAd: boolean, note: string) => Promise<void>;
 }) {
@@ -211,6 +219,22 @@ function WorkspaceRow({
           </span>
         )}
       </div>
+      {row.ownKeywords.length > 0 && (
+        <div className="aw-own-kws">
+          <span className="aw-meta">They sent:</span>
+          {row.ownKeywords.map((kw) => (
+            <button
+              key={kw}
+              type="button"
+              className={`ghost-btn aw-own-kw${keyword === kw ? " aw-own-kw-on" : ""}`}
+              disabled={busy}
+              onClick={() => setKeyword(kw)}
+            >
+              {kw}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="aw-row-actions">
         <input
           className="aw-input aw-kw"
@@ -223,7 +247,9 @@ function WorkspaceRow({
         <datalist id={listId}>
           {keywords.map((k) => (
             <option key={`${k.clientKey}:${k.keyword}`} value={k.keyword}>
-              {k.clientKey}
+              {k.events30d > 0
+                ? `${k.clientKey} · firing now (${k.events30d} in 30d)`
+                : `${k.clientKey} · quiet since ${k.lastSeenDay || "?"}`}
             </option>
           ))}
         </datalist>
