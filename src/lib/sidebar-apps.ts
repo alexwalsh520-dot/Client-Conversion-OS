@@ -35,6 +35,7 @@ import {
   ListTodo,
   Magnet,
   Target,
+  Crosshair,
 } from "lucide-react";
 
 export type AppItem = {
@@ -63,6 +64,7 @@ export const NAV_ITEMS: AppItem[] = [
   // Private single-owner tabs — gated to ownerEmail in canViewApp (overrides admin).
   { href: "/micromanager", label: "Micromanager", icon: ClipboardCheck, ownerEmail: "alexwalsh520@gmail.com" },
   { href: "/todos", label: "ToDos", icon: ListTodo, ownerEmail: "alexwalsh520@gmail.com" },
+  { href: "/bottlenecks", label: "Bottlenecks", icon: Crosshair, ownerEmail: "alexwalsh520@gmail.com" },
   { href: "/supplements", label: "Supplements", icon: Pill, ownerEmail: "matthew@clientconversion.io" },
   { href: "/invoicing-payouts", label: "Invoicing & Payouts", icon: Receipt, ownerEmail: "matthew@clientconversion.io" },
 ];
