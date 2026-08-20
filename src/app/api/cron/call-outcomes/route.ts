@@ -69,7 +69,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   return NextResponse.json({
     posted,
     day,
-    scheduled: report.totals.all.scheduled,
+    scheduled: report.totals.scheduled,
+    excludedClientOnboarding: report.excludedClientOnboarding,
     warnings: report.warnings,
   });
 }

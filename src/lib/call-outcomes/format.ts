@@ -33,8 +33,7 @@ function metricLines(s: Stats): string[] {
 
 /** Short type tag; Strategy Sessions are the default and stay unlabelled. */
 function typeTag(call: CallOutcome): string | null {
-  if (call.callType === "Rep Onboarding") return "rep onboarding";
-  if (call.callType === "Client Onboarding") return "client onboarding";
+  if (call.callType === "Rep Onboarding") return "onboarding";
   if (call.callType === "Other") return "other";
   return null;
 }
@@ -75,9 +74,9 @@ function callLine(call: CallOutcome): string {
 }
 
 function blockText(block: OfferBlock): string {
-  const lines = [`*${block.label}*`, ...metricLines(block.all)];
-  if (block.all.unlogged > 0) {
-    lines.push(`_${block.all.unlogged} not in the tracker yet_`);
+  const lines = [`*${block.label}*`, ...metricLines(block)];
+  if (block.unlogged > 0) {
+    lines.push(`_${block.unlogged} not in the tracker yet_`);
   }
   lines.push("", ...block.calls.map(callLine));
   return lines.join("\n");
@@ -86,12 +85,12 @@ function blockText(block: OfferBlock): string {
 export function formatCallOutcomes(report: CallOutcomesReport): string {
   const header = `*Call Outcomes — ${longDay(report.day)}*`;
 
-  if (report.totals.all.scheduled === 0) {
+  if (report.totals.scheduled === 0) {
     return `${header}\nNo calls were on the calendar.`;
   }
 
   const parts = [
-    [header, ...metricLines(report.totals.all)].join("\n"),
+    [header, ...metricLines(report.totals)].join("\n"),
     ...report.blocks.map(blockText),
   ];
 

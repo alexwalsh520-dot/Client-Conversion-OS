@@ -75,20 +75,7 @@ export interface Stats {
   cash: number;
 }
 
-/**
- * The three kinds are counted SEPARATELY, never blended. They are all on the
- * calendar and all belong in the recap, but only the sales segment is selling:
- * folding onboarding into one show rate produced a headline "15% taken" for a
- * day whose sales calls actually ran 33%.
- */
-export interface Segmented {
-  all: Stats;
-  sales: Stats;
-  repOnboarding: Stats;
-  clientOnboarding: Stats;
-}
-
-export interface OfferBlock extends Segmented {
+export interface OfferBlock extends Stats {
   offer: OfferKey;
   label: string;
   calls: CallOutcome[];
@@ -98,7 +85,9 @@ export interface CallOutcomesReport {
   day: string; // YYYY-MM-DD (ET)
   generatedAt: string;
   blocks: OfferBlock[];
-  totals: Segmented;
+  totals: Stats;
+  /** Specialist-run onboarding calls dropped before any counting. */
+  excludedClientOnboarding: number;
   warnings: string[];
 }
 
@@ -309,17 +298,6 @@ function statsFor(calls: CallOutcome[]): Stats {
   };
 }
 
-function segment(calls: CallOutcome[]): Segmented {
-  return {
-    all: statsFor(calls),
-    sales: statsFor(
-      calls.filter((c) => c.callType === "Strategy Session" || c.callType === "Other"),
-    ),
-    repOnboarding: statsFor(calls.filter((c) => c.callType === "Rep Onboarding")),
-    clientOnboarding: statsFor(calls.filter((c) => c.callType === "Client Onboarding")),
-  };
-}
-
 export async function buildCallOutcomesReport(day: string): Promise<CallOutcomesReport> {
   const warnings: string[] = [];
 
@@ -369,9 +347,14 @@ export async function buildCallOutcomesReport(day: string): Promise<CallOutcomes
     };
   });
 
+  // The onboarding specialist's calls are fulfilment for customers who already
+  // paid, so they are dropped OUTRIGHT — not listed, not counted anywhere.
+  const excludedClientOnboarding = calls.filter((c) => c.callType === "Client Onboarding").length;
+  const counted = calls.filter((c) => c.callType !== "Client Onboarding");
+
   // Group into offer blocks, active creators first, "Unattributed" last.
   const byOffer = new Map<OfferKey, CallOutcome[]>();
-  for (const c of calls) {
+  for (const c of counted) {
     const list = byOffer.get(c.offer) || [];
     list.push(c);
     byOffer.set(c.offer, list);
@@ -383,17 +366,18 @@ export async function buildCallOutcomesReport(day: string): Promise<CallOutcomes
       offer,
       label: offerLabel(offer),
       calls: list,
-      ...segment(list),
+      ...statsFor(list),
     }))
-    .sort((a, b) => order(a.offer) - order(b.offer) || b.all.scheduled - a.all.scheduled);
+    .sort((a, b) => order(a.offer) - order(b.offer) || b.scheduled - a.scheduled);
 
-  const totals = segment(calls);
+  const totals = statsFor(counted);
 
   return {
     day,
     generatedAt: new Date().toISOString(),
     blocks,
     totals,
+    excludedClientOnboarding,
     warnings,
   };
 }
