@@ -3,7 +3,7 @@
 // crons' gap checks, the external API validator, the swipe view and the Slack delivery line.
 // Changing the cadence is changing this number.
 
-export const CAROUSELS_PER_DAY = 3;
+export const CAROUSELS_PER_DAY = 2;
 
 // Slides per carousel, and how long a slide may run. The sentence cap matches the writing
 // framework's own model slide — the validator measures the house style rather than fighting it.

@@ -4,6 +4,7 @@ import { cronBaseUrl } from "@/lib/cron-base-url";
 import { ACTIVE_CREATORS } from "@/lib/creators";
 import { CAROUSELS_PER_DAY } from "@/lib/content/carousel-config";
 import { isLive, type CarouselMeta } from "@/lib/content/carousel-config";
+import { TREND_BRIEFS_ENABLED, carouselsEnabledFor } from "@/lib/content/ai-spend-config";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -75,7 +76,7 @@ export async function GET(req: NextRequest) {
     // 1. Trend brief — refresh if missing or older than ~a week.
     const brief = trendMap.get(creator) ?? null;
     const briefAge = brief?.searched_at ? Date.now() - new Date(brief.searched_at).getTime() : Infinity;
-    if (!brief || briefAge > TREND_MAX_AGE_MS) {
+    if (TREND_BRIEFS_ENABLED && (!brief || briefAge > TREND_MAX_AGE_MS)) {
       steps.push(await hit(`/api/buyer-dna/trends/run?creator=${creator}`));
     }
 
@@ -109,9 +110,10 @@ export async function GET(req: NextRequest) {
       steps.push(await hit(`/api/buyer-dna/voice/run?creator=${creator}`));
     }
 
-    // 2d. Daily carousels — generate today's 5 if they don't exist yet. The generate route is a no-op
-    //     (no LLM call) once the day's rows exist, so this fires exactly one LLM op/day/creator.
-    if ((carCounts.get(creator) ?? 0) < CAROUSELS_PER_DAY) {
+    // 2d. Daily carousels — generate today's set if it doesn't exist yet. The generate route is a
+    //     no-op (no LLM call) once the day's rows exist, so this fires at most one LLM op/day/creator.
+    //     Restricted to the creators in CAROUSEL_CREATORS (Jake only) on cost grounds.
+    if (carouselsEnabledFor(creator) && (carCounts.get(creator) ?? 0) < CAROUSELS_PER_DAY) {
       steps.push(await hit(`/api/content/carousels/generate?creator=${creator}&date=${todayET}`));
     }
 

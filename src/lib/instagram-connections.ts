@@ -954,3 +954,58 @@ export async function upsertInstagramLeadIdentity(input: {
     }
   }
 }
+
+
+// Tear down a connection: stop Meta sending, then mark the row disconnected.
+//
+// The exact inverse of subscribePageToInstagramWebhooks — same `subscribed_apps` edge, DELETE
+// instead of POST. Until this runs Meta keeps delivering that account's DMs to
+// /api/webhooks/instagram regardless of what the row says, because the subscription lives on
+// Meta's side, not ours.
+//
+// `clearToken` also wipes the stored OAuth token, which makes the cut permanent: reconnecting
+// then requires the creator to re-authorise. That is the right default for a client we have
+// dropped — holding a live token for someone who is no longer a customer is a liability.
+export async function unsubscribeInstagramWebhooks(clientKey: string, opts: { clearToken?: boolean } = {}) {
+  const graphVersion = process.env.META_GRAPH_VERSION?.trim() || "v24.0";
+  const sb = getServiceSupabase();
+  const token = await getDecryptedTokenForClient(clientKey);
+
+  let unsubscribed = false;
+  let error: string | null = null;
+
+  if (!token) {
+    // No usable token — we cannot call Meta. Say so plainly rather than reporting a clean cut:
+    // the row will be marked disconnected but Meta may still be sending.
+    error = "No decryptable access token for this client; Meta was NOT called and may still send.";
+  } else {
+    const url = new URL(`${instagramApiBase(graphVersion)}/me/subscribed_apps`);
+    url.searchParams.set("access_token", token);
+    try {
+      await fetchJson<Record<string, unknown>>(url.toString(), { method: "DELETE" });
+      unsubscribed = true;
+    } catch (err) {
+      error = err instanceof Error ? err.message : "Unsubscribe failed";
+    }
+  }
+
+  const patch: Record<string, unknown> = {
+    status: "disconnected",
+    subscription_status: unsubscribed ? "unsubscribed" : "unsubscribe_failed",
+    subscription_error: error,
+    updated_at: new Date().toISOString(),
+  };
+  if (opts.clearToken) {
+    patch.token_encrypted = null;
+    patch.token_expires_at = null;
+  }
+
+  const { error: dbError } = await sb.from("instagram_connections").update(patch).eq("client_key", clientKey);
+
+  return {
+    clientKey,
+    unsubscribed,
+    tokenCleared: Boolean(opts.clearToken),
+    error: error || (dbError ? dbError.message : null),
+  };
+}

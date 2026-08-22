@@ -7,6 +7,7 @@ import { getCurrentIcp } from "@/lib/buyer-dna/icp";
 import { getCurrentTrendBrief } from "@/lib/buyer-dna/trends";
 import { generateBuyerIdeas, gradeIdeaSet } from "@/lib/buyer-dna/video-ideas";
 import type { Research } from "@/lib/buyer-dna/dossier";
+import { IDEA_TREND_GRADING_ENABLED } from "@/lib/content/ai-spend-config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -75,8 +76,10 @@ export async function POST(req: NextRequest) {
   }
 
   // 2. Grade idea sets that are behind the current trend brief (includes the ICP-wide set).
+  //    Off on cost grounds — see IDEA_TREND_GRADING_ENABLED. Ideas are still generated above;
+  //    they just arrive unranked, and `stale` stays 0 so nothing accumulates a backlog.
   let graded = 0, staleCount = 0;
-  const brief = await getCurrentTrendBrief(sb, slug);
+  const brief = IDEA_TREND_GRADING_ENABLED ? await getCurrentTrendBrief(sb, slug) : null;
   if (brief) {
     const { data: stale } = await sb
       .from("content_video_ideas")
