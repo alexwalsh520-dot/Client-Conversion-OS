@@ -1,0 +1,4 @@
+-- Applied live 2026-08-22 as ghl_dial_outcomes (build 3 lane 1).
+-- public.ghl_dial_outcomes: one row per outbound dial from GoHighLevel with
+-- duration, status, and voicemail-vs-human read from the transcript.
+-- Fed daily by /api/cron/dial-outcomes (13:15 UTC). RLS on, service writes.
