@@ -1,0 +1,7 @@
+-- Applied live 2026-08-22 as stamp_booking_links_apply_resolution_keyword.
+-- adsv2_stamp_booking_links now applies a booking resolution's KEYWORD to
+-- the booking fact (keyword_normalized, blank_reason cleared, evidence_key
+-- human_resolution), not just its subscriber. Before this, a hand-resolved
+-- booking got its identity but could not hang under its ad on the ads
+-- page. Found via Alex's "push it to the dashboard" push. The dm_et_day
+-- keyword-day lookup also honors the resolution keyword.
