@@ -1,0 +1,11 @@
+-- Applied live 2026-08-23 as stamp_ladder_own_link_and_weld_bool_or.
+-- Resolver bug fix per scratchpad/stamp-weld-bug.md investigation:
+-- FIX A: adsv2_stamp_booking_links identity ladder gains the fact's own
+-- linked_subscriber_id as the LAST rung, so stamp runs can no longer wipe
+-- identity they cannot re-derive (146 at-risk rows measured).
+-- FIX B: adsv2_tracker_weld pass 2 births `taken`/`is_upcoming` from
+-- bool_or over ALL the person's tracker facts and dedups deterministically
+-- (sale_key tiebreak), ending nondeterministic per-sync coin flips.
+-- Verified live: exactly the 5 predicted bookings flipped to taken=true
+-- (Hunter Krivokucha, Ace, Jacob Duran, Alex, Kyle Pags), Cameron's row
+-- stabilized on its deterministic key, nothing else changed.
