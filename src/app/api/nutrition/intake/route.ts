@@ -147,17 +147,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const insertedId = (data as { id: number }).id;
 
-  void notifyAdminOfNewIntake({
-    first_name: firstName,
-    last_name: String(row.last_name ?? ""),
-    email,
-    phone: String(row.phone ?? ""),
-    fitness_goal: (row.fitness_goal as string | null) ?? null,
-    current_weight: (row.current_weight as string | null) ?? null,
-    intake_id: insertedId,
-  }).catch((err) => {
+  // Await the Slack DM instead of fire-and-forget. In Vercel serverless,
+  // once the response is returned the function instance can freeze
+  // immediately, which was killing the DM before it ever started. The
+  // Slack call is ~300-500ms; that's fine for a form submission and
+  // guarantees the notification actually goes out.
+  try {
+    await notifyAdminOfNewIntake({
+      first_name: firstName,
+      last_name: String(row.last_name ?? ""),
+      email,
+      phone: String(row.phone ?? ""),
+      fitness_goal: (row.fitness_goal as string | null) ?? null,
+      current_weight: (row.current_weight as string | null) ?? null,
+      intake_id: insertedId,
+    });
+  } catch (err) {
     console.warn("[api/nutrition/intake] notifyAdminOfNewIntake failed:", err);
-  });
+  }
 
   return NextResponse.json(
     { ok: true, id: insertedId },
