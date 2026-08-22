@@ -78,7 +78,9 @@ export interface MetricBlock {
 export interface MetricsSummary {
   range: DayRange;
   lens: Lens;
+  /** Applied client filter as a comma-joined list, or null = all clients. */
   client: string | null;
+  /** Applied rep filter as a comma-joined list, or null = all reps. */
   rep: string | null;
   clients: string[];
   reps: Array<{ key: string; name: string }>;
@@ -100,7 +102,11 @@ export interface MetricsSummary {
 
 export interface ComputeParams {
   range: DayRange;
-  client?: string | null;
-  rep?: string | null;
+  /** One client key, a comma-separated list ("tyson,jake"), or an array.
+      Absent / empty / "all" = every active client. */
+  client?: string | readonly string[] | null;
+  /** One rep key, a comma-separated list ("will,erin"), or an array.
+      Absent / empty / "all" = every rep. */
+  rep?: string | readonly string[] | null;
   lens: Lens;
 }

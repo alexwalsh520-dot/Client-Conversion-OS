@@ -3,19 +3,39 @@
 // Metrics-engine dashboards — the shared client view behind /master-dashboard,
 // /marketing-dashboard and /sales-dashboard (thin server pages pass `scope`).
 //
-// Everything renders inline on one page: summary tiles → by lead type →
-// by rep → rep × lead type matrix → by channel → by client. No drilldowns.
-// Every metric shows BOTH views — Activity (events in the window) and Cohort
-// (leads acquired in the window, counting their downstream events whenever
-// they happen). A null cell is an em-dash, never 0. Metrics with
-// defined:false carry a subtle "no data source yet" tag.
+// Layout, in Sales-Hub visual language: one glass filter bar (checkbox
+// multi-select Client + Rep dropdowns, a Lens dropdown, and the Ads-v2-style
+// date picker) → a stat-card grid per section. Each metric card shows ONE
+// primary number; the other view sits under it in plain words ("$9,900 from
+// leads acquired in this window"). Clicking a card expands an inline
+// accordion panel with that metric's breakdowns (lead type / client / rep /
+// channel) as compact tables — nothing else renders at the top level.
 //
 // Data: GET /api/metrics-engine/summary (session-authed; the tab itself is
-// admin-only via sidebar/AccessGate). Ranges are ET calendar days; presets
-// are Today / WTD / MTD / Custom per the CCOS tab conventions.
+// admin-only via sidebar/AccessGate). client= and rep= accept comma-separated
+// lists. Ranges are ET calendar days via @/lib/ads-v2/time presets.
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, BarChart3, CalendarDays, Gauge, Loader2, Megaphone } from "lucide-react";
+import React, { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  AlertTriangle,
+  BarChart3,
+  CalendarDays,
+  Check,
+  ChevronDown,
+  Eye,
+  Gauge,
+  Loader2,
+  Megaphone,
+  Users,
+} from "lucide-react";
+import {
+  PRESETS,
+  rangeForPreset,
+  rangeLabel,
+  todayEt,
+  type DayRange,
+  type PresetId,
+} from "@/lib/ads-v2/time";
 import type {
   Channel,
   LeadType,
@@ -49,7 +69,7 @@ const SALES_KEYS = [
   "aov",
   "reschedules",
   // Not yet live — the API marks these defined:false; they render as dashes
-  // with a "no data source yet" tag.
+  // with a "no data source yet" chip.
   "pickup_rate_lm_lt60",
   "pickup_rate_lm_gt60",
   "pickup_rate_outbound",
@@ -64,26 +84,25 @@ const SCOPE_META: Record<
 > = {
   master: {
     title: "Master Dashboard",
-    blurb: "Marketing and sales, one page. Activity and cohort views side by side.",
+    blurb: "Marketing and sales, one page. Click any metric for its breakdowns.",
     icon: Gauge,
   },
   marketing: {
     title: "Marketing Dashboard",
-    blurb: "Leads, cash, spend and returns — by lead type and by client.",
+    blurb: "Leads, cash, spend and returns. Click any metric for its breakdowns.",
     icon: Megaphone,
   },
   sales: {
     title: "Sales Dashboard",
-    blurb: "Bookings, shows, closes and AOV — by rep, lead type and channel.",
+    blurb: "Bookings, shows, closes and AOV. Click any metric for its breakdowns.",
     icon: BarChart3,
   },
 };
 
-const CLIENT_OPTIONS = [
-  { key: "all", label: "All" },
+const CLIENT_OPTIONS: Array<{ key: string; label: string }> = [
   { key: "tyson", label: "Tyson" },
   { key: "jake", label: "Jake" },
-] as const;
+];
 
 const LEAD_TYPE_LABELS: Record<LeadType, string> = {
   ad: "Ad",
@@ -101,49 +120,73 @@ const CHANNEL_LABELS: Record<Channel, string> = {
 };
 const CHANNEL_ORDER: readonly Channel[] = ["dm", "lm_outbound_lt60", "lm_outbound_gt60", "outbound"];
 
-// ── ET date presets: Today / WTD / MTD / Custom ─────────────────────────────
+// ── Metric view config: ONE primary number per metric ───────────────────────
+// primary = the metric's natural definition. The other view (when it exists)
+// renders as a muted plain-words line — never "Act"/"Coh".
 
-function etToday(): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/New_York",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
+type ViewKind = "activity" | "cohort";
+
+const VIEW_LABELS: Record<ViewKind, string> = {
+  activity: "In this window",
+  cohort: "From leads acquired in this window",
+};
+
+interface MetricViewCfg {
+  primary: ViewKind;
+  /** Plain-words line for the other view; omitted when it doesn't exist. */
+  otherLine?: (formatted: string) => string;
 }
 
-function addDays(dateStr: string, days: number): string {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d) + days * 86400000).toISOString().slice(0, 10);
+const METRIC_VIEWS: Record<string, MetricViewCfg> = {
+  leads: { primary: "activity" }, // acquisition: both views are the same count
+  cash_collected: {
+    primary: "activity",
+    otherLine: (v) => `${v} from leads acquired in this window`,
+  },
+  ad_spend: { primary: "activity" },
+  cpm: { primary: "activity" },
+  lctr: { primary: "activity" },
+  roi: { primary: "activity" },
+  roas: { primary: "cohort" },
+  roas_blended: { primary: "cohort" },
+  calls_booked: {
+    primary: "activity",
+    otherLine: (v) => `${v} from this window's new leads`,
+  },
+  booking_rate_new_leads: { primary: "cohort" },
+  show_rate: {
+    primary: "activity",
+    otherLine: (v) => `${v} for this window's new leads`,
+  },
+  close_rate: {
+    primary: "activity",
+    otherLine: (v) => `${v} for this window's new leads`,
+  },
+  aov: {
+    primary: "activity",
+    otherLine: (v) => `${v} on this window's new leads`,
+  },
+  reschedules: {
+    primary: "activity",
+    otherLine: (v) => `${v} from this window's new leads`,
+  },
+};
+
+const DEFAULT_VIEW: MetricViewCfg = { primary: "activity" };
+
+function viewCfg(key: string): MetricViewCfg {
+  return METRIC_VIEWS[key] ?? DEFAULT_VIEW;
 }
 
-function startOfWeek(dateStr: string): string {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
-  return addDays(dateStr, -((dow + 6) % 7)); // Monday
-}
-
-type PresetKey = "today" | "wtd" | "mtd" | "custom";
-
-const PRESETS: { key: PresetKey; label: string }[] = [
-  { key: "today", label: "Today" },
-  { key: "wtd", label: "Week to Date" },
-  { key: "mtd", label: "Month to Date" },
-  { key: "custom", label: "Custom" },
-];
-
-function presetRange(key: PresetKey): { from: string; to: string } {
-  const today = etToday();
-  switch (key) {
-    case "today":
-      return { from: today, to: today };
-    case "wtd":
-      return { from: startOfWeek(today), to: today };
-    case "mtd":
-      return { from: today.slice(0, 8) + "01", to: today };
-    default:
-      return { from: today, to: today };
-  }
+/** The view columns a metric's breakdown tables carry. */
+function viewCols(b: MetricBlock): ViewKind[] {
+  const cfg = viewCfg(b.key);
+  if (b.key === "leads") return ["activity"]; // identical views — one column
+  return cfg.otherLine
+    ? cfg.primary === "activity"
+      ? ["activity", "cohort"]
+      : ["cohort", "activity"]
+    : [cfg.primary];
 }
 
 // ── Formatting ──────────────────────────────────────────────────────────────
@@ -174,118 +217,410 @@ function fmtValue(v: number | null, unit: MetricUnit): string {
   }
 }
 
-// ── Small render pieces ─────────────────────────────────────────────────────
+function fmtStamp(iso: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(iso));
+}
 
-function Val({ v, unit }: { v: number | null; unit: MetricUnit }) {
-  const s = fmtValue(v, unit);
+function Val({ v, unit }: { v: number | null | undefined; unit: MetricUnit }) {
+  const s = fmtValue(v ?? null, unit);
   return s === "—" ? <span className={styles.dash}>—</span> : <>{s}</>;
-}
-
-/** A pair of Act·Coh table cells for one metric cell. */
-function PairTds({ cell, unit }: { cell: MetricCell | null | undefined; unit: MetricUnit }) {
-  return (
-    <>
-      <td className={styles.pairStart}>
-        <Val v={cell?.activity ?? null} unit={unit} />
-      </td>
-      <td>
-        <Val v={cell?.cohort ?? null} unit={unit} />
-      </td>
-    </>
-  );
-}
-
-/** Compact two-value cell ("act · coh") for the rep × lead-type matrix. */
-function PairCompact({ cell, unit }: { cell: MetricCell | null | undefined; unit: MetricUnit }) {
-  return (
-    <span className={styles.pairCell}>
-      <span>
-        <Val v={cell?.activity ?? null} unit={unit} />
-      </span>
-      <span style={{ color: "var(--text-muted)", fontSize: 12 }}>
-        <Val v={cell?.cohort ?? null} unit={unit} />
-      </span>
-    </span>
-  );
 }
 
 function PendingTag() {
   return <span className={styles.pendingTag}>no data source yet</span>;
 }
 
-// ── Sections ────────────────────────────────────────────────────────────────
+// ── Shared dropdown plumbing ────────────────────────────────────────────────
 
-function SummaryTiles({ blocks }: { blocks: MetricBlock[] }) {
+function useOutside(ref: React.RefObject<HTMLElement | null>, cb: () => void) {
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) cb();
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [ref, cb]);
+}
+
+/** Checkbox multi-select dropdown. `value === null` means "all selected". */
+function MultiSelect({
+  label,
+  icon,
+  options,
+  value,
+  onChange,
+  allLabel,
+}: {
+  label: string;
+  icon?: React.ReactNode;
+  options: Array<{ key: string; label: string }>;
+  value: string[] | null;
+  onChange: (v: string[] | null) => void;
+  allLabel: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useOutside(ref, useCallback(() => setOpen(false), []));
+
+  const allKeys = options.map((o) => o.key);
+  const selected = value === null ? allKeys : value;
+  const isAll = value === null || selected.length === allKeys.length;
+
+  const summary = isAll
+    ? allLabel
+    : selected.length === 0
+      ? "None selected"
+      : selected.length === 1
+        ? (options.find((o) => o.key === selected[0])?.label ?? selected[0])
+        : `${selected.length} selected`;
+
+  const toggleAll = () => onChange(isAll ? [] : null);
+
+  const toggleOne = (key: string) => {
+    const next = selected.includes(key)
+      ? selected.filter((k) => k !== key)
+      : [...selected, key];
+    onChange(next.length === allKeys.length ? null : next);
+  };
+
   return (
-    <div className={styles.tileGrid}>
-      {blocks.map((b) => (
-        <div key={b.key} className={`glass-static ${styles.tile}`}>
-          <p className={styles.tileLabel}>
-            {b.label}
-            {!b.defined ? <PendingTag /> : null}
-          </p>
-          <p className={styles.tileValue}>
-            <span>Act</span>
-            <Val v={b.total?.activity ?? null} unit={b.unit} />
-          </p>
-          <p className={styles.tileCohort}>
-            <span>Coh</span>
-            <Val v={b.total?.cohort ?? null} unit={b.unit} />
-          </p>
+    <div className={styles.filter} ref={ref}>
+      <button
+        className={`${styles.filterBtn}${open ? ` ${styles.filterBtnOpen}` : ""}`}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {icon}
+        <span className="lbl">{label}</span>
+        <span className="val">{summary}</span>
+        <span className={`${styles.caret}${open ? ` ${styles.caretOpen}` : ""}`}>
+          <ChevronDown size={13} />
+        </span>
+      </button>
+      {open && (
+        <div className={styles.pop}>
+          <label className={`${styles.checkRow} ${styles.checkAllRow}`}>
+            <input type="checkbox" checked={isAll} onChange={toggleAll} />
+            All
+          </label>
+          {options.map((o) => (
+            <label key={o.key} className={styles.checkRow}>
+              <input
+                type="checkbox"
+                checked={selected.includes(o.key)}
+                onChange={() => toggleOne(o.key)}
+              />
+              {o.label}
+            </label>
+          ))}
         </div>
-      ))}
+      )}
     </div>
   );
 }
 
-/** Rows = metrics, column groups = an arbitrary keyed dimension (lead types,
-    channels, clients), each group an Act·Coh pair. */
-function MetricsByDimensionTable({
-  blocks,
-  cols,
-  cellFor,
+/** Single-select dropdown in the same style (used for the Lens). */
+function SingleSelect<T extends string>({
+  label,
+  icon,
+  options,
+  value,
+  onChange,
 }: {
-  blocks: MetricBlock[];
-  cols: { key: string; label: string }[];
-  cellFor: (b: MetricBlock, colKey: string) => MetricCell | null | undefined;
+  label: string;
+  icon?: React.ReactNode;
+  options: Array<{ key: T; label: string }>;
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useOutside(ref, useCallback(() => setOpen(false), []));
+  const current = options.find((o) => o.key === value)?.label ?? value;
+
+  return (
+    <div className={styles.filter} ref={ref}>
+      <button
+        className={`${styles.filterBtn}${open ? ` ${styles.filterBtnOpen}` : ""}`}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {icon}
+        <span className="lbl">{label}</span>
+        <span className="val">{current}</span>
+        <span className={`${styles.caret}${open ? ` ${styles.caretOpen}` : ""}`}>
+          <ChevronDown size={13} />
+        </span>
+      </button>
+      {open && (
+        <div className={styles.pop}>
+          {options.map((o) => (
+            <div
+              key={o.key}
+              className={`${styles.popItem}${o.key === value ? ` ${styles.popItemSelected}` : ""}`}
+              onClick={() => {
+                onChange(o.key);
+                setOpen(false);
+              }}
+            >
+              <span>{o.label}</span>
+              <span className="check" style={{ display: "inline-flex", color: "var(--accent)", opacity: o.key === value ? 1 : 0 }}>
+                <Check size={13} />
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Date dropdown — the Ads-v2 picker pattern (presets + two-click cal) ─────
+
+const DOW = ["S", "M", "T", "W", "T", "F", "S"];
+
+interface CalCell {
+  blank: boolean;
+  iso: string;
+  day: number;
+  inRange: boolean;
+  endpoint: boolean;
+  today: boolean;
+}
+
+function buildMonth(ym: string, range: DayRange, today: string): CalCell[] {
+  const [y, m] = ym.split("-").map(Number);
+  const firstDow = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();
+  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const cells: CalCell[] = [];
+  const blank = (): CalCell => ({ blank: true, iso: "", day: 0, inRange: false, endpoint: false, today: false });
+  for (let i = 0; i < firstDow; i++) cells.push(blank());
+  for (let d = 1; d <= daysInMonth; d++) {
+    const iso = `${ym}-${String(d).padStart(2, "0")}`;
+    cells.push({
+      blank: false,
+      iso,
+      day: d,
+      inRange: iso >= range.from && iso <= range.to,
+      endpoint: iso === range.from || iso === range.to,
+      today: iso === today,
+    });
+  }
+  while (cells.length % 7 !== 0) cells.push(blank());
+  return cells;
+}
+
+function shiftMonth(ym: string, delta: number): string {
+  const [y, m] = ym.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1 + delta, 1));
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthLabel(ym: string): string {
+  const [y, m] = ym.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, 1));
+  return `${dt.toLocaleString("en-US", { month: "long", timeZone: "UTC" })} ${y}`;
+}
+
+function daysBetween(from: string, to: string): number {
+  const a = Date.UTC(...(from.split("-").map(Number) as [number, number, number]));
+  const b = Date.UTC(...(to.split("-").map(Number) as [number, number, number]));
+  return Math.round((b - a) / 86_400_000) + 1;
+}
+
+function DateDropdown({
+  preset,
+  range,
+  onApply,
+}: {
+  preset: PresetId;
+  range: DayRange;
+  onApply: (preset: PresetId, range: DayRange) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useOutside(ref, useCallback(() => setOpen(false), []));
+
+  const [draftPreset, setDraftPreset] = useState<PresetId>(preset);
+  const [draft, setDraft] = useState<DayRange>(range);
+  const [selectingEnd, setSelectingEnd] = useState(false);
+  const [calMonth, setCalMonth] = useState(() => range.to.slice(0, 7));
+
+  useEffect(() => {
+    if (open) {
+      setDraftPreset(preset);
+      setDraft(range);
+      setSelectingEnd(false);
+      setCalMonth(range.to.slice(0, 7));
+    }
+  }, [open, preset, range]);
+
+  const presetLabel = PRESETS.find((p) => p.id === preset)?.label || "Custom";
+
+  const pickPreset = (id: PresetId) => {
+    if (id === "custom") {
+      setDraftPreset("custom");
+      setSelectingEnd(false);
+      return;
+    }
+    onApply(id, rangeForPreset(id, todayEt()));
+    setOpen(false);
+  };
+
+  const pickDay = (day: string) => {
+    setDraftPreset("custom");
+    if (!selectingEnd) {
+      setDraft({ from: day, to: day });
+      setSelectingEnd(true);
+    } else {
+      const from = day < draft.from ? day : draft.from;
+      const to = day < draft.from ? draft.from : day;
+      setDraft({ from, to });
+      setSelectingEnd(false);
+    }
+  };
+
+  const cells = buildMonth(calMonth, draft, todayEt());
+  const dayCount = daysBetween(draft.from, draft.to);
+
+  return (
+    <div className={styles.filter} ref={ref}>
+      <button
+        className={`${styles.filterBtn}${open ? ` ${styles.filterBtnOpen}` : ""}`}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <CalendarDays size={13} style={{ color: "var(--text-muted)" }} />
+        <span className="val">{presetLabel}</span>
+        <span className="dim">&middot; {rangeLabel(range)}</span>
+        <span className={`${styles.caret}${open ? ` ${styles.caretOpen}` : ""}`}>
+          <ChevronDown size={13} />
+        </span>
+      </button>
+      {open && (
+        <div className={`${styles.pop} ${styles.datePop}`}>
+          <div className={styles.datePresets}>
+            {PRESETS.map((p) => (
+              <div
+                key={p.id}
+                className={`${styles.popItem}${draftPreset === p.id ? ` ${styles.popItemSelected}` : ""}`}
+                onClick={() => pickPreset(p.id)}
+              >
+                <span>{p.label}</span>
+                <span style={{ display: "inline-flex", color: "var(--accent)", opacity: draftPreset === p.id ? 1 : 0 }}>
+                  <Check size={13} />
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className={styles.dateCal}>
+            <div className={styles.calHead}>
+              <button className={styles.calNav} onClick={() => setCalMonth(shiftMonth(calMonth, -1))}>
+                &lsaquo;
+              </button>
+              <span>{monthLabel(calMonth)}</span>
+              <button className={styles.calNav} onClick={() => setCalMonth(shiftMonth(calMonth, 1))}>
+                &rsaquo;
+              </button>
+            </div>
+            <div className={styles.calGrid}>
+              {DOW.map((d, i) => (
+                <div className={styles.calDow} key={`h${i}`}>
+                  {d}
+                </div>
+              ))}
+              {cells.map((c, i) =>
+                c.blank ? (
+                  <div className={`${styles.calDay} ${styles.calDayMuted}`} key={i} />
+                ) : (
+                  <button
+                    key={i}
+                    className={[
+                      styles.calDay,
+                      c.endpoint ? styles.calDayEndpoint : c.inRange ? styles.calDayInRange : "",
+                      c.today ? styles.calDayToday : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    onClick={() => pickDay(c.iso)}
+                  >
+                    {c.day}
+                  </button>
+                ),
+              )}
+            </div>
+          </div>
+          <div className={styles.dateFoot}>
+            <span>
+              {draft.from} &rarr; {draft.to} &middot; {dayCount} day{dayCount === 1 ? "" : "s"}
+              {draftPreset === "custom" && selectingEnd ? " · pick end date" : ""}
+            </span>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button className={styles.cancelBtn} onClick={() => setOpen(false)}>
+                Cancel
+              </button>
+              <button
+                className={styles.applyBtn}
+                onClick={() => {
+                  onApply(draftPreset, draft);
+                  setOpen(false);
+                }}
+              >
+                Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Expansion panel tables ──────────────────────────────────────────────────
+
+interface DimRow {
+  key: string;
+  label: string;
+  cell: MetricCell | null | undefined;
+}
+
+function DimTable({
+  title,
+  rows,
+  cols,
+  unit,
+  firstColLabel,
+}: {
+  title: string;
+  rows: DimRow[];
+  cols: ViewKind[];
+  unit: MetricUnit;
+  firstColLabel: string;
 }) {
   return (
-    <div className="glass-static" style={{ padding: 0, overflow: "hidden" }}>
+    <div className={styles.miniCard}>
+      <div className={styles.miniTitle}>{title}</div>
       <div className={styles.tableWrap}>
         <table className={styles.table}>
           <thead>
-            <tr className={styles.groupHead}>
-              <th />
+            <tr>
+              <th>{firstColLabel}</th>
               {cols.map((c) => (
-                <th key={c.key} colSpan={2} className={styles.pairStart}>
-                  {c.label}
-                </th>
-              ))}
-            </tr>
-            <tr className={styles.subHead}>
-              <th>Metric</th>
-              {cols.map((c) => (
-                <React.Fragment key={c.key}>
-                  <th className={styles.pairStart}>Act</th>
-                  <th>Coh</th>
-                </React.Fragment>
+                <th key={c}>{VIEW_LABELS[c]}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {blocks.map((b) => (
-              <tr key={b.key}>
-                <td className={styles.rowLabel}>
-                  {b.label}
-                  {!b.defined ? (
-                    <>
-                      {" "}
-                      <PendingTag />
-                    </>
-                  ) : null}
-                </td>
+            {rows.map((r) => (
+              <tr key={r.key}>
+                <td className={styles.rowLabel}>{r.label}</td>
                 {cols.map((c) => (
-                  <PairTds key={c.key} cell={cellFor(b, c.key)} unit={b.unit} />
+                  <td key={c}>
+                    <Val v={r.cell?.[c]} unit={unit} />
+                  </td>
                 ))}
               </tr>
             ))}
@@ -296,51 +631,41 @@ function MetricsByDimensionTable({
   );
 }
 
-/** Rows = reps, column groups = metrics (Act·Coh pairs). */
-function RepTable({
-  blocks,
+/** Rep × lead-type matrix, primary view only, inside the expansion. */
+function RepMatrixTable({
+  block,
   reps,
+  primary,
 }: {
-  blocks: MetricBlock[];
+  block: MetricBlock;
   reps: Array<{ key: string; name: string }>;
+  primary: ViewKind;
 }) {
-  const cols = blocks.filter((b) => b.by_rep !== null);
-  if (cols.length === 0) {
-    return (
-      <div className="glass-static" style={{ padding: 16, fontSize: 13, color: "var(--text-muted)" }}>
-        No rep-attributable metrics in this window.
-      </div>
-    );
-  }
+  const matrix = block.by_rep_x_lead_type;
+  if (!matrix) return null;
   return (
-    <div className="glass-static" style={{ padding: 0, overflow: "hidden" }}>
+    <div className={styles.miniCard}>
+      <div className={styles.miniTitle}>
+        Rep &times; lead type — {VIEW_LABELS[primary].toLowerCase()}
+      </div>
       <div className={styles.tableWrap}>
         <table className={styles.table}>
           <thead>
-            <tr className={styles.groupHead}>
-              <th />
-              {cols.map((b) => (
-                <th key={b.key} colSpan={2} className={styles.pairStart}>
-                  {b.label}
-                </th>
-              ))}
-            </tr>
-            <tr className={styles.subHead}>
+            <tr>
               <th>Rep</th>
-              {cols.map((b) => (
-                <React.Fragment key={b.key}>
-                  <th className={styles.pairStart}>Act</th>
-                  <th>Coh</th>
-                </React.Fragment>
+              {LEAD_TYPE_ORDER.map((t) => (
+                <th key={t}>{LEAD_TYPE_LABELS[t]}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {reps.map((rep) => (
               <tr key={rep.key}>
-                <td className={styles.rowLabel}>{rep.name}</td>
-                {cols.map((b) => (
-                  <PairTds key={b.key} cell={b.by_rep?.[rep.key]} unit={b.unit} />
+                <td className={styles.rowLabel}>{rep.name.split(" ")[0]}</td>
+                {LEAD_TYPE_ORDER.map((t) => (
+                  <td key={t}>
+                    <Val v={matrix[rep.key]?.[t]?.[primary]} unit={block.unit} />
+                  </td>
                 ))}
               </tr>
             ))}
@@ -351,66 +676,181 @@ function RepTable({
   );
 }
 
-/** Compact rep × lead-type matrix: one sub-table per metric, rows = reps,
-    cols = lead types, two-value cells (act · coh). All inline, no clicks. */
-function RepLeadTypeMatrix({
-  blocks,
+function MetricExpansion({
+  block,
+  clients,
+  clientLabels,
   reps,
+  showByClient,
 }: {
-  blocks: MetricBlock[];
+  block: MetricBlock;
+  clients: string[];
+  clientLabels: Record<string, string>;
   reps: Array<{ key: string; name: string }>;
+  showByClient: boolean;
 }) {
-  const withMatrix = blocks.filter((b) => b.by_rep_x_lead_type !== null);
-  if (withMatrix.length === 0) {
-    return (
-      <div className="glass-static" style={{ padding: 16, fontSize: 13, color: "var(--text-muted)" }}>
-        No rep × lead-type data in this window.
-      </div>
+  const cols = viewCols(block);
+  const cfg = viewCfg(block.key);
+
+  const tables: React.ReactNode[] = [];
+
+  if (block.by_lead_type) {
+    tables.push(
+      <DimTable
+        key="type"
+        title="By lead type"
+        firstColLabel="Lead type"
+        rows={LEAD_TYPE_ORDER.map((t) => ({
+          key: t,
+          label: LEAD_TYPE_LABELS[t],
+          cell: block.by_lead_type?.[t],
+        }))}
+        cols={cols}
+        unit={block.unit}
+      />,
     );
   }
+
+  if (block.by_client && showByClient) {
+    tables.push(
+      <DimTable
+        key="client"
+        title="By client"
+        firstColLabel="Client"
+        rows={clients.map((k) => ({
+          key: k,
+          label: clientLabels[k] ?? k,
+          cell: block.by_client?.[k],
+        }))}
+        cols={cols}
+        unit={block.unit}
+      />,
+    );
+  }
+
+  if (block.by_rep && reps.length > 0) {
+    tables.push(
+      <DimTable
+        key="rep"
+        title="By rep"
+        firstColLabel="Rep"
+        rows={reps.map((r) => ({
+          key: r.key,
+          label: r.name.split(" ")[0],
+          cell: block.by_rep?.[r.key],
+        }))}
+        cols={cols}
+        unit={block.unit}
+      />,
+    );
+  }
+
+  if (block.by_channel) {
+    tables.push(
+      <DimTable
+        key="channel"
+        title="By channel"
+        firstColLabel="Channel"
+        rows={CHANNEL_ORDER.map((c) => ({
+          key: c,
+          label: CHANNEL_LABELS[c],
+          cell: block.by_channel?.[c],
+        }))}
+        cols={cols}
+        unit={block.unit}
+      />,
+    );
+  }
+
+  if (block.by_rep_x_lead_type && reps.length > 1) {
+    tables.push(<RepMatrixTable key="matrix" block={block} reps={reps} primary={cfg.primary} />);
+  }
+
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 12 }}>
-      {withMatrix.map((b) => (
-        <div key={b.key} className="glass-static" style={{ padding: 0, overflow: "hidden" }}>
-          <p
-            style={{
-              margin: 0,
-              padding: "10px 14px 4px",
-              fontSize: 12,
-              fontWeight: 700,
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
-              color: "var(--text-muted)",
-            }}
-          >
-            {b.label}
-          </p>
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>Rep</th>
-                  {LEAD_TYPE_ORDER.map((t) => (
-                    <th key={t}>{LEAD_TYPE_LABELS[t]}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {reps.map((rep) => (
-                  <tr key={rep.key}>
-                    <td className={styles.rowLabel}>{rep.name}</td>
-                    {LEAD_TYPE_ORDER.map((t) => (
-                      <td key={t}>
-                        <PairCompact cell={b.by_rep_x_lead_type?.[rep.key]?.[t]} unit={b.unit} />
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ))}
+    <div className={styles.expand}>
+      <div className={styles.expandHead}>
+        <span className={styles.expandTitle}>{block.label}</span>
+        {!block.defined ? <PendingTag /> : null}
+        {block.reason ? <span className={styles.expandReason}>{block.reason}</span> : null}
+      </div>
+      {tables.length > 0 ? (
+        <div className={styles.expandGrid}>{tables}</div>
+      ) : (
+        <p className={styles.expandReason} style={{ margin: 0 }}>
+          {block.defined
+            ? "No breakdowns available for this metric in the current view."
+            : (block.reason ?? "No data source yet.")}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ── Stat card grid with click-to-expand ─────────────────────────────────────
+
+function StatGrid({
+  blocks,
+  openKey,
+  onToggle,
+  clients,
+  clientLabels,
+  reps,
+  showByClient,
+}: {
+  blocks: MetricBlock[];
+  openKey: string | null;
+  onToggle: (key: string) => void;
+  clients: string[];
+  clientLabels: Record<string, string>;
+  reps: Array<{ key: string; name: string }>;
+  showByClient: boolean;
+}) {
+  return (
+    <div className={styles.statGrid}>
+      {blocks.map((b) => {
+        const cfg = viewCfg(b.key);
+        const isOpen = openKey === b.key;
+        const primaryVal = b.total?.[cfg.primary] ?? null;
+        const otherKind: ViewKind = cfg.primary === "activity" ? "cohort" : "activity";
+        const otherVal = b.total?.[otherKind] ?? null;
+        const subLine =
+          b.defined && cfg.otherLine && otherVal !== null
+            ? cfg.otherLine(fmtValue(otherVal, b.unit))
+            : null;
+        return (
+          <Fragment key={b.key}>
+            <button
+              className={`${styles.statCard}${isOpen ? ` ${styles.statCardOpen}` : ""}`}
+              onClick={() => onToggle(b.key)}
+              aria-expanded={isOpen}
+            >
+              <span className={styles.statLabel}>{b.label}</span>
+              <span className={styles.statValue}>
+                <Val v={primaryVal} unit={b.unit} />
+              </span>
+              {subLine ? (
+                <span className={styles.statSub}>{subLine}</span>
+              ) : !b.defined ? (
+                <span className={styles.statSub}>
+                  <PendingTag />
+                </span>
+              ) : null}
+              <span className={`${styles.chev}${isOpen ? ` ${styles.chevOpen}` : ""}`}>
+                <ChevronDown size={14} />
+              </span>
+            </button>
+            {isOpen ? (
+              <MetricExpansion
+                block={b}
+                clients={clients}
+                clientLabels={clientLabels}
+                reps={reps}
+                showByClient={showByClient}
+              />
+            ) : null}
+          </Fragment>
+        );
+      })}
     </div>
   );
 }
@@ -419,32 +859,50 @@ function RepLeadTypeMatrix({
 
 const REFRESH_MS = 5 * 60_000;
 
+const LENS_OPTIONS: Array<{ key: "origin" | "conversion"; label: string }> = [
+  { key: "origin", label: "Origin source" },
+  { key: "conversion", label: "Conversion source" },
+];
+
 export default function MetricsDashboardView({ scope }: { scope: DashboardScope }) {
   const meta = SCOPE_META[scope];
   const showRepFilter = scope !== "marketing";
 
-  const [preset, setPreset] = useState<PresetKey>("mtd");
-  const [customFrom, setCustomFrom] = useState(() => etToday());
-  const [customTo, setCustomTo] = useState(() => etToday());
-  const [client, setClient] = useState<string>("all");
-  const [rep, setRep] = useState<string>("all");
+  const [preset, setPreset] = useState<PresetId>("mtd");
+  const [range, setRange] = useState<DayRange>(() => rangeForPreset("mtd", todayEt()));
+  // null = all selected (no filter sent).
+  const [clientSel, setClientSel] = useState<string[] | null>(null);
+  const [repSel, setRepSel] = useState<string[] | null>(null);
   const [lens, setLens] = useState<"origin" | "conversion">("origin");
+  const [openKey, setOpenKey] = useState<string | null>(null);
   const [data, setData] = useState<MetricsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef<string | null>(null);
 
-  const range = useMemo(
-    () => (preset === "custom" ? { from: customFrom, to: customTo } : presetRange(preset)),
-    [preset, customFrom, customTo],
+  const repOptions = useMemo(
+    () => (data?.reps ?? []).map((r) => ({ key: r.key, label: r.name })),
+    [data],
   );
+
+  const clientPartial = clientSel !== null && clientSel.length < CLIENT_OPTIONS.length;
+  const repPartial =
+    showRepFilter &&
+    repSel !== null &&
+    repOptions.length > 0 &&
+    repSel.length < repOptions.length;
+
+  const nothingSelected =
+    (clientSel !== null && clientSel.length === 0) ||
+    (showRepFilter && repSel !== null && repSel.length === 0);
 
   const load = useCallback(
     async (opts?: { silent?: boolean }) => {
       if (!range.from || !range.to || range.from > range.to) return;
+      if (nothingSelected) return;
       const params = new URLSearchParams({ from: range.from, to: range.to, lens });
-      if (client !== "all") params.set("client", client);
-      if (showRepFilter && rep !== "all") params.set("rep", rep);
+      if (clientPartial && clientSel) params.set("client", clientSel.join(","));
+      if (repPartial && repSel) params.set("rep", repSel.join(","));
       const url = `/api/metrics-engine/summary?${params.toString()}`;
       if (inFlight.current === url) return;
       inFlight.current = url;
@@ -466,7 +924,7 @@ export default function MetricsDashboardView({ scope }: { scope: DashboardScope 
         }
       }
     },
-    [range.from, range.to, client, rep, lens, showRepFilter],
+    [range.from, range.to, lens, clientPartial, clientSel, repPartial, repSel, nothingSelected],
   );
 
   useEffect(() => {
@@ -475,7 +933,7 @@ export default function MetricsDashboardView({ scope }: { scope: DashboardScope 
 
   // Background refresh while the window includes today.
   useEffect(() => {
-    if (range.to < etToday()) return;
+    if (range.to < todayEt()) return;
     const id = window.setInterval(() => void load({ silent: true }), REFRESH_MS);
     return () => window.clearInterval(id);
   }, [load, range.to]);
@@ -495,104 +953,65 @@ export default function MetricsDashboardView({ scope }: { scope: DashboardScope 
   const marketingBlocks = pick(MARKETING_KEYS);
   const salesBlocks = pick(SALES_KEYS);
 
-  const reps = data?.reps ?? [];
-  const clientCols = (data?.clients ?? []).map((k) => ({
-    key: k,
-    label: CLIENT_OPTIONS.find((c) => c.key === k)?.label ?? k,
-  }));
-  const leadTypeCols = LEAD_TYPE_ORDER.map((t) => ({ key: t, label: LEAD_TYPE_LABELS[t] }));
-  const channelCols = CHANNEL_ORDER.map((c) => ({ key: c, label: CHANNEL_LABELS[c] }));
+  const reps = useMemo(() => {
+    const all = data?.reps ?? [];
+    if (repSel === null) return all;
+    return all.filter((r) => repSel.includes(r.key));
+  }, [data, repSel]);
 
-  const showByClient = client === "all";
+  const clients = data?.clients ?? [];
+  const clientLabels: Record<string, string> = Object.fromEntries(
+    CLIENT_OPTIONS.map((c) => [c.key, c.label]),
+  );
+  const showByClient = clients.length > 1;
 
-  const chip = (active: boolean): React.CSSProperties => ({
-    padding: "6px 12px",
-    borderRadius: 8,
-    fontSize: 13,
-    fontWeight: 500,
-    cursor: "pointer",
-    border: `1px solid ${active ? "var(--accent)" : "rgba(128,128,128,0.25)"}`,
-    background: active ? "var(--accent-soft)" : "transparent",
-    color: active ? "var(--accent)" : "var(--text-secondary)",
-    whiteSpace: "nowrap",
-  });
+  const toggleMetric = useCallback(
+    (key: string) => setOpenKey((cur) => (cur === key ? null : key)),
+    [],
+  );
 
   const Icon = meta.icon;
 
-  const marketingSections = (keyPrefix: string) => (
-    <React.Fragment key={keyPrefix}>
-      <div className="section">
-        <h2 className="section-title">
-          <Megaphone size={16} />
-          Marketing — Summary
-        </h2>
-        <SummaryTiles blocks={marketingBlocks} />
-      </div>
-      <div className="section">
-        <h2 className="section-title">Marketing — By Lead Type</h2>
-        <MetricsByDimensionTable
-          blocks={marketingBlocks.filter((b) => b.by_lead_type !== null)}
-          cols={leadTypeCols}
-          cellFor={(b, k) => b.by_lead_type?.[k as LeadType]}
-        />
-      </div>
-      {showByClient ? (
-        <div className="section">
-          <h2 className="section-title">Marketing — By Client</h2>
-          <MetricsByDimensionTable
-            blocks={marketingBlocks.filter((b) => b.by_client !== null)}
-            cols={clientCols}
-            cellFor={(b, k) => b.by_client?.[k]}
-          />
-        </div>
+  const marketingSection = (
+    <div className="section">
+      <h2 className="section-title">
+        <Megaphone size={16} />
+        Marketing
+      </h2>
+      {repPartial ? (
+        <p className={styles.sectionNote}>
+          Marketing metrics are blank under a rep selection — they are not attributable to
+          individual reps.
+        </p>
       ) : null}
-    </React.Fragment>
+      <StatGrid
+        blocks={marketingBlocks}
+        openKey={openKey}
+        onToggle={toggleMetric}
+        clients={clients}
+        clientLabels={clientLabels}
+        reps={reps}
+        showByClient={showByClient}
+      />
+    </div>
   );
 
-  const salesSections = (keyPrefix: string) => (
-    <React.Fragment key={keyPrefix}>
-      <div className="section">
-        <h2 className="section-title">
-          <BarChart3 size={16} />
-          Sales — Summary
-        </h2>
-        <SummaryTiles blocks={salesBlocks} />
-      </div>
-      <div className="section">
-        <h2 className="section-title">Sales — By Lead Type</h2>
-        <MetricsByDimensionTable
-          blocks={salesBlocks.filter((b) => b.by_lead_type !== null)}
-          cols={leadTypeCols}
-          cellFor={(b, k) => b.by_lead_type?.[k as LeadType]}
-        />
-      </div>
-      <div className="section">
-        <h2 className="section-title">Sales — By Rep</h2>
-        <RepTable blocks={salesBlocks} reps={reps} />
-      </div>
-      <div className="section">
-        <h2 className="section-title">Sales — Rep × Lead Type</h2>
-        <RepLeadTypeMatrix blocks={salesBlocks} reps={reps} />
-      </div>
-      <div className="section">
-        <h2 className="section-title">Sales — By Channel</h2>
-        <MetricsByDimensionTable
-          blocks={salesBlocks.filter((b) => b.by_channel !== null)}
-          cols={channelCols}
-          cellFor={(b, k) => b.by_channel?.[k as Channel]}
-        />
-      </div>
-      {showByClient ? (
-        <div className="section">
-          <h2 className="section-title">Sales — By Client</h2>
-          <MetricsByDimensionTable
-            blocks={salesBlocks.filter((b) => b.by_client !== null)}
-            cols={clientCols}
-            cellFor={(b, k) => b.by_client?.[k]}
-          />
-        </div>
-      ) : null}
-    </React.Fragment>
+  const salesSection = (
+    <div className="section">
+      <h2 className="section-title">
+        <BarChart3 size={16} />
+        Sales
+      </h2>
+      <StatGrid
+        blocks={salesBlocks}
+        openKey={openKey}
+        onToggle={toggleMetric}
+        clients={clients}
+        clientLabels={clientLabels}
+        reps={reps}
+        showByClient={showByClient}
+      />
+    </div>
   );
 
   return (
@@ -602,89 +1021,53 @@ export default function MetricsDashboardView({ scope }: { scope: DashboardScope 
           <Icon size={22} style={{ color: "var(--accent)" }} />
           {meta.title}
         </h1>
-        <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 4 }}>
-          {meta.blurb}
-          {data ? ` · ${data.range.from} → ${data.range.to} (ET)` : ""}
-        </p>
+        <p className="page-subtitle">{meta.blurb}</p>
       </div>
 
-      {/* ── Date range ── */}
-      <div className={styles.filters}>
-        <CalendarDays size={15} style={{ color: "var(--text-muted)" }} />
-        {PRESETS.map((p) => (
-          <button key={p.key} style={chip(preset === p.key)} onClick={() => setPreset(p.key)}>
-            {p.label}
-          </button>
-        ))}
-        {preset === "custom" && (
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <input
-              type="date"
-              className="input-field"
-              value={customFrom}
-              max={customTo}
-              onChange={(e) => setCustomFrom(e.target.value)}
-              style={{ width: 150, padding: "6px 10px", fontSize: 13 }}
-            />
-            <span style={{ color: "var(--text-muted)", fontSize: 13 }}>to</span>
-            <input
-              type="date"
-              className="input-field"
-              value={customTo}
-              min={customFrom}
-              max={etToday()}
-              onChange={(e) => setCustomTo(e.target.value)}
-              style={{ width: 150, padding: "6px 10px", fontSize: 13 }}
-            />
-          </span>
-        )}
-        <button onClick={() => void load()} disabled={loading} style={{ ...chip(false), opacity: loading ? 0.5 : 1 }}>
+      {/* ── Filter bar ── */}
+      <div className={`glass-static ${styles.filterBar}`}>
+        <MultiSelect
+          label="Client"
+          icon={<Users size={13} style={{ color: "var(--text-muted)" }} />}
+          options={CLIENT_OPTIONS}
+          value={clientSel}
+          onChange={setClientSel}
+          allLabel="All clients"
+        />
+        {showRepFilter ? (
+          <MultiSelect
+            label="Rep"
+            options={repOptions}
+            value={repSel}
+            onChange={setRepSel}
+            allLabel="All reps"
+          />
+        ) : null}
+        <SingleSelect
+          label="Lens"
+          icon={<Eye size={13} style={{ color: "var(--text-muted)" }} />}
+          options={LENS_OPTIONS}
+          value={lens}
+          onChange={setLens}
+        />
+        <div className={styles.filterDivider} />
+        <DateDropdown
+          preset={preset}
+          range={range}
+          onApply={(p, r) => {
+            setPreset(p);
+            setRange(r);
+          }}
+        />
+        <button
+          className={styles.filterBtn}
+          onClick={() => void load()}
+          disabled={loading}
+          style={{ marginLeft: "auto", opacity: loading ? 0.5 : 1 }}
+        >
           {loading ? "Refreshing…" : "Refresh"}
         </button>
       </div>
-
-      {/* ── Filters ── */}
-      <div className={styles.filters} style={{ marginBottom: 6 }}>
-        <span className={styles.filterLabel}>Client</span>
-        {CLIENT_OPTIONS.map((c) => (
-          <button key={c.key} style={chip(client === c.key)} onClick={() => setClient(c.key)}>
-            {c.label}
-          </button>
-        ))}
-        <span className={styles.filterLabel} style={{ marginLeft: 10 }}>
-          Lens
-        </span>
-        <button style={chip(lens === "origin")} onClick={() => setLens("origin")}>
-          Origin source
-        </button>
-        <button style={chip(lens === "conversion")} onClick={() => setLens("conversion")}>
-          Conversion source
-        </button>
-      </div>
-      {showRepFilter ? (
-        <div className={styles.filters}>
-          <span className={styles.filterLabel}>Rep</span>
-          <button style={chip(rep === "all")} onClick={() => setRep("all")}>
-            All
-          </button>
-          {reps.map((r) => (
-            <button key={r.key} style={chip(rep === r.key)} onClick={() => setRep(r.key)}>
-              {r.name.split(" ")[0]}
-            </button>
-          ))}
-          {rep !== "all" ? (
-            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-              Marketing metrics blank under a rep filter — they are not attributable to one rep.
-            </span>
-          ) : null}
-        </div>
-      ) : null}
-
-      <p className={styles.legend}>
-        Every metric shows two views — <strong>Act</strong> = activity in the window ·{" "}
-        <strong>Coh</strong> = from leads acquired in the window (their downstream events, whenever
-        they happen). A dash means no data / not applicable, never zero.
-      </p>
 
       {data?.migration_pending ? (
         <div className={styles.banner}>
@@ -693,7 +1076,13 @@ export default function MetricsDashboardView({ scope }: { scope: DashboardScope 
         </div>
       ) : null}
 
-      {loading && !data ? (
+      {nothingSelected ? (
+        <div className={`glass-static ${styles.emptyPanel}`}>
+          {clientSel !== null && clientSel.length === 0
+            ? "No clients selected — pick at least one client to see metrics."
+            : "No reps selected — pick at least one rep to see metrics."}
+        </div>
+      ) : loading && !data ? (
         <div
           className="glass-static"
           style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 60 }}
@@ -707,12 +1096,13 @@ export default function MetricsDashboardView({ scope }: { scope: DashboardScope 
         </div>
       ) : data ? (
         <>
-          {scope !== "sales" ? marketingSections("mkt") : null}
-          {scope !== "marketing" ? salesSections("sales") : null}
+          {scope !== "sales" ? marketingSection : null}
+          {scope !== "marketing" ? salesSection : null}
 
           <p className={styles.freshness}>
-            Ledger built {data.freshness.ledger_built_at ? fmtStamp(data.freshness.ledger_built_at) : "—"} · sheet
-            synced {data.freshness.sheet_synced_at ? fmtStamp(data.freshness.sheet_synced_at) : "—"} · spend synced{" "}
+            {data.range.from} &rarr; {data.range.to} (ET) &middot; ledger built{" "}
+            {data.freshness.ledger_built_at ? fmtStamp(data.freshness.ledger_built_at) : "—"} &middot; sheet synced{" "}
+            {data.freshness.sheet_synced_at ? fmtStamp(data.freshness.sheet_synced_at) : "—"} &middot; spend synced{" "}
             {data.freshness.spend_synced_at ? fmtStamp(data.freshness.spend_synced_at) : "—"}
           </p>
           {error ? (
@@ -722,14 +1112,4 @@ export default function MetricsDashboardView({ scope }: { scope: DashboardScope 
       ) : null}
     </div>
   );
-}
-
-function fmtStamp(iso: string): string {
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(iso));
 }
