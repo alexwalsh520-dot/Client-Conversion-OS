@@ -24,6 +24,10 @@
       "schedule": "30 */2 * * *"
     },
     {
+      "path": "/api/cron/attribution-alarm",
+      "schedule": "30 13 * * *"
+    },
+    {
       "path": "/api/cron/attribution-reconcile",
       "schedule": "0 7 * * *"
     },

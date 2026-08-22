@@ -629,6 +629,17 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
     console.error("[adsv2] tracker weld failed, continuing:", err);
   }
 
+  // The matcher (Alex-approved sprint, 8/22). Attaches identity to bookings
+  // that arrived without one, from the ManyChat id riding in the booking
+  // link (utm_term, Tyson lane) or RipDrip webhook events (Jake lane).
+  // Fills EMPTY links only; every action logs to attribution_matcher_log
+  // so it is reversible in one statement. Same never-fail-the-sync wrapper.
+  try {
+    await db.rpc("attribution_booking_weld", { p_from: factFrom, p_to: bookTo });
+  } catch (err) {
+    console.error("[adsv2] attribution matcher failed, continuing:", err);
+  }
+
   // Fill any booking setter the in-memory lookup could not see. That lookup is
   // built from keyword events inside the rolling window, so a person who first
   // messaged BEFORE the window and booked inside it would otherwise lose their

@@ -1,0 +1,8 @@
+-- Applied live 2026-08-22 as attribution_booking_weld (build 1, Alex-approved sprint).
+-- public.attribution_matcher_log + function attribution_booking_weld(p_from,p_to):
+-- PASS A: utm_term=<manychat id> mined from ghl_appointments.raw_payload (Tyson lane).
+-- PASS B: RipDrip event email matched to booking email within -1h..+24h, username
+-- resolved to exactly ONE manychat id via warehouse.people (Jake lane).
+-- Fills EMPTY manychat_contact_links only; every action logged; undo =
+-- delete links joined to log rows where link_created. Wired into facts.ts
+-- after adsv2_tracker_weld, same never-fail-the-sync wrapper.
