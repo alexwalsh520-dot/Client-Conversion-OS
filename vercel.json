@@ -138,6 +138,10 @@
     {
       "path": "/api/cron/attribution-ping",
       "schedule": "10 13 * * *"
+    },
+    {
+      "path": "/api/cron/metrics-ledger-build",
+      "schedule": "22 * * * *"
     }
   ]
 }

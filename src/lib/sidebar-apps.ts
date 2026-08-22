@@ -36,6 +36,8 @@ import {
   Magnet,
   Target,
   Crosshair,
+  Gauge,
+  TrendingUp,
 } from "lucide-react";
 
 export type AppItem = {
@@ -52,6 +54,10 @@ export const NAV_ITEMS: AppItem[] = [
   { href: "/outreach-runs", label: "Client Acquisition", icon: Rocket },
   { href: "/studio-2/auto-outreach-test", label: "Auto Outreach", icon: FileText },
   { href: "/sales-hub", label: "Sales Hub", icon: BarChart3 },
+  // Metrics-engine dashboards — owner-only during the test month.
+  { href: "/master-dashboard", label: "Master Dashboard", icon: Gauge, adminOnly: true },
+  { href: "/marketing-dashboard", label: "Marketing Dashboard", icon: Megaphone, adminOnly: true },
+  { href: "/sales-dashboard", label: "Sales Dashboard", icon: TrendingUp, adminOnly: true },
   { href: "/time-to-eat", label: "Time to Eat", icon: Utensils },
   { href: "/setter-response-time", label: "Setter Response Time", icon: Timer },
   { href: "/lead-magnet", label: "Lead Magnet Funnel", icon: Magnet },
