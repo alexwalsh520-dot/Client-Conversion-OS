@@ -126,15 +126,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "email is required" }, { status: 400, headers });
   }
 
+  // Upsert on email — the table has a UNIQUE(email) constraint, so an
+  // insert would fail when a client re-submits (e.g. after a coach asks
+  // them to redo the form). Semantically the intake is the client's
+  // current questionnaire state, so latest submission overwrites.
   const db = getServiceSupabase();
   const { data, error } = await db
     .from("nutrition_intake_forms")
-    .insert(row)
+    .upsert(row, { onConflict: "email" })
     .select("id")
     .single();
 
   if (error) {
-    console.error("[api/nutrition/intake] insert failed:", error);
+    console.error("[api/nutrition/intake] upsert failed:", error);
     return NextResponse.json(
       { error: `could not save intake: ${error.message}` },
       { status: 500, headers },
