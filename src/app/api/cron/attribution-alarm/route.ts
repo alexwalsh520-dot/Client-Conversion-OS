@@ -64,17 +64,52 @@ export async function GET(req: NextRequest) {
   }
 
   const missing = rows.filter((b) => b.contact_id && !linked.has(b.contact_id as string));
-  const summary = { ok: true, day: label, bookings: rows.length, missingIdentity: missing.length };
-  if (missing.length === 0) return NextResponse.json(summary);
 
-  const lines = missing.slice(0, 15).map((b) => {
-    const cal = calNames.get(b.calendar_id as string) || b.calendar_id;
-    return `• ${b.contact_name || "Unnamed"} (${cal})`;
-  });
-  const msg =
-    `Attribution alarm for ${label}: ${missing.length} of ${rows.length} sales-calendar bookings ` +
-    `have no person attached yet. They are on the review list.\n${lines.join("\n")}` +
-    (missing.length > 15 ? `\n…and ${missing.length - 15} more` : "");
+  // Second check (Alex + Matt agreement, 8/22): a taken sales call with no
+  // recording link pasted in the tracker is an evidence gap. The pasted
+  // Fathom link is the show-up proof while recordings stay on personal
+  // accounts, so the gap list goes to #a-sales-manager beside the
+  // identity list. Read-only, names only, no nagging of setters.
+  const { data: takenRows } = await db
+    .from("sales_tracker_rows")
+    .select("prospect_name, closer, recording_link, date")
+    .eq("call_taken_status", "yes")
+    .gte("date", label)
+    .lt("date", new Date(new Date(`${label}T00:00:00Z`).getTime() + 86400000).toISOString().slice(0, 10));
+  const noLink = (takenRows || []).filter(
+    (r) => !r.recording_link || !String(r.recording_link).trim(),
+  );
+
+  const summary = {
+    ok: true,
+    day: label,
+    bookings: rows.length,
+    missingIdentity: missing.length,
+    takenCalls: (takenRows || []).length,
+    takenWithoutRecordingLink: noLink.length,
+  };
+  if (missing.length === 0 && noLink.length === 0) return NextResponse.json(summary);
+
+  const parts: string[] = [];
+  if (missing.length > 0) {
+    const lines = missing.slice(0, 15).map((b) => {
+      const cal = calNames.get(b.calendar_id as string) || b.calendar_id;
+      return `• ${b.contact_name || "Unnamed"} (${cal})`;
+    });
+    parts.push(
+      `${missing.length} of ${rows.length} sales-calendar bookings have no person attached yet. They are on the review list.\n${lines.join("\n")}` +
+        (missing.length > 15 ? `\n…and ${missing.length - 15} more` : ""),
+    );
+  }
+  if (noLink.length > 0) {
+    const lines = noLink.slice(0, 15).map(
+      (r) => `• ${r.prospect_name || "Unnamed"}${r.closer ? ` (${r.closer})` : ""}`,
+    );
+    parts.push(
+      `${noLink.length} of ${(takenRows || []).length} taken calls have no recording link pasted:\n${lines.join("\n")}`,
+    );
+  }
+  const msg = `Attribution alarm for ${label}:\n${parts.join("\n\n")}`;
 
   try {
     await postToSlack(getSalesManagerChannel(), msg);
