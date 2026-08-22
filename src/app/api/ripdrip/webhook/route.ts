@@ -31,6 +31,20 @@ function signatureMatches(raw: string, signature: string, secret: string): boole
   return false;
 }
 
+/**
+ * All request headers except sensitive ones, so real events show exactly
+ * what RipDrip sends. The 8/22 test event carried NO signature header at
+ * all despite their docs; this is how we find their real auth story.
+ */
+function collectHeaders(req: NextRequest): Record<string, string> {
+  const out: Record<string, string> = {};
+  const skip = new Set(["cookie", "authorization"]);
+  req.headers.forEach((value, key) => {
+    if (!skip.has(key.toLowerCase())) out[key] = value;
+  });
+  return out;
+}
+
 /** Depth-first search for the first non-empty string under any of these keys. */
 function findString(payload: unknown, keys: string[]): string | null {
   if (!payload || typeof payload !== "object") return null;
@@ -102,6 +116,7 @@ export async function POST(req: NextRequest) {
     ]),
     signature_valid: signatureValid,
     signature_header: signature || null,
+    request_headers: collectHeaders(req),
     payload,
   });
   if (error) {

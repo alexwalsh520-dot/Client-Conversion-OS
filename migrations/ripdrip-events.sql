@@ -29,3 +29,9 @@ alter table public.ripdrip_events enable row level security;
 -- Record the raw X-RipDrip-Signature header per event, so the first real
 -- events prove RipDrip's exact signing format before enforcement goes hard.
 alter table public.ripdrip_events add column signature_header text;
+
+-- Applied live 2026-08-22 as ripdrip_events_request_headers.
+-- The 8/22 test event arrived with NO signature header despite RipDrip's
+-- docs describing X-RipDrip-Signature. Capture all (non-sensitive) request
+-- headers per event so the next events show exactly what they send.
+alter table public.ripdrip_events add column request_headers jsonb;
