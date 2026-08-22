@@ -109,6 +109,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     row[key] = typeof raw === "string" ? raw.trim() : String(raw).trim();
   }
 
+  // Set the submission `timestamp` explicitly. When these rows came from the
+  // Google Sheet sync this field was the Google Form submission time. Now
+  // that we insert direct, we set it to server-now — the Coaching Hub's
+  // "Unlinked Intake Forms" list treats a NULL timestamp as legacy/pre-Apr-1
+  // and hides such rows by default.
+  row.timestamp = new Date().toISOString();
+
   // age is an integer column, handle separately
   if (body.age != null && body.age !== "") {
     const parsed = parseInt(String(body.age), 10);
