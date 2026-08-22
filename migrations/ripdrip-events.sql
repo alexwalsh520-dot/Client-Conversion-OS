@@ -24,3 +24,8 @@ comment on table public.ripdrip_events is
   'COPY OF REALITY: raw RipDrip (AI DM setter) webhook events. Written only by /api/ripdrip/webhook (service role). Identity key = lead_username (IG handle). Created 2026-08-22 for the attribution rebuild.';
 
 alter table public.ripdrip_events enable row level security;
+
+-- Applied live 2026-08-22 as ripdrip_events_signature_header.
+-- Record the raw X-RipDrip-Signature header per event, so the first real
+-- events prove RipDrip's exact signing format before enforcement goes hard.
+alter table public.ripdrip_events add column signature_header text;

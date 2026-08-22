@@ -11,8 +11,9 @@ import { getServiceSupabase } from "@/lib/supabase";
  * that re-welds bookings to conversations (the 2026-08-13 attribution break).
  *
  * Until RIPDRIP_WEBHOOK_SECRET is set in the environment, events are stored
- * with signature_valid = null. Once the secret is set, a bad signature is
- * rejected with 401 and nothing is stored.
+ * with signature_valid = null. With the secret set, verification runs on
+ * every event but enforcement is SOFT: failures are stored flagged, not
+ * rejected, until real events prove RipDrip's signing format end to end.
  */
 
 export const runtime = "nodejs";
@@ -58,14 +59,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "empty or oversized body" }, { status: 400 });
   }
 
+  // SOFT ENFORCEMENT for now: a bad or missing signature is stored and
+  // flagged rather than rejected, because we have not yet seen RipDrip's
+  // first real event and cannot risk dropping lead data over a format
+  // mismatch. The stored signature_header proves their format; once real
+  // events verify as valid, flip this to a hard 401 reject.
   const secret = process.env.RIPDRIP_WEBHOOK_SECRET || "";
   const signature = req.headers.get("x-ripdrip-signature") || "";
   let signatureValid: boolean | null = null;
   if (secret) {
     signatureValid = Boolean(signature) && signatureMatches(raw, signature, secret);
-    if (!signatureValid) {
-      return NextResponse.json({ error: "invalid signature" }, { status: 401 });
-    }
   }
 
   let payload: unknown;
@@ -98,6 +101,7 @@ export async function POST(req: NextRequest) {
       "conversationUrl",
     ]),
     signature_valid: signatureValid,
+    signature_header: signature || null,
     payload,
   });
   if (error) {
