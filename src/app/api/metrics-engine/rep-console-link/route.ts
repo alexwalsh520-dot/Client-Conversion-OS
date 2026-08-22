@@ -37,8 +37,10 @@ function urlFor(req: NextRequest, token: string): string {
   return `${req.nextUrl.origin}/p/rep-console/${token}`;
 }
 
-function isServed(client: string): client is CreatorKey {
-  return (SERVED_CLIENTS as readonly string[]).includes(client);
+function isServed(client: string): client is CreatorKey | "all" {
+  // 'all' mints a business-wide token (every engine client) — the owner's
+  // master console, and the right scope for full-cycle reps.
+  return client === "all" || (SERVED_CLIENTS as readonly string[]).includes(client);
 }
 
 interface LinkSettings {
@@ -138,7 +140,7 @@ export async function POST(req: NextRequest) {
       token,
       kind: KIND,
       client_key: client,
-      label: `Rep console - ${CREATORS_BY_KEY[client as CreatorKey]?.name || client}`,
+      label: `Rep console - ${client === "all" ? "All Clients" : CREATORS_BY_KEY[client as CreatorKey]?.name || client}`,
       revoked: false,
       settings: settings as Record<string, unknown>,
     });
