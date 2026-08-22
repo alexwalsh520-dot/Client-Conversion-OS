@@ -10,7 +10,6 @@ import {
   fetchSalesData,
   fetchAdsDaily,
   fetchCoachTrackers,
-  fetchNutritionIntake,
   SHEET_IDS,
 } from "@/lib/sheets";
 
@@ -51,7 +50,7 @@ export async function POST(req: NextRequest) {
 
   try {
     // Fetch all sheets in parallel
-    const [coaching, onboarding, sales, tysonAds, keithAds, coachTrackers, nutritionIntake] =
+    const [coaching, onboarding, sales, tysonAds, keithAds, coachTrackers] =
       await Promise.all([
         fetchCoachingFeedback().catch((e) => {
           console.error("[sync] Coaching fetch failed:", e);
@@ -77,10 +76,12 @@ export async function POST(req: NextRequest) {
           console.error("[sync] Coach trackers fetch failed:", e);
           return [];
         }),
-        fetchNutritionIntake().catch((e) => {
-          console.error("[sync] Nutrition intake fetch failed:", e);
-          return [];
-        }),
+        // Nutrition intake sync intentionally removed 2026-08-22. The intake
+        // form now POSTs direct to /api/nutrition/intake and writes straight
+        // to Supabase. Re-reading the (now dead) Google Sheet here was
+        // upserting stale data over freshly-submitted intakes and losing
+        // real client submissions. If you resurrect this, first solve the
+        // conflict: sheet data must never overwrite a newer direct submission.
       ]);
 
     let totalRows = 0;
@@ -311,41 +312,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Upsert nutrition intake forms — deduplicate by email (keep latest)
-    if (nutritionIntake.length > 0) {
-      const dedupMap = new Map<string, (typeof nutritionIntake)[0]>();
-      for (const row of nutritionIntake) {
-        const key = row.email.toLowerCase();
-        if (key) dedupMap.set(key, row); // Last one wins
-      }
-      const dedupedIntake = Array.from(dedupMap.values()).map((row) => ({
-        ...row,
-        synced_at: new Date().toISOString(),
-      }));
-
-      const { error } = await db
-        .from("nutrition_intake_forms")
-        .upsert(dedupedIntake, { onConflict: "email" });
-      if (error) {
-        // If unique constraint doesn't exist yet, try adding it and retry
-        if (error.message?.includes("unique") || error.message?.includes("constraint")) {
-          // Fall back to delete-and-insert approach
-          await db.from("nutrition_intake_forms").delete().neq("id", 0);
-          const { error: e2 } = await db.from("nutrition_intake_forms").insert(dedupedIntake);
-          if (e2) {
-            errors.push(`nutrition_intake_forms: ${e2.message}`);
-          } else {
-            totalRows += dedupedIntake.length;
-            sheetsSynced.push("nutrition_intake_forms");
-          }
-        } else {
-          errors.push(`nutrition_intake_forms: ${error.message}`);
-        }
-      } else {
-        totalRows += dedupedIntake.length;
-        sheetsSynced.push("nutrition_intake_forms");
-      }
-    }
+    // Nutrition intake sync intentionally removed 2026-08-22 — see note above
+    // where fetchNutritionIntake was disabled.
 
     // Update sync log
     if (logEntry) {
