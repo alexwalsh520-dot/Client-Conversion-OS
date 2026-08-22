@@ -1,0 +1,397 @@
+/* Public rep console — strip ALL CCOS app chrome so closers see only their
+   console, full-bleed, with no sidebar/nav into the rest of the app.
+   Self-contained LIGHT palette (no dependency on the app theme toggle),
+   sized for phones first. */
+
+.app-layout:has(.pub-rc-page) .sidebar,
+.app-layout:has(.pub-rc-unavailable) .sidebar {
+  display: none !important;
+}
+
+.app-layout:has(.pub-rc-page) .main-content,
+.app-layout:has(.pub-rc-unavailable) .main-content {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+}
+
+/* Clean "link not available" state — no data, no stack traces. */
+.pub-rc-unavailable {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: #f5f6f8;
+  padding: 24px;
+}
+
+.pub-rc-unavailable-card {
+  max-width: 420px;
+  text-align: center;
+  background: #ffffff;
+  border: 1px solid #e4e6eb;
+  border-radius: 16px;
+  padding: 40px 32px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+
+.pub-rc-unavailable-card h1 {
+  margin: 0 0 12px;
+  font-size: 20px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.pub-rc-unavailable-card p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #6b7280;
+}
+
+/* ── Console ───────────────────────────────────────────────────────────── */
+
+.pub-rc-page {
+  min-height: 100vh;
+  background: #f5f6f8;
+  color: #111827;
+  padding: 20px 12px 48px;
+  font-size: 14px;
+}
+
+.pub-rc-inner {
+  max-width: 980px;
+  margin: 0 auto;
+}
+
+.pub-rc-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pub-rc-header h1 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #111827;
+}
+
+.pub-rc-sub {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.pub-rc-scope {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #1d4ed8;
+  background: #dbeafe;
+  border-radius: 999px;
+  padding: 3px 9px;
+  white-space: nowrap;
+}
+
+/* Migration-pending banner. */
+.pub-rc-banner {
+  margin: 14px 0 0;
+  padding: 8px 12px;
+  border: 1px solid #f0d48a;
+  background: #fef8e7;
+  color: #92640c;
+  border-radius: 10px;
+  font-size: 12.5px;
+}
+
+/* Preset bar. */
+.pub-rc-presets {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 16px 0 14px;
+}
+
+.pub-rc-chipbtn {
+  border: 1px solid #d7dae0;
+  background: #ffffff;
+  color: #374151;
+  border-radius: 999px;
+  padding: 7px 13px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pub-rc-chipbtn.is-active {
+  border-color: #059669;
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.pub-rc-chipbtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.pub-rc-presets input[type="date"] {
+  border: 1px solid #d7dae0;
+  background: #ffffff;
+  color: #111827;
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  color-scheme: light;
+}
+
+/* Cards / sections. */
+.pub-rc-card {
+  margin-top: 16px;
+  background: #ffffff;
+  border: 1px solid #e4e6eb;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.pub-rc-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 12px 14px 0;
+}
+
+.pub-rc-card-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6b7280;
+  margin: 0;
+}
+
+/* Tables — horizontal scroll inside the card, never the page. */
+.pub-rc-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.pub-rc-table {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.pub-rc-table th,
+.pub-rc-table td {
+  padding: 9px 10px;
+  text-align: left;
+  font-size: 13px;
+  border-top: 1px solid #eef0f3;
+  white-space: nowrap;
+}
+
+.pub-rc-table th {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+  border-top: none;
+}
+
+.pub-rc-table th:first-child,
+.pub-rc-table td:first-child {
+  padding-left: 14px;
+}
+
+.pub-rc-table th:last-child,
+.pub-rc-table td:last-child {
+  padding-right: 14px;
+}
+
+.pub-rc-num {
+  text-align: right !important;
+}
+
+.pub-rc-name {
+  font-weight: 600;
+  color: #111827;
+}
+
+.pub-rc-dim {
+  color: #6b7280;
+}
+
+/* Leaderboard extras. */
+.pub-rc-top td {
+  background: #f6fdf9;
+}
+
+.pub-rc-rank {
+  display: inline-block;
+  width: 20px;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.pub-rc-total td {
+  border-top: 2px solid #e4e6eb;
+  font-weight: 700;
+}
+
+/* Status chips. */
+.pub-rc-chip {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 3px 9px;
+  white-space: nowrap;
+}
+
+.pub-rc-chip-upcoming {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.pub-rc-chip-taken {
+  color: #374151;
+  background: #eef0f3;
+}
+
+.pub-rc-chip-closed {
+  color: #047857;
+  background: #d1fae5;
+}
+
+.pub-rc-chip-no {
+  color: #b45309;
+  background: #fef3c7;
+}
+
+.pub-rc-chip-cancelled {
+  color: #b91c1c;
+  background: #fee2e2;
+}
+
+.pub-rc-chip-resched {
+  color: #6d28d9;
+  background: #ede9fe;
+}
+
+/* Columns popover. */
+.pub-rc-colwrap {
+  position: relative;
+}
+
+.pub-rc-colpop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 20;
+  background: #ffffff;
+  border: 1px solid #d7dae0;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  padding: 8px 4px;
+  min-width: 170px;
+}
+
+.pub-rc-colpop label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  font-size: 13px;
+  color: #111827;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.pub-rc-colpop label:hover {
+  background: #f3f4f6;
+}
+
+/* Edit controls (only rendered when the token can edit). */
+.pub-rc-edit select,
+.pub-rc-edit input[type="text"],
+.pub-rc-edit input[type="number"] {
+  border: 1px solid #d7dae0;
+  background: #ffffff;
+  color: #111827;
+  border-radius: 7px;
+  padding: 5px 7px;
+  font-size: 12.5px;
+  font-family: inherit;
+  color-scheme: light;
+}
+
+.pub-rc-edit input[type="number"] {
+  width: 84px;
+}
+
+.pub-rc-savebtn {
+  border: 1px solid #059669;
+  background: #ecfdf5;
+  color: #047857;
+  border-radius: 7px;
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pub-rc-savebtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.pub-rc-notebtn {
+  border: 1px solid #d7dae0;
+  background: #ffffff;
+  color: #374151;
+  border-radius: 7px;
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pub-rc-pending-note {
+  font-size: 11px;
+  color: #92640c;
+}
+
+/* Error / loading states. */
+.pub-rc-state {
+  padding: 48px 16px;
+  text-align: center;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.pub-rc-state.pub-rc-state-error {
+  color: #dc2626;
+}
+
+@media (max-width: 480px) {
+  .pub-rc-table th,
+  .pub-rc-table td {
+    padding: 8px 7px;
+    font-size: 12px;
+  }
+}

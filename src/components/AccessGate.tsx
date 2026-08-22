@@ -10,6 +10,10 @@ const OWNER_ONLY_TABS: Record<string, string> = {
   "/supplements": "matthew@clientconversion.io",
 };
 
+// Admin-only tabs — consistent with adminOnly in src/lib/sidebar-apps.ts.
+// The metrics-engine dashboards stay owner/admin-only during the test month.
+const ADMIN_ONLY_TABS = ["/master-dashboard", "/marketing-dashboard", "/sales-dashboard"];
+
 function RestrictedView() {
   return (
     <div
@@ -138,6 +142,11 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
     // /api/public/client-metrics/<token> hard-scopes every read to that
     // client's rows. No CCOS login.
     pathname.startsWith("/p/client-metrics/") ||
+    // /p/rep-console/<token> is the public, no-login rep console (leaderboard +
+    // the rep's call sheet). The token resolves server-side to ONE client (and
+    // optionally one rep) and /api/public/rep-console/<token> hard-scopes every
+    // read — and gates writes on the token's can_edit. No CCOS login.
+    pathname.startsWith("/p/rep-console/") ||
     // /p/factory/<token> is a public, no-login share link for ONE Factory
     // project (e.g. handing a creator their own ad batch to review). The token
     // resolves server-side to a single project_id and /api/public/factory/<token>
@@ -182,6 +191,15 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
   );
   if (ownerOnly) {
     return session.user.email?.toLowerCase() === ownerOnly[1] ? <>{children}</> : <RestrictedView />;
+  }
+
+  // Admin-only tabs are gated on role BEFORE the old-JWT fallback below, so a
+  // stale session can never reach them; allowedTabs cannot grant them either.
+  const adminOnly = ADMIN_ONLY_TABS.some(
+    (tab) => pathname === tab || pathname.startsWith(tab + "/"),
+  );
+  if (adminOnly) {
+    return session.user.role === "admin" ? <>{children}</> : <RestrictedView />;
   }
 
   const isAdmin = session.user.role === "admin";
