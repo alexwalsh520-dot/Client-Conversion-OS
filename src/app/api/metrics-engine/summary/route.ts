@@ -4,8 +4,10 @@
 // Session-authed GET. Query params:
 //   from=YYYY-MM-DD & to=YYYY-MM-DD   explicit ET day window, OR
 //   preset=today|yesterday|last3|last7|last14|last30|mtd|lmtd  (default mtd)
-//   client=tyson|jake     optional scope to one client
-//   rep=<rep key>         optional scope to one rep (team.ts keys)
+//   client=tyson | client=tyson,jake   optional client scope — one key or a
+//                                      comma-separated list (aggregated)
+//   rep=<rep key> | rep=will,erin      optional rep scope — one key or a
+//                                      comma-separated list (team.ts keys)
 //   lens=origin|conversion  lead-type lens (default origin)
 //
 // Returns computeMetrics() output (see src/lib/metrics-engine/types.ts) plus

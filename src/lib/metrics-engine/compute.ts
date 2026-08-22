@@ -97,6 +97,18 @@ function foldType(v: string | null | undefined): LeadType {
   return "misc";
 }
 
+/** Normalize a filter param — one key, "a,b" comma list, or an array — into
+    a de-duplicated key list. Empty / "all" entries mean "no filter". */
+function normalizeFilterList(v: string | readonly string[] | null | undefined): string[] {
+  const parts = Array.isArray(v) ? v : typeof v === "string" ? v.split(",") : [];
+  const seen = new Set<string>();
+  for (const p of parts as string[]) {
+    const t = p.trim().toLowerCase();
+    if (t && t !== "all") seen.add(t);
+  }
+  return [...seen];
+}
+
 interface LeadRow {
   client_key: string;
   lead_key: string;
@@ -133,10 +145,15 @@ interface EventRow {
 export async function computeMetrics(params: ComputeParams): Promise<MetricsSummary> {
   const db = getServiceSupabase();
   const { range, lens } = params;
-  const clientFilter =
-    params.client && ACTIVE_CLIENT_KEYS.includes(params.client) ? params.client : null;
-  const repFilter = params.rep && REPS.some((r) => r.key === params.rep) ? params.rep : null;
-  const clients = clientFilter ? [clientFilter] : [...ACTIVE_CLIENT_KEYS];
+  // Multi-select filters: each param accepts one key, a comma-separated
+  // list, or an array. Unknown keys are dropped; an empty result = no filter.
+  const clientFilters = normalizeFilterList(params.client).filter((k) =>
+    ACTIVE_CLIENT_KEYS.includes(k),
+  );
+  const repFilters = normalizeFilterList(params.rep).filter((k) => REPS.some((r) => r.key === k));
+  const repSet = new Set(repFilters);
+  const repFiltered = repSet.size > 0 && repSet.size < REPS.length;
+  const clients = clientFilters.length ? clientFilters : [...ACTIVE_CLIENT_KEYS];
   const today = todayEt();
   const nowIso = new Date().toISOString();
 
@@ -346,7 +363,7 @@ export async function computeMetrics(params: ComputeParams): Promise<MetricsSumm
     }
   }
 
-  const repMatches = (rep: string | null) => !repFilter || rep === repFilter;
+  const repMatches = (rep: string | null) => !repFiltered || (rep !== null && repSet.has(rep));
 
   for (const e of events) {
     const cohortMember = isCohortLead(e.client_key, e.lead_key);
@@ -432,7 +449,7 @@ export async function computeMetrics(params: ComputeParams): Promise<MetricsSumm
   }
 
   // ── Metric assembly ────────────────────────────────────────────────────
-  const repKeys = repFilter ? [repFilter] : REPS.map((r) => r.key);
+  const repKeys = repFiltered ? repFilters : REPS.map((r) => r.key);
 
   type CellFn = (a: Counts, c: Counts) => MetricCell;
   const counts = (agg: Agg, dim: "total" | "client" | "type" | "rep" | "reptype" | "channel", key?: string): Counts => {
@@ -494,7 +511,7 @@ export async function computeMetrics(params: ComputeParams): Promise<MetricsSumm
       unit: "count",
       dims: { client: true, leadType: true, rep: false, channel: false },
       cell: (a, c) => ({ activity: sum(a, "leads"), cohort: sum(c, "leads") }),
-      reason: repFilter ? "Leads are not attributable to a single rep." : null,
+      reason: repFiltered ? "Leads are not attributable to individual reps." : null,
     },
     {
       key: "cash_collected",
@@ -537,7 +554,7 @@ export async function computeMetrics(params: ComputeParams): Promise<MetricsSumm
       unit: "multiple",
       dims: { client: true, leadType: false, rep: false, channel: false },
       cell: (a, c) => ({ activity: null, cohort: div(sum(c, "ad_cash"), sum(a, "spend")) }),
-      reason: "Cohort cash of ad-origin leads ÷ spend in window.",
+      reason: "Cash from ad-origin leads acquired in this window ÷ spend in the window.",
     },
     {
       key: "roas_blended",
@@ -545,7 +562,7 @@ export async function computeMetrics(params: ComputeParams): Promise<MetricsSumm
       unit: "multiple",
       dims: { client: true, leadType: false, rep: false, channel: false },
       cell: (a, c) => ({ activity: null, cohort: div(sum(c, "cash"), sum(a, "spend")) }),
-      reason: "Total cohort cash ÷ spend in window.",
+      reason: "All cash from leads acquired in this window ÷ spend in the window.",
     },
     {
       key: "roi",
@@ -553,7 +570,7 @@ export async function computeMetrics(params: ComputeParams): Promise<MetricsSumm
       unit: "multiple",
       dims: { client: true, leadType: false, rep: false, channel: false },
       cell: (a) => ({ activity: div(sum(a, "cash"), sum(a, "spend")), cohort: null }),
-      reason: "Total activity cash ÷ spend in window.",
+      reason: "Cash collected in the window ÷ spend in the window.",
     },
     // ── Sales ────────────────────────────────────────────────────────────
     {
@@ -570,9 +587,9 @@ export async function computeMetrics(params: ComputeParams): Promise<MetricsSumm
       dims: { client: true, leadType: true, rep: false, channel: true },
       cell: (a, c) => ({ activity: null, cohort: div(sum(c, "bookings"), sum(c, "leads")) }),
       channelCell: bookingRateChannelCell,
-      reason: repFilter
+      reason: repFiltered
         ? "The denominator (new leads) is not rep-attributable."
-        : "Cohort bookings ÷ cohort leads.",
+        : "Bookings from this window's new leads ÷ new leads acquired in this window.",
     },
     {
       key: "show_rate",
@@ -642,7 +659,7 @@ export async function computeMetrics(params: ComputeParams): Promise<MetricsSumm
 
   const metrics: MetricBlock[] = specs.map((spec) => {
     const defined = spec.defined ?? true;
-    const blankForRep = Boolean(repFilter) && repBlankKeys.has(spec.key);
+    const blankForRep = repFiltered && repBlankKeys.has(spec.key);
     if (!defined || blankForRep) {
       return {
         key: spec.key,
@@ -756,8 +773,8 @@ export async function computeMetrics(params: ComputeParams): Promise<MetricsSumm
   return {
     range,
     lens,
-    client: clientFilter,
-    rep: repFilter,
+    client: clientFilters.length ? clientFilters.join(",") : null,
+    rep: repFiltered ? repFilters.join(",") : null,
     clients,
     reps: REPS.map((r) => ({ key: r.key, name: r.name })),
     lead_types: LEAD_TYPES,
