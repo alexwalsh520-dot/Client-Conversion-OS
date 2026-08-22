@@ -658,7 +658,13 @@ export default function RepConsoleView({ token }: { token: string }) {
                                 </td>
                               );
                             case "client":
-                              return <td key={c.id}>{data.clientLabel}</td>;
+                              // Business-wide tokens mix clients, so each row
+                              // names its own calendar's client.
+                              return (
+                                <td key={c.id}>
+                                  {a.client === "tyson" ? "Tyson" : a.client === "jake" ? "Jake" : a.client || data.clientLabel}
+                                </td>
+                              );
                             case "channel":
                               return (
                                 <td key={c.id} className="pub-rc-dim">
