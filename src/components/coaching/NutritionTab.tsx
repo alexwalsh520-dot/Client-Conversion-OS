@@ -20,6 +20,7 @@ import {
   MessageSquarePlus,
   Trash2,
   Loader2,
+  Eye,
 } from "lucide-react";
 import type { Client, NutritionIntakeForm } from "@/lib/types";
 import { NutritionV2TaskPanel } from "./nutrition-v2/NutritionV2TaskPanel";
@@ -658,6 +659,10 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
   const [expandedDone, setExpandedDone] = useState(false);
   const [expandedFormId, setExpandedFormId] = useState<number | null>(null);
   const [expandedClientId, setExpandedClientId] = useState<number | null>(null);
+  // Independent from expandedClientId — coach can view the linked intake form
+  // without expanding the full meal-plan task panel. Toggled from the "View
+  // intake" button on Pending and Done meal-plan rows.
+  const [expandedIntakeClientId, setExpandedIntakeClientId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
 
   // 2026-04-30 product filters:
@@ -989,6 +994,15 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
                                   clientName={client.name}
                                   onDone={onRefreshClients}
                                 />
+                                {form && (
+                                  <button
+                                    onClick={() => setExpandedIntakeClientId(expandedIntakeClientId === client.id ? null : client.id!)}
+                                    title="View this client's linked intake form"
+                                    style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border-primary)", background: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", gap: 3 }}
+                                  >
+                                    <Eye size={11} /> {expandedIntakeClientId === client.id ? "Hide intake" : "View intake"}
+                                  </button>
+                                )}
                                 <button
                                   onClick={() => setExpandedClientId(isExpanded ? null : client.id!)}
                                   style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border-primary)", background: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 11 }}
@@ -998,6 +1012,13 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
                               </div>
                             </td>
                           </tr>
+                          {expandedIntakeClientId === client.id && form && (
+                            <tr>
+                              <td colSpan={4} style={{ padding: 16, background: "var(--hover-bg-subtle)" }}>
+                                <IntakeFormDetail form={form} />
+                              </td>
+                            </tr>
+                          )}
                           {isExpanded && (
                             <tr>
                               <td colSpan={4} style={{ padding: 0 }}>
@@ -1109,14 +1130,32 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
                               {client.nutritionCompletedAt ? new Date(client.nutritionCompletedAt).toLocaleDateString() : "—"}
                             </td>
                             <td>
-                              <button
-                                onClick={() => setExpandedClientId(isExpanded ? null : client.id!)}
-                                style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border-primary)", background: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 11 }}
-                              >
-                                {isExpanded ? "Hide" : "Open"}
-                              </button>
+                              <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                                {form && (
+                                  <button
+                                    onClick={() => setExpandedIntakeClientId(expandedIntakeClientId === client.id ? null : client.id!)}
+                                    title="View this client's linked intake form"
+                                    style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border-primary)", background: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center", gap: 3 }}
+                                  >
+                                    <Eye size={11} /> {expandedIntakeClientId === client.id ? "Hide intake" : "View intake"}
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => setExpandedClientId(isExpanded ? null : client.id!)}
+                                  style={{ padding: "4px 8px", borderRadius: 6, border: "1px solid var(--border-primary)", background: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 11 }}
+                                >
+                                  {isExpanded ? "Hide" : "Open"}
+                                </button>
+                              </div>
                             </td>
                           </tr>
+                          {expandedIntakeClientId === client.id && form && (
+                            <tr>
+                              <td colSpan={5} style={{ padding: 16, background: "var(--hover-bg-subtle)" }}>
+                                <IntakeFormDetail form={form} />
+                              </td>
+                            </tr>
+                          )}
                           {isExpanded && (
                             <tr>
                               <td colSpan={5} style={{ padding: 0 }}>
