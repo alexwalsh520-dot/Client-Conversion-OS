@@ -1,0 +1,14 @@
+-- Applied live 2026-08-22 as tracker_weld_pass1b_exact_name_taken.
+-- Pass 1b added to public.adsv2_tracker_weld: when the tracker has a
+-- taken=yes row for the EXACT same stripped name, same creator, within
+-- -1..+3 days of the booking, and the name is unambiguous (no shared
+-- names, at most one distinct tracker subscriber), the booking's taken
+-- flag is set. Identity (linked_subscriber_id) is NEVER touched: the
+-- investigation proved 8 of 11 misses were poisoned bridge rows (the
+-- WRONG person's ManyChat id on the booking), and identity repair is a
+-- separate, logged operation. evidence_key 'tracker_name_taken' added to
+-- the check constraint. First run: Tyson sales-calendar taken 20 -> 34
+-- of 61; all 5 closed WINS previously reading "not taken" now count.
+-- QUEUED companions: fix dm-contact-linking first-name+source=90 scoring,
+-- repair the 8 poisoned manychat_contact_links rows, date-bound the tk
+-- rung in adsv2_stamp_booking_links (Shane O'Quinn reverse false positive).
