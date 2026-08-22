@@ -83,14 +83,41 @@ function extractStringByKeys(payload: unknown, keys: string[]): string | null {
   return null;
 }
 
+// The Tyson-lane identity fix (2026-08-22): ManyChat booking links append
+// &utm_term={{user_id}}, so the subscriber id rides the same booking URL
+// that already carries the keyword in utm_content. Mine the payload for a
+// 6+ digit utm_term, either as a bare field or inside any embedded URL.
+function extractSubscriberIdFromUtmTerm(payload: unknown): string | null {
+  const direct = extractStringByKeys(payload, ["utm_term", "utmTerm"]);
+  if (direct && /^\d{6,}$/.test(direct)) return direct;
+
+  const seen = new Set<unknown>();
+  const queue: unknown[] = [payload];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (typeof current === "string") {
+      const match = current.match(/[?&]utm_term=(\d{6,})(?:[&#\s]|$)/i);
+      if (match) return match[1];
+      continue;
+    }
+    if (!current || typeof current !== "object" || seen.has(current)) continue;
+    seen.add(current);
+    if (Array.isArray(current)) queue.push(...current);
+    else queue.push(...Object.values(current));
+  }
+  return null;
+}
+
 function extractManychatSubscriberId(payload: unknown): string | null {
-  return extractStringByKeys(payload, [
-    "manychat_user_id",
-    "manychatUserId",
-    "manychat_userid",
-    "subscriber_id",
-    "subscriberId",
-  ]);
+  return (
+    extractStringByKeys(payload, [
+      "manychat_user_id",
+      "manychatUserId",
+      "manychat_userid",
+      "subscriber_id",
+      "subscriberId",
+    ]) || extractSubscriberIdFromUtmTerm(payload)
+  );
 }
 
 function eventTimeWithLag(value: string) {
