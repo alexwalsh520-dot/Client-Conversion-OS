@@ -1,0 +1,9 @@
+-- Applied live 2026-08-22 as adsv2_labeler_part_e_misc_chat (Alex approved in chat).
+-- Part E added to public.adsv2_label_sale_origins: sales the team labeled
+-- callType 'Miscellaneous Chat' that carry no keyword, no human resolution,
+-- and a known client_key get awaiting_review cleared, so the signed misc_chat
+-- coverage bucket claims them automatically. Before this, only a human
+-- resolution could move them; the door's misc_chat_awaiting_overlap counter
+-- existed to expose exactly this gap. First run (2026-05-22..2026-08-22)
+-- self-filed 58 sales. Full function body lives in the live migration
+-- adsv2_labeler_part_e_misc_chat; parts A-D unchanged.
