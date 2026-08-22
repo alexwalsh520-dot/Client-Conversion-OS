@@ -31,7 +31,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
 import { etDay, todayEt, shiftDay, rangeForPreset, type PresetId, type DayRange } from "@/lib/ads-v2/time";
 import { isCreatorKey, CREATORS_BY_KEY, creatorKeyFromText, type CreatorKey } from "@/lib/creators";
-import { engineCalendar } from "@/lib/metrics-engine/calendars";
+import { engineCalendar, ENGINE_CALENDARS } from "@/lib/metrics-engine/calendars";
 import { REPS, REPS_BY_KEY, repKeyFromGhlUserId, isRepKey } from "@/lib/metrics-engine/team";
 import { trackerNameKey } from "@/lib/metrics-engine/build";
 import { chunk, isMissingRelation, safeFetchAllRows } from "@/lib/metrics-engine/db";
@@ -65,10 +65,17 @@ function rateLimited(token: string): boolean {
 }
 
 interface TokenScope {
-  clientKey: CreatorKey;
+  // 'all' = business-wide token (every engine client): the owner's master
+  // console, and the right scope for full-cycle reps who work both clients.
+  clientKey: CreatorKey | "all";
   canEdit: boolean;
   repKey: string | null;
 }
+
+const ALL_ENGINE_CLIENTS = [...new Set(ENGINE_CALENDARS.map((c) => c.client))] as CreatorKey[];
+
+const clientsForScope = (scope: TokenScope): CreatorKey[] =>
+  scope.clientKey === "all" ? ALL_ENGINE_CLIENTS : [scope.clientKey];
 
 async function resolveToken(token: string): Promise<TokenScope | null> {
   try {
@@ -78,13 +85,14 @@ async function resolveToken(token: string): Promise<TokenScope | null> {
       .select("kind, revoked, client_key, settings")
       .eq("token", token)
       .maybeSingle();
-    if (error || !data || data.revoked || data.kind !== KIND || !isCreatorKey(data.client_key)) {
-      return null;
-    }
+    if (error || !data || data.revoked || data.kind !== KIND) return null;
+    const clientKey =
+      data.client_key === "all" ? ("all" as const) : isCreatorKey(data.client_key) ? data.client_key : null;
+    if (!clientKey) return null;
     const settings = (data.settings as { can_edit?: string; rep_key?: string } | null) ?? {};
     const repKey = settings.rep_key && isRepKey(settings.rep_key) ? settings.rep_key : null;
     return {
-      clientKey: data.client_key,
+      clientKey,
       canEdit: settings.can_edit === "true",
       repKey,
     };
@@ -171,7 +179,7 @@ export async function GET(
   const appts = apptRes.rows
     .map((r) => ({ row: r, cal: engineCalendar(r.calendar_id) }))
     .filter((x): x is { row: (typeof apptRes.rows)[number]; cal: NonNullable<ReturnType<typeof engineCalendar>> } =>
-      Boolean(x.cal && x.cal.client === scope.clientKey),
+      Boolean(x.cal && (scope.clientKey === "all" || x.cal.client === scope.clientKey)),
     )
     .filter((x) => {
       const day = x.row.start_time ? etDay(x.row.start_time) : null;
@@ -228,7 +236,7 @@ export async function GET(
         .schema("warehouse")
         .from("metrics_leads")
         .select("lead_key, display_name, ig_handle, origin_source, conversion_source, lm_optin_at, acquired_et_day")
-        .eq("client_key", scope.clientKey)
+        .in("client_key", clientsForScope(scope))
         .in("lead_key", keys)
         .order("lead_key", { ascending: true })
         .range(from, to),
@@ -264,7 +272,7 @@ export async function GET(
   const sheetRows = sheetRes.rows.filter(
     (r) =>
       (r.program_length || "").trim().toLowerCase() !== "subscription" &&
-      creatorKeyFromText(r.offer) === scope.clientKey,
+      clientsForScope(scope).includes(creatorKeyFromText(r.offer) as CreatorKey),
   );
   const sheetByMc = new Map<string, (typeof sheetRows)[number]>();
   const sheetByName = new Map<string, (typeof sheetRows)[number]>();
@@ -291,7 +299,7 @@ export async function GET(
         .schema("warehouse")
         .from("metrics_manual_entries")
         .select("id, appointment_key, entry_type, value, rep_name, entered_at, applied")
-        .eq("client_key", scope.clientKey)
+        .in("client_key", clientsForScope(scope))
         .in("appointment_key", ids)
         .order("entered_at", { ascending: true })
         .range(from, to),
@@ -334,7 +342,7 @@ export async function GET(
               : "upcoming";
       return {
         appointment_id: row.appointment_id,
-        client: scope.clientKey,
+        client: cal.client,
         calendar_name: cal.name,
         side: cal.side,
         channel: booking?.channel ?? (cal.side === "dm" ? "dm" : "outbound"),
@@ -374,13 +382,14 @@ export async function GET(
   // 5) Leaderboard over the requested range (default MTD). Always every
   //    rep — a leaderboard with people hidden is not a leaderboard.
   const range = resolveRange(req);
-  const leaderboard = await buildLeaderboard(scope.clientKey, range, nowIso, () => {
+  const leaderboard = await buildLeaderboard(clientsForScope(scope), range, nowIso, () => {
     migrationPending = true;
   });
 
   return NextResponse.json(
     {
-      clientLabel: CREATORS_BY_KEY[scope.clientKey].name,
+      clientLabel:
+        scope.clientKey === "all" ? "All Clients" : CREATORS_BY_KEY[scope.clientKey].name,
       client: scope.clientKey,
       can_edit: scope.canEdit,
       rep_scope: scope.repKey,
@@ -396,7 +405,7 @@ export async function GET(
 }
 
 async function buildLeaderboard(
-  clientKey: CreatorKey,
+  clientKeys: CreatorKey[],
   range: DayRange,
   nowIso: string,
   onMissing: () => void,
@@ -420,7 +429,7 @@ async function buildLeaderboard(
       .schema("warehouse")
       .from("metrics_lead_events")
       .select("id, lead_key, event_type, rep_key, et_day, amount_cents, source, metadata")
-      .eq("client_key", clientKey)
+      .in("client_key", clientKeys)
       .in("event_type", ["show", "no_show", "close", "payment"])
       .gte("et_day", range.from)
       .lte("et_day", range.to)
@@ -435,7 +444,7 @@ async function buildLeaderboard(
       .schema("warehouse")
       .from("metrics_lead_events")
       .select("id, lead_key, event_type, rep_key, et_day, amount_cents, source, metadata")
-      .eq("client_key", clientKey)
+      .in("client_key", clientKeys)
       .eq("event_type", "booking")
       .gte("metadata->>start_et_day", range.from)
       .lte("metadata->>start_et_day", range.to)
@@ -577,6 +586,21 @@ export async function POST(
       ? body.rep_name.trim().slice(0, 100)
       : null;
 
+  // Business-wide tokens must say which client the entry belongs to; the
+  // console UI sends the appointment's own client. Scoped tokens ignore it.
+  const entryClientKey =
+    scope.clientKey !== "all"
+      ? scope.clientKey
+      : isCreatorKey(body.client_key)
+        ? body.client_key
+        : null;
+  if (!entryClientKey) {
+    return NextResponse.json(
+      { error: "client_key (tyson | jake) is required on business-wide links" },
+      { status: 400, headers: NO_STORE_HEADERS },
+    );
+  }
+
   const value =
     body.value && typeof body.value === "object" && !Array.isArray(body.value)
       ? (body.value as Record<string, unknown>)
@@ -640,7 +664,7 @@ export async function POST(
     .schema("warehouse")
     .from("metrics_manual_entries")
     .insert({
-      client_key: scope.clientKey,
+      client_key: entryClientKey,
       appointment_key: appointmentKey,
       lead_key: leadKey,
       entry_type: entryType,
