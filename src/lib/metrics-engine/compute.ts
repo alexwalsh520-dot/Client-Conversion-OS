@@ -384,6 +384,11 @@ export async function computeMetrics(params: ComputeParams): Promise<MetricsSumm
         if (inWindow(startDay)) act.add("due", dims);
         if (cohortMember && startDay <= today) coh.add("due", dims);
       }
+      // Upcoming calls: still in the future, scheduled inside the window.
+      if (startDay && upcoming) {
+        if (inWindow(startDay)) act.add("upcoming", dims);
+        if (cohortMember) coh.add("upcoming", dims);
+      }
       continue;
     }
 
@@ -628,6 +633,41 @@ export async function computeMetrics(params: ComputeParams): Promise<MetricsSumm
       unit: "count",
       dims: { client: true, leadType: true, rep: true, channel: true },
       cell: (a, c) => ({ activity: sum(a, "reschedules"), cohort: sum(c, "reschedules") }),
+    },
+    // Sheet-vocabulary counts, so the lead-type breakdown can mirror the
+    // Sales Hub client table (taken = Call Taken yes = show events).
+    {
+      key: "calls_taken",
+      label: "Calls Taken",
+      unit: "count",
+      dims: { client: true, leadType: true, rep: true, channel: true },
+      cell: (a, c) => ({ activity: sum(a, "shows"), cohort: sum(c, "shows") }),
+    },
+    {
+      key: "wins",
+      label: "Wins",
+      unit: "count",
+      dims: { client: true, leadType: true, rep: true, channel: true },
+      cell: (a, c) => ({ activity: sum(a, "closes"), cohort: sum(c, "closes") }),
+    },
+    {
+      key: "losses",
+      label: "Losses",
+      unit: "count",
+      dims: { client: true, leadType: true, rep: true, channel: true },
+      cell: (a, c) => ({
+        activity: Math.max(0, sum(a, "shows") - sum(a, "closes")),
+        cohort: Math.max(0, sum(c, "shows") - sum(c, "closes")),
+      }),
+      reason: "Calls taken that did not close.",
+    },
+    {
+      key: "upcoming_calls",
+      label: "Upcoming Calls",
+      unit: "count",
+      dims: { client: true, leadType: true, rep: true, channel: true },
+      cell: (a, c) => ({ activity: sum(a, "upcoming"), cohort: sum(c, "upcoming") }),
+      reason: "Booked calls scheduled in the window that have not happened yet.",
     },
     // ── Defined, but no data source yet (render dashes) ──────────────────
     noSource("pickup_rate_lm_lt60", "Pickup Rate (LM <60s)", "No dial/pickup data source yet."),

@@ -7,9 +7,9 @@
 // sits naturally under the sheet-based Client Dashboard, but labeled as
 // engine-attributed because its attribution differs from the sheet's.
 //
-// VIEW ONLY: metrics the summary API does not expose per lead type (calls
-// taken, wins, losses, upcoming calls) render as em-dashes — we never derive
-// or invent numbers here.
+// Calls taken / wins / losses / upcoming come from the engine's sheet-vocabulary
+// count metrics (calls_taken, wins, losses, upcoming_calls) — server-computed,
+// never derived client-side.
 
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -141,6 +141,10 @@ export default function LeadTypeBreakdown({ dateFrom, dateTo, client }: LeadType
   const closeRate = activityFor(blockByKey(data, "close_rate"), leadType);
   const showRate = activityFor(blockByKey(data, "show_rate"), leadType);
   const callsBooked = activityFor(blockByKey(data, "calls_booked"), leadType);
+  const callsTaken = activityFor(blockByKey(data, "calls_taken"), leadType);
+  const wins = activityFor(blockByKey(data, "wins"), leadType);
+  const losses = activityFor(blockByKey(data, "losses"), leadType);
+  const upcomingCalls = activityFor(blockByKey(data, "upcoming_calls"), leadType);
 
   return (
     <div className="section">
@@ -228,32 +232,29 @@ export default function LeadTypeBreakdown({ dateFrom, dateTo, client }: LeadType
               value={fmtCount(callsBooked)}
             />
             <StatCard
-              icon={<PhoneCall size={12} style={{ color: "var(--text-muted)" }} />}
+              icon={<PhoneCall size={12} style={{ color: "var(--accent)" }} />}
               label="Calls Taken"
-              value={"—"}
+              value={fmtCount(callsTaken)}
             />
             <StatCard
-              icon={<Trophy size={12} style={{ color: "var(--text-muted)" }} />}
+              icon={<Trophy size={12} style={{ color: "var(--success)" }} />}
               label="Wins"
-              value={"—"}
+              value={fmtCount(wins)}
+              color="var(--success)"
             />
             <StatCard
-              icon={<XCircle size={12} style={{ color: "var(--text-muted)" }} />}
+              icon={<XCircle size={12} style={{ color: "var(--danger)" }} />}
               label="Losses"
-              value={"—"}
+              value={fmtCount(losses)}
             />
           </div>
           <div className="metric-grid metric-grid-4" style={{ marginBottom: 10 }}>
             <StatCard
-              icon={<CalendarClock size={12} style={{ color: "var(--text-muted)" }} />}
+              icon={<CalendarClock size={12} style={{ color: "var(--accent)" }} />}
               label="Upcoming Calls"
-              value={"—"}
+              value={fmtCount(upcomingCalls)}
             />
           </div>
-          <p style={{ fontSize: 11, color: "var(--text-muted)", margin: 0 }}>
-            Calls taken, wins, losses and upcoming calls are not exposed per lead type by the
-            metrics engine&apos;s summary API yet, so they render as dashes here.
-          </p>
         </>
       )}
     </div>
