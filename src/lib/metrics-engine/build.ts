@@ -39,8 +39,14 @@ import type { CallType, Channel, StoredLeadType } from "./types";
 
 // The tracker/DM data starts in January 2026.
 export const EARLIEST_DAY = "2026-01-01";
-// Default incremental window (matches ads-v2 FACTS_LOOKBACK_DAYS).
-export const DEFAULT_LOOKBACK_DAYS = 45;
+// Default incremental window. 45 (the ads-v2 FACTS_LOOKBACK_DAYS) overran
+// the route's 300s ceiling: the hourly run deleted its window, then was
+// killed mid-insert, orphaning six weeks of sales events (found 8/23; a
+// 7-day run measured 79s). 14 days finishes with headroom and still
+// re-reads the sheet past the p90 sales lag (13d), so late-typed outcomes
+// keep landing. Runs older than that need an explicit ?days= or ?full=1
+// from an environment without the 300s cap.
+export const DEFAULT_LOOKBACK_DAYS = 14;
 // Bookings reach forward (calls scheduled ahead).
 export const UPCOMING_DAYS = 60;
 // How far back to read spend when classifying a keyword as paid/organic.
@@ -1411,7 +1417,18 @@ export async function runMetricsLedgerBuild(opts: {
       throw new Error(`manual event delete failed: ${delManual.error.message}`);
     }
 
-    for (const slice of chunk(events, 500)) {
+    // Money events insert first: if a run is ever killed at the clock
+    // limit, the casualty is bulk lead history (rebuilt by the next run),
+    // never the sales tail. Exactly that failure orphaned bookings/shows/
+    // closes/payments for six weeks before 8/23.
+    const INSERT_PRIORITY: Record<string, number> = {
+      payment: 0, close: 1, show: 2, no_show: 3, booking: 4, reschedule: 5,
+      lm_optin: 6, dial: 7, pickup: 8, categorization: 9, lead_created: 10,
+    };
+    const ordered = [...events].sort(
+      (a, b) => (INSERT_PRIORITY[a.event_type] ?? 99) - (INSERT_PRIORITY[b.event_type] ?? 99),
+    );
+    for (const slice of chunk(ordered, 500)) {
       const { error } = await db
         .schema("warehouse")
         .from("metrics_lead_events")
