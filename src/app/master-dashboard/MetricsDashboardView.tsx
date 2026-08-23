@@ -864,7 +864,14 @@ const LENS_OPTIONS: Array<{ key: "origin" | "conversion"; label: string }> = [
   { key: "conversion", label: "Conversion source" },
 ];
 
-export default function MetricsDashboardView({ scope }: { scope: DashboardScope }) {
+export default function MetricsDashboardView({
+  scope,
+  embedded = false,
+}: {
+  scope: DashboardScope;
+  /** True when the view is composed inside another page — hides the page header. */
+  embedded?: boolean;
+}) {
   const meta = SCOPE_META[scope];
   const showRepFilter = scope !== "marketing";
 
@@ -1015,14 +1022,16 @@ export default function MetricsDashboardView({ scope }: { scope: DashboardScope 
   );
 
   return (
-    <div className="fade-up" style={{ maxWidth: 1240 }}>
-      <div className="page-header" style={{ marginBottom: 16 }}>
-        <h1 className="page-title" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <Icon size={22} style={{ color: "var(--accent)" }} />
-          {meta.title}
-        </h1>
-        <p className="page-subtitle">{meta.blurb}</p>
-      </div>
+    <div className={embedded ? undefined : "fade-up"} style={{ maxWidth: 1240 }}>
+      {!embedded ? (
+        <div className="page-header" style={{ marginBottom: 16 }}>
+          <h1 className="page-title" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <Icon size={22} style={{ color: "var(--accent)" }} />
+            {meta.title}
+          </h1>
+          <p className="page-subtitle">{meta.blurb}</p>
+        </div>
+      ) : null}
 
       {/* ── Filter bar ── */}
       <div className={`glass-static ${styles.filterBar}`}>
