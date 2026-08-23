@@ -32,6 +32,18 @@ export const CHANNELS: readonly Channel[] = [
   "outbound",
 ];
 
+/**
+ * Call type — the additive booking classification stored in event
+ * metadata.call_type (the channel column keeps its original semantics).
+ *   dm          — strategy-session calls booked through the DM funnel
+ *   onboarding  — post-sale onboarding calls (never sales metrics)
+ *   lm_outbound — rep-dialed calls to leads who opted into the lead magnet
+ *   outbound    — rep-dialed calls to everyone else
+ * Reschedule-calendar bookings inherit the lead's prior booking's call type.
+ */
+export type CallType = "dm" | "onboarding" | "lm_outbound" | "outbound";
+export const CALL_TYPES: readonly CallType[] = ["dm", "onboarding", "lm_outbound", "outbound"];
+
 export type LeadEventType =
   | "lead_created"
   | "categorization"
