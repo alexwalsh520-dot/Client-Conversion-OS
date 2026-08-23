@@ -33,6 +33,7 @@ import { classifyKeyword } from "@/lib/ads-v2/attribution";
 import { normalizeKeyword } from "@/lib/ads-v2/keyword";
 import { creatorKeyFromText, ACTIVE_CREATORS } from "@/lib/creators";
 import { engineCalendar, type EngineCalendar } from "./calendars";
+import { parseMeetCode, gmeetSessionsByCode, prospectJoined } from "./gmeet";
 import { repKeyFromGhlUserId, repKeyFromText } from "./team";
 import { chunk, isMissingRelation, safeFetchAllRows, type Db } from "./db";
 import type { CallType, Channel, StoredLeadType } from "./types";
@@ -613,18 +614,27 @@ export async function runMetricsLedgerBuild(opts: {
     event_type: string | null;
     created_at: string | null;
     updated_at: string | null;
+    meet_cal: string | null;
+    meet_a: string | null;
+    meet_fa: string | null;
+    host_email: string | null;
   }
   // Reschedule-calendar appointments: processed after every other booking is
   // in the event list, so client and call type can be inferred from the
   // lead's history (see step 9b).
   const deferredReschedules: Array<{ r: GhlApptRow; cal: EngineCalendar; leadKey: string | null }> = [];
+  // Per-appointment Google Meet room + host, for the 9c join-event pass.
+  const apptMeetInfo = new Map<
+    string,
+    { code: string; startTime: string; hostEmail: string | null; cancelled: boolean }
+  >();
   {
     const { rows, missing } = await safeFetchAllRows<GhlApptRow>((from, to) =>
       db
         .schema("warehouse")
         .from("ghl_appointments")
         .select(
-          "appointment_id, calendar_id, contact_id, contact_name, start_time, assigned_user_id, status, event_type, created_at, updated_at",
+          "appointment_id, calendar_id, contact_id, contact_name, start_time, assigned_user_id, status, event_type, created_at, updated_at, meet_cal:raw_payload->calendar->>address, meet_a:raw_payload->>address, meet_fa:raw_payload->>full_address, host_email:raw_payload->user->>email",
         )
         .gte("updated_at", fetchFromIso)
         .order("updated_at", { ascending: true })
@@ -633,6 +643,22 @@ export async function runMetricsLedgerBuild(opts: {
     if (missing) notes.push("ghl_appointments missing; skipped");
 
     const watched = rows.filter((r) => engineCalendar(r.calendar_id));
+
+    // Remember each sales call's Meet room (onboarding calls stay out of
+    // show metrics, so they are not candidates).
+    for (const r of watched) {
+      const cal = engineCalendar(r.calendar_id)!;
+      if (cal.side === "onboarding" || !r.start_time) continue;
+      const code =
+        parseMeetCode(r.meet_cal) ?? parseMeetCode(r.meet_fa) ?? parseMeetCode(r.meet_a);
+      if (!code) continue;
+      apptMeetInfo.set(r.appointment_id, {
+        code,
+        startTime: r.start_time,
+        hostEmail: r.host_email,
+        cancelled: isCancelled(r.status, r.event_type),
+      });
+    }
 
     // GHL contact -> ManyChat subscriber bridge (global on contact id, the
     // proven ads-v2 pattern — contact ids are globally unique).
@@ -1255,6 +1281,92 @@ export async function runMetricsLedgerBuild(opts: {
         });
       }
     }
+  }
+
+  // ── 9c) Google Meet join events → automatic show / no_show ─────────────
+  // The room's own record beats the sheet's typed column. Rules, in order:
+  //   * sessions exist and someone other than the host sat in the room for
+  //     30s+ → SHOW.
+  //   * sessions exist, host only, and the call was due 90+ minutes ago →
+  //     NO_SHOW (the closer opened the room and sat alone).
+  //   * NO sessions for the room → no verdict at all: absence of data is
+  //     never evidence (the sync may simply not cover that host yet), so the
+  //     sheet keeps those rows. The sheet also keeps close/payment authority
+  //     always.
+  // A gmeet verdict suppresses the sheet's show/no_show for the same
+  // client+lead+call-day, so the two sources never double-count.
+  {
+    let gmeetShows = 0;
+    let gmeetNoShows = 0;
+    let sheetSuppressed = 0;
+    const candidates = [...apptMeetInfo.entries()].filter(([apptId, info]) => {
+      if (info.cancelled) return false;
+      if (!bookingsByAppointment.has(apptId)) return false;
+      const day = etDay(info.startTime);
+      return Boolean(day && day >= fromDay && day <= today);
+    });
+    const { byCode, missing } = await gmeetSessionsByCode(
+      db,
+      candidates.map(([, info]) => info.code),
+    );
+    if (missing) notes.push("gmeet_join_events missing; skipped (migration 114 not applied)");
+
+    const decided = new Set<string>();
+    const nowMs = now.getTime();
+    for (const [apptId, info] of candidates) {
+      const sessions = byCode.get(info.code) ?? [];
+      if (!sessions.length) continue;
+      const booking = bookingsByAppointment.get(apptId)!;
+      const day = etDay(info.startTime)!;
+      const hosts = [
+        info.hostEmail ?? "",
+        ...sessions.map((s) => s.organizer_email ?? "").filter(Boolean),
+      ];
+      const joined = prospectJoined(sessions, hosts);
+      const callLongOver = Date.parse(info.startTime) + 90 * 60 * 1000 < nowMs;
+      if (!joined && !callLongOver) continue;
+
+      events.push({
+        client_key: booking.client,
+        lead_key: booking.lead_key,
+        event_type: joined ? "show" : "no_show",
+        channel: booking.channel,
+        rep_key: booking.rep_key,
+        occurred_at: info.startTime,
+        et_day: day,
+        amount_cents: null,
+        source: "gmeet",
+        source_row_key: `${joined ? "gmeet_show" : "gmeet_noshow"}:${apptId}`,
+        metadata: {
+          appointment_id: apptId,
+          meeting_code: info.code,
+          sessions: sessions.length,
+          host_email: info.hostEmail,
+        },
+      });
+      if (joined) gmeetShows += 1;
+      else gmeetNoShows += 1;
+      if (booking.lead_key) decided.add(`${booking.client}|${booking.lead_key}|${day}`);
+    }
+
+    if (decided.size) {
+      const before = events.length;
+      const keep = events.filter(
+        (e) =>
+          !(
+            e.source === "sheet" &&
+            (e.event_type === "show" || e.event_type === "no_show") &&
+            e.lead_key &&
+            decided.has(`${e.client_key}|${e.lead_key}|${e.et_day}`)
+          ),
+      );
+      sheetSuppressed = before - keep.length;
+      events.length = 0;
+      events.push(...keep);
+    }
+    sourceCounts.gmeet_shows = gmeetShows;
+    sourceCounts.gmeet_no_shows = gmeetNoShows;
+    sourceCounts.gmeet_sheet_suppressed = sheetSuppressed;
   }
 
   // ── 10) Manual entries → override events (source 'manual') ─────────────
