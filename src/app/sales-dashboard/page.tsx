@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import MetricsDashboardView from "../master-dashboard/MetricsDashboardView";
+import SalesDashboardView from "./SalesDashboardView";
 
 export const dynamic = "force-dynamic";
 
@@ -8,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function SalesDashboardPage() {
-  return <MetricsDashboardView scope="sales" />;
+  return <SalesDashboardView />;
 }
