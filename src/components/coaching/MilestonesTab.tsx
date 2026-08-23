@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import { AlertTriangle, CheckCircle, XCircle, Clock, ChevronDown, ChevronRight, DollarSign, RotateCcw, Link as LinkIcon } from "lucide-react";
+import { AlertTriangle, CheckCircle, XCircle, Clock, ChevronDown, ChevronRight, DollarSign, RotateCcw, Link as LinkIcon, Download } from "lucide-react";
 import CheckInLinkBox from "@/components/check-in/CheckInLinkBox";
 import type { Client, CoachMilestone } from "@/lib/types";
 import type { MilestoneActivity } from "@/lib/data";
@@ -822,6 +822,49 @@ function UpcomingRetentions({ clients, milestones, coaches, onClientClick }: {
   const formatDate = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   const weekLabel = `${formatDate(weekStart)} — ${formatDate(new Date(weekEnd.getTime() - 86400000))}`;
 
+  // CSV download — same filter + week as what's rendered, sorted by coach then
+  // end-date so the report groups clients under each coach. Uses the browser
+  // Blob + temporary-anchor pattern; no server round-trip needed.
+  const handleDownload = () => {
+    const sorted = [...retentionData].sort((a, b) => {
+      const c = (a.client.coachName || "").localeCompare(b.client.coachName || "");
+      if (c !== 0) return c;
+      return a.endDate.getTime() - b.endDate.getTime();
+    });
+    const rows = [
+      ["Coach", "Client", "Program End Date", "Days Left", "Retention Status"],
+      ...sorted.map((d) => {
+        const daysLeft = Math.ceil((d.endDate.getTime() - Date.now()) / 86400000);
+        const status = d.status === "completed" ? "Done" : d.status === "attempted" ? "Attempted" : "Pending";
+        return [
+          d.client.coachName || "Unassigned",
+          d.client.name,
+          d.endDate.toISOString().split("T")[0],
+          String(daysLeft),
+          status,
+        ];
+      }),
+    ];
+    const csv = rows
+      .map((r) => r.map((v) => {
+        const s = String(v ?? "");
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      }).join(","))
+      .join("\n");
+    const weekTag = weekStart.toISOString().split("T")[0];
+    const coachTag = coachFilter === "all" ? "" : `-${coachFilter.replace(/\s+/g, "_")}`;
+    const filename = `retention-opportunities-${weekTag}${coachTag}.csv`;
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   // Find all active clients whose end date falls within this Monday-to-Monday week
   const activeClients = clients.filter((c) => c.status === "active" && c.endDate);
   const retentionData = activeClients
@@ -855,6 +898,23 @@ function UpcomingRetentions({ clients, milestones, coaches, onClientClick }: {
               <option key={c} value={c}>{c}</option>
             ))}
           </select>
+          <button
+            onClick={handleDownload}
+            disabled={retentionData.length === 0}
+            title={retentionData.length === 0 ? "Nothing to download for this week" : "Download this week's retention opportunities as CSV, sorted by coach"}
+            style={{
+              display: "flex", alignItems: "center", gap: 4,
+              padding: "4px 10px", borderRadius: 6,
+              border: "1px solid var(--border-primary)",
+              background: retentionData.length === 0 ? "none" : "var(--accent-soft, rgba(198,250,90,0.1))",
+              color: retentionData.length === 0 ? "var(--text-muted)" : "var(--text-primary)",
+              cursor: retentionData.length === 0 ? "not-allowed" : "pointer",
+              fontSize: 11, fontWeight: 600,
+              opacity: retentionData.length === 0 ? 0.5 : 1,
+            }}
+          >
+            <Download size={12} /> Download CSV
+          </button>
           <button
             onClick={() => setWeekOffset((w) => w - 1)}
             style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 4 }}
