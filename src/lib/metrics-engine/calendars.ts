@@ -5,13 +5,21 @@
 // not something to be guessed from names at runtime. Appointments on any
 // calendar NOT in this map are ignored by the engine.
 //
-// Two groups:
+// Four groups:
 //   * Strategy Session group L2WZwZE7XIdzsM6xrXjU — DM-booked channel. The
 //     lead booked through the funnel link; no rep is credited by the
 //     calendar itself (rep comes from assigned_user_id when present).
 //   * Personal Calendar group pOk2CnFw2bZPM0YtQPfo — outbound-booked. A rep
 //     dialed and booked the call onto their own calendar, so the calendar
 //     itself names the rep.
+//   * Onboarding calendars — post-sale client onboarding calls. NOT sales
+//     calls: the engine tracks them as their own call type ("onboarding")
+//     and keeps them out of sales booking/show/close metrics.
+//   * Reschedule calendars — real sales calls the sheet counts, re-booked
+//     onto a rep-named reschedule calendar. The calendar names the rep but
+//     NOT the client: `clientAmbiguous` marks entries whose client must be
+//     inferred at build time (lead's ledger row → prior booking → tyson
+//     default, recorded in metadata.client_basis).
 //
 // (TS) = tyson, (JD) = jake.
 // ─────────────────────────────────────────────────────────────────────────
@@ -21,15 +29,22 @@ import type { CreatorKey } from "@/lib/creators";
 export const STRATEGY_SESSION_GROUP_ID = "L2WZwZE7XIdzsM6xrXjU";
 export const PERSONAL_CALENDAR_GROUP_ID = "pOk2CnFw2bZPM0YtQPfo";
 
-export type BookingSide = "dm" | "outbound";
+export type BookingSide = "dm" | "outbound" | "onboarding" | "reschedule";
 
 export interface EngineCalendar {
   calendarId: string;
   name: string;
+  /** For reschedule calendars this is only the DEFAULT (see clientAmbiguous). */
   client: CreatorKey; // 'tyson' | 'jake'
   side: BookingSide;
-  /** Rep key (team.ts) for personal calendars; null for the shared DM calendars. */
+  /** Rep key (team.ts) for personal/reschedule calendars; null otherwise. */
   repKey: string | null;
+  /**
+   * True when the calendar name does not identify the client (reschedule
+   * calendars). build.ts infers the real client from the lead's ledger row,
+   * else their most recent prior booking, else keeps the default above.
+   */
+  clientAmbiguous?: boolean;
 }
 
 export const ENGINE_CALENDARS: readonly EngineCalendar[] = [
@@ -52,6 +67,24 @@ export const ENGINE_CALENDARS: readonly EngineCalendar[] = [
   { calendarId: "gCDFIEWUb1euCgzNJufP", name: "Jacob Personal Calendar (JD)", client: "jake", side: "outbound", repKey: "jacob" },
   { calendarId: "ZIOktvjSN0aW8qHUhhZB", name: "Andrew Personal Calendar (TS)", client: "tyson", side: "outbound", repKey: "andrew" },
   { calendarId: "wKA1JgAyDzvKl4DjZHzF", name: "Andrew Personal Calendar (JD)", client: "jake", side: "outbound", repKey: "andrew" },
+
+  // ── Onboarding calendars (post-sale; NOT sales calls) ──────────────────
+  // Tyson ("The Forge"-branded):
+  { calendarId: "5e8GPaAaq2VIUQRwTT7b", name: "7 Day schedule - Onboarding Call w/ The Forge", client: "tyson", side: "onboarding", repKey: null },
+  { calendarId: "AeUhUrV21wWDuhEOQMbx", name: "Onboarding Call with The Forge", client: "tyson", side: "onboarding", repKey: null },
+  { calendarId: "Hwe9Xm33uNE5HACNUPc6", name: "Onboarding Call w/ The Forge", client: "tyson", side: "onboarding", repKey: null },
+  { calendarId: "ZEHRmHAcrIRoXFKrYuNN", name: "Copy of Onboarding Call with The Forge - 7 day time", client: "tyson", side: "onboarding", repKey: null },
+  { calendarId: "g0p4jxGQ33H2WiYSiIEd", name: "Onboarding Call W/ Tyson", client: "tyson", side: "onboarding", repKey: null },
+  // Inactive, kept so historical onboarding calls stay attributed.
+  { calendarId: "TLKHNyYOLC7Y96FEvG9y", name: "Onboarding Call with Tyson", client: "tyson", side: "onboarding", repKey: null },
+  // Jake (RecruitReady):
+  { calendarId: "C2xXF6N08MHbT5KmIKqz", name: "Onboarding Call w/RecruitReadyF", client: "jake", side: "onboarding", repKey: null },
+  { calendarId: "7l0rDmiRXUejpn2uIhdu", name: "7 Day - Onboarding Call w/ RecruitReadyFitness", client: "jake", side: "onboarding", repKey: null },
+
+  // ── Reschedule calendars (real sales calls; client inferred at build) ──
+  { calendarId: "f2xCGb0syYWCW4c65Qvw", name: "Broz Reschedule", client: "tyson", side: "reschedule", repKey: "jacob", clientAmbiguous: true },
+  { calendarId: "KTqV12R3ns87rSy5tdRM", name: "Will Reschedule", client: "tyson", side: "reschedule", repKey: "will", clientAmbiguous: true },
+  { calendarId: "VDW60oLMCpwTTWa0C7aT", name: "Austin Reschedule", client: "tyson", side: "reschedule", repKey: "austin", clientAmbiguous: true },
 ];
 
 const BY_ID: Record<string, EngineCalendar> = Object.fromEntries(

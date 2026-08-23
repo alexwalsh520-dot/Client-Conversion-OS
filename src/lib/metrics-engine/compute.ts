@@ -137,6 +137,7 @@ interface EventRow {
     appointment_id?: string;
     start_time?: string | null;
     start_et_day?: string | null;
+    call_type?: string;
   } | null;
 }
 
@@ -296,6 +297,8 @@ export async function computeMetrics(params: ComputeParams): Promise<MetricsSumm
   const bookingsByLead = new Map<string, Array<{ at: string; channel: Channel | null; rep: string | null }>>();
   for (const e of events) {
     if (e.event_type !== "booking" || !e.lead_key) continue;
+    // Onboarding calls never provide the sales context for an outcome.
+    if (e.metadata?.call_type === "onboarding") continue;
     const k = `${e.client_key}|${e.lead_key}`;
     const list = bookingsByLead.get(k) ?? [];
     list.push({ at: e.occurred_at, channel: (e.channel as Channel) ?? null, rep: e.rep_key });
@@ -369,6 +372,9 @@ export async function computeMetrics(params: ComputeParams): Promise<MetricsSumm
     const cohortMember = isCohortLead(e.client_key, e.lead_key);
 
     if (e.event_type === "booking") {
+      // Onboarding calls are post-sale, not sales calls: they carry their own
+      // call type and never count toward booking/show/close metrics.
+      if (e.metadata?.call_type === "onboarding") continue;
       const type = leadTypeAt(e.client_key, e.lead_key, e.occurred_at);
       const channel = (e.channel as Channel) ?? null;
       if (!repMatches(e.rep_key)) continue;

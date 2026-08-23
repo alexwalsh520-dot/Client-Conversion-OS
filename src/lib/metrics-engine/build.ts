@@ -32,10 +32,10 @@ import { etDay, todayEt, shiftDay } from "@/lib/ads-v2/time";
 import { classifyKeyword } from "@/lib/ads-v2/attribution";
 import { normalizeKeyword } from "@/lib/ads-v2/keyword";
 import { creatorKeyFromText, ACTIVE_CREATORS } from "@/lib/creators";
-import { engineCalendar } from "./calendars";
+import { engineCalendar, type EngineCalendar } from "./calendars";
 import { repKeyFromGhlUserId, repKeyFromText } from "./team";
 import { chunk, isMissingRelation, safeFetchAllRows, type Db } from "./db";
-import type { Channel, StoredLeadType } from "./types";
+import type { CallType, Channel, StoredLeadType } from "./types";
 
 // The tracker/DM data starts in January 2026.
 export const EARLIEST_DAY = "2026-01-01";
@@ -596,19 +596,24 @@ export async function runMetricsLedgerBuild(opts: {
     string,
     { lead_key: string | null; channel: Channel; client: string; rep_key: string | null }
   >();
+  interface GhlApptRow {
+    appointment_id: string;
+    calendar_id: string | null;
+    contact_id: string | null;
+    contact_name: string | null;
+    start_time: string | null;
+    assigned_user_id: string | null;
+    status: string | null;
+    event_type: string | null;
+    created_at: string | null;
+    updated_at: string | null;
+  }
+  // Reschedule-calendar appointments: processed after every other booking is
+  // in the event list, so client and call type can be inferred from the
+  // lead's history (see step 9b).
+  const deferredReschedules: Array<{ r: GhlApptRow; cal: EngineCalendar; leadKey: string | null }> = [];
   {
-    const { rows, missing } = await safeFetchAllRows<{
-      appointment_id: string;
-      calendar_id: string | null;
-      contact_id: string | null;
-      contact_name: string | null;
-      start_time: string | null;
-      assigned_user_id: string | null;
-      status: string | null;
-      event_type: string | null;
-      created_at: string | null;
-      updated_at: string | null;
-    }>((from, to) =>
+    const { rows, missing } = await safeFetchAllRows<GhlApptRow>((from, to) =>
       db
         .schema("warehouse")
         .from("ghl_appointments")
@@ -652,7 +657,6 @@ export async function runMetricsLedgerBuild(opts: {
     let reschedules = 0;
     for (const r of watched) {
       const cal = engineCalendar(r.calendar_id)!;
-      const cancelled = isCancelled(r.status, r.event_type);
       const bookedAt = r.created_at || r.start_time;
       if (!bookedAt) continue;
       const day = etDay(bookedAt);
@@ -660,6 +664,16 @@ export async function runMetricsLedgerBuild(opts: {
 
       const mc = r.contact_id ? contactToMc.get(r.contact_id) ?? null : null;
       const leadKey = mc ? `mc:${mc}` : null;
+
+      // Reschedule calendars: the calendar names the rep but not the client
+      // or funnel — both are inferred from the lead's history in step 9b,
+      // after every other booking is in the event list.
+      if (cal.side === "reschedule") {
+        deferredReschedules.push({ r, cal, leadKey });
+        continue;
+      }
+
+      const cancelled = isCancelled(r.status, r.event_type);
       if (leadKey) {
         // Remember the GHL contact on the lead (merged later, if the lead
         // exists); bookings never create leads on their own.
@@ -670,7 +684,15 @@ export async function runMetricsLedgerBuild(opts: {
       // Channel: DM calendars are the dm channel. Personal calendars are
       // outbound; the lm buckets are resolved after lead merge (they depend
       // on lm_optin_at), so store 'outbound' here and refine below.
-      const baseChannel: Channel = cal.side === "dm" ? "dm" : "outbound";
+      // Onboarding calendars are channel-independent (channel null) — their
+      // call type ("onboarding") lives in metadata and keeps them out of
+      // every sales booking/show/close metric.
+      const baseChannel: Channel | null =
+        cal.side === "dm" ? "dm" : cal.side === "outbound" ? "outbound" : null;
+      // call_type is additive metadata; outbound bookings get theirs in
+      // step 9 once the lm bucket is known.
+      const callType: CallType | null =
+        cal.side === "dm" ? "dm" : cal.side === "onboarding" ? "onboarding" : null;
       const repKey = cal.repKey ?? repKeyFromGhlUserId(r.assigned_user_id);
 
       if (!cancelled && day >= fromDay && day <= futureTo) {
@@ -690,6 +712,7 @@ export async function runMetricsLedgerBuild(opts: {
             calendar_id: r.calendar_id,
             calendar_name: cal.name,
             side: cal.side,
+            ...(callType ? { call_type: callType } : {}),
             contact_id: r.contact_id,
             contact_name: r.contact_name,
             start_time: r.start_time,
@@ -717,6 +740,8 @@ export async function runMetricsLedgerBuild(opts: {
             metadata: {
               appointment_id: r.appointment_id,
               calendar_id: r.calendar_id,
+              side: cal.side,
+              ...(callType ? { call_type: callType } : {}),
               start_time: r.start_time,
             },
           });
@@ -1006,6 +1031,212 @@ export async function runMetricsLedgerBuild(opts: {
       e.metadata.channel_basis = "no_dial_data_default_gt60";
     }
   }
+  // Personal-calendar call types, now that the lm bucket is decided: a lead
+  // who opted into the lead magnet (lm channel) is an lm_outbound call,
+  // everyone else is plain outbound.
+  for (const e of events) {
+    if (e.event_type !== "booking" && e.event_type !== "reschedule") continue;
+    if ((e.metadata as { side?: string }).side !== "outbound") continue;
+    e.metadata.call_type = String(e.channel || "").startsWith("lm_outbound")
+      ? "lm_outbound"
+      : "outbound";
+  }
+
+  // ── 9b) Reschedule-calendar bookings (client + call type inferred) ─────
+  // These are real sales calls the sheet counts; the calendar names the rep
+  // but not the client or funnel. Inference order:
+  //   client:    lead's ledger row (when exactly one client owns the lead)
+  //              → the lead's most recent prior booking → default tyson
+  //   call type: the lead's most recent prior NON-onboarding booking's call
+  //              type → "dm"
+  // metadata.client_basis / call_type_basis record which rung was used.
+  {
+    // Prior bookings per lead: everything already in this run's event list…
+    interface PriorBooking {
+      at: string;
+      client: string;
+      channel: string | null;
+      call_type: string | null;
+    }
+    const priorByLead = new Map<string, PriorBooking[]>();
+    const notePrior = (leadKey: string | null, b: PriorBooking) => {
+      if (!leadKey) return;
+      const list = priorByLead.get(leadKey) ?? [];
+      list.push(b);
+      priorByLead.set(leadKey, list);
+    };
+    for (const e of events) {
+      if (e.event_type !== "booking" || !e.lead_key) continue;
+      const meta = e.metadata as { call_type?: string };
+      notePrior(e.lead_key, {
+        at: e.occurred_at,
+        client: e.client_key,
+        channel: e.channel,
+        call_type: meta.call_type ?? null,
+      });
+    }
+    // …plus stored bookings older than this window (incremental runs).
+    const reschedLeadKeys = [
+      ...new Set(deferredReschedules.map((d) => d.leadKey).filter((v): v is string => Boolean(v))),
+    ];
+    for (const keys of chunk(reschedLeadKeys, 100)) {
+      const { rows: prior } = await safeFetchAllRows<{
+        client_key: string;
+        lead_key: string | null;
+        channel: string | null;
+        occurred_at: string;
+        et_day: string;
+        metadata: { call_type?: string } | null;
+      }>((from, to) =>
+        db
+          .schema("warehouse")
+          .from("metrics_lead_events")
+          .select("client_key, lead_key, channel, occurred_at, et_day, metadata")
+          .eq("event_type", "booking")
+          .in("lead_key", keys)
+          .lt("et_day", fromDay)
+          .order("occurred_at", { ascending: true })
+          .range(from, to),
+      );
+      for (const p of prior) {
+        notePrior(p.lead_key, {
+          at: p.occurred_at,
+          client: p.client_key,
+          channel: p.channel,
+          call_type: p.metadata?.call_type ?? null,
+        });
+      }
+    }
+    for (const list of priorByLead.values()) list.sort((a, b) => a.at.localeCompare(b.at));
+
+    // Ledger client ownership: which client(s) hold each lead.
+    const ledgerClients = new Map<string, Set<string>>();
+    const noteOwner = (leadKey: string, client: string) => {
+      const set = ledgerClients.get(leadKey) ?? new Set<string>();
+      set.add(client);
+      ledgerClients.set(leadKey, set);
+    };
+    for (const d of leads.values()) {
+      if (reschedLeadKeys.includes(d.lead_key)) noteOwner(d.lead_key, d.client_key);
+    }
+    for (const keys of chunk(reschedLeadKeys, 200)) {
+      const { rows: owned } = await safeFetchAllRows<{ client_key: string; lead_key: string }>(
+        (from, to) =>
+          db
+            .schema("warehouse")
+            .from("metrics_leads")
+            .select("client_key, lead_key")
+            .in("lead_key", keys)
+            .order("lead_key", { ascending: true })
+            .range(from, to),
+      );
+      for (const o of owned) noteOwner(o.lead_key, o.client_key);
+    }
+
+    const callTypeFromChannel = (channel: string | null): CallType => {
+      if (channel === "dm") return "dm";
+      if (String(channel || "").startsWith("lm_outbound")) return "lm_outbound";
+      return "outbound";
+    };
+
+    let reschedBookings = 0;
+    for (const { r, cal, leadKey } of deferredReschedules) {
+      const cancelled = isCancelled(r.status, r.event_type);
+      const bookedAt = r.created_at || r.start_time;
+      if (!bookedAt) continue;
+      const day = etDay(bookedAt);
+      if (!day) continue;
+
+      const priors = leadKey ? (priorByLead.get(leadKey) ?? []) : [];
+      const priorsBefore = priors.filter((p) => p.at <= bookedAt);
+      const lastPrior = priorsBefore.at(-1) ?? priors[0] ?? null;
+      const lastSalesPrior =
+        [...priorsBefore].reverse().find((p) => p.call_type !== "onboarding") ??
+        priors.find((p) => p.call_type !== "onboarding") ??
+        null;
+
+      // Client: ledger → prior booking → default.
+      const owners = leadKey ? ledgerClients.get(leadKey) : undefined;
+      let client = cal.client as string;
+      let clientBasis = "default_tyson";
+      if (owners && owners.size === 1) {
+        client = [...owners][0];
+        clientBasis = "ledger";
+      } else if (lastPrior) {
+        client = lastPrior.client;
+        clientBasis = "prior_booking";
+      }
+
+      // Call type + channel: inherited from the prior sales booking.
+      let callType: CallType = "dm";
+      let callTypeBasis = "default_dm";
+      let channel: Channel = "dm";
+      if (lastSalesPrior) {
+        callType = (lastSalesPrior.call_type as CallType) ?? callTypeFromChannel(lastSalesPrior.channel);
+        if (callType === "onboarding") callType = "dm"; // never inherited
+        callTypeBasis = "prior_booking";
+        channel =
+          lastSalesPrior.channel &&
+          ["dm", "lm_outbound_lt60", "lm_outbound_gt60", "outbound"].includes(lastSalesPrior.channel)
+            ? (lastSalesPrior.channel as Channel)
+            : "dm";
+      }
+
+      const repKey = cal.repKey ?? repKeyFromGhlUserId(r.assigned_user_id);
+      const baseMetadata = {
+        appointment_id: r.appointment_id,
+        calendar_id: r.calendar_id,
+        calendar_name: cal.name,
+        side: cal.side,
+        call_type: callType,
+        call_type_basis: callTypeBasis,
+        client_basis: clientBasis,
+        contact_id: r.contact_id,
+        contact_name: r.contact_name,
+        start_time: r.start_time,
+        start_et_day: r.start_time ? etDay(r.start_time) : null,
+        status: r.status,
+      };
+
+      if (!cancelled && day >= fromDay && day <= futureTo) {
+        events.push({
+          client_key: client,
+          lead_key: leadKey,
+          event_type: "booking",
+          channel,
+          rep_key: repKey,
+          occurred_at: bookedAt,
+          et_day: day,
+          amount_cents: null,
+          source: "ghl_appointments",
+          source_row_key: `booking:${r.appointment_id}`,
+          metadata: baseMetadata,
+        });
+        reschedBookings += 1;
+      }
+
+      if ((r.event_type || "").toLowerCase().trim() === "rescheduled" && r.updated_at) {
+        const reschedDay = etDay(r.updated_at);
+        if (reschedDay && reschedDay >= fromDay && reschedDay <= futureTo) {
+          events.push({
+            client_key: client,
+            lead_key: leadKey,
+            event_type: "reschedule",
+            channel,
+            rep_key: repKey,
+            occurred_at: r.updated_at,
+            et_day: reschedDay,
+            amount_cents: null,
+            source: "ghl_appointments",
+            source_row_key: `resched:${r.appointment_id}`,
+            metadata: baseMetadata,
+          });
+        }
+      }
+    }
+    sourceCounts.reschedule_calendar_bookings = reschedBookings;
+  }
+
   for (const e of events) {
     if (e.event_type === "booking") {
       const meta = e.metadata as { appointment_id?: string };
