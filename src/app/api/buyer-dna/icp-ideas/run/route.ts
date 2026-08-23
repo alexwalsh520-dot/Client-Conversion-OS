@@ -7,6 +7,7 @@ import { getCurrentIcp } from "@/lib/buyer-dna/icp";
 import type { Icp } from "@/lib/buyer-dna/icp";
 import { getCurrentTrendBrief } from "@/lib/buyer-dna/trends";
 import { generateIcpIdeas, gradeIdeaSet } from "@/lib/buyer-dna/video-ideas";
+import { IDEA_TREND_GRADING_ENABLED } from "@/lib/content/ai-spend-config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,8 +42,9 @@ export async function POST(req: NextRequest) {
   const res = await generateIcpIdeas(sb, slug, icp, icpVersion, anthropic, { canProceed });
   if (res !== "built") return NextResponse.json({ ok: false, creator: slug, reason: "Idea generation failed (is the migration applied?)." });
 
+  // Trend grading is off on cost grounds — see IDEA_TREND_GRADING_ENABLED.
   let graded = false;
-  const brief = await getCurrentTrendBrief(sb, slug);
+  const brief = IDEA_TREND_GRADING_ENABLED ? await getCurrentTrendBrief(sb, slug) : null;
   if (brief && canProceed()) graded = (await gradeIdeaSet(sb, slug, null, brief.brief, brief.version, anthropic, { canProceed })) === "graded";
 
   return NextResponse.json({ ok: true, creator: slug, icp_version: icpVersion, graded });

@@ -11,6 +11,7 @@ import { CAROUSELS_PER_DAY, intentForSlot } from "@/lib/content/carousel-config"
 import { postToSlack, getSalesManagerChannel } from "@/lib/slack";
 import { auditAudience } from "@/lib/buyer-dna/audience-audit";
 import { isLive, type CarouselMeta } from "@/lib/content/carousel-config";
+import { carouselsEnabledFor } from "@/lib/content/ai-spend-config";
 
 // An external content worker, when one is configured, owns midnight → 06:00 in the creator's own
 // timezone and CCOS only steps in after 06:00. That handoff exists ONLY for a worker that is
@@ -50,13 +51,18 @@ function todayET(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
 }
 
-// Generate the day's 5 carousels for one creator with EXACTLY ONE LLM call. If the day already has its
+// Generate the day's carousels for one creator with EXACTLY ONE LLM call. If the day already has its
 // 5 rows, they are returned untouched — never regenerated.
 export async function POST(req: NextRequest) {
   if (!(await authorized(req))) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const url = new URL(req.url);
   const slug = (url.searchParams.get("creator") || "").toLowerCase();
   if (!(CONTENT_CREATORS as readonly string[]).includes(slug)) return NextResponse.json({ error: "Unknown creator" }, { status: 400 });
+  // Carousels are limited to CAROUSEL_CREATORS (Jake only) on cost grounds. Guarded HERE as well as at
+  // both cron triggers so a direct call cannot spend for a creator we no longer make carousels for.
+  if (!carouselsEnabledFor(slug)) {
+    return NextResponse.json({ ok: false, disabled: true, creator: slug, reason: "Carousels are not enabled for this creator. See CAROUSEL_CREATORS in lib/content/ai-spend-config.ts." });
+  }
   const dateParam = url.searchParams.get("date");
   const forDate = /^\d{4}-\d{2}-\d{2}$/.test(dateParam || "") ? (dateParam as string) : todayET();
   // Opt-in override for a deliberate re-run (e.g. the day's first set came out off-brief). Off by
