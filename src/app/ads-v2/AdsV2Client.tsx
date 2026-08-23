@@ -136,7 +136,7 @@ export default function AdsV2Client({ publicToken, lockedAccount }: AdsV2ClientP
         </div>
         <div className="av2-head-actions">
           <div className="av2-actions-row">
-            {!isPublic && <AccuracyBadge />}
+            {!isPublic && <AccuracyBadge payload={payload} />}
             <SettingsGear payload={payload} publicMode={isPublic} publicToken={publicToken} />
           </div>
           {!isPublic && <AttributionPlus />}

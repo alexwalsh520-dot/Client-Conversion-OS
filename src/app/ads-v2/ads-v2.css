@@ -1976,3 +1976,40 @@ body.metric-dragging {
   border-top: 1px solid var(--border);
   padding-top: 14px;
 }
+
+/* Accuracy shield: per-ad funnel panel */
+.adsv2 .shield-funnel {
+  margin-top: 10px;
+  border: 1px solid var(--border-2);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.adsv2 .shield-funnel-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) repeat(5, minmax(64px, auto));
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  border-bottom: 1px solid var(--border);
+}
+.adsv2 .shield-funnel-row:last-child { border-bottom: 0; }
+.adsv2 .shield-funnel-head {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+  background: var(--panel-2);
+}
+.adsv2 .shield-funnel-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.adsv2 .shield-funnel-kw {
+  font-size: 10.5px;
+  color: var(--text-3);
+}
