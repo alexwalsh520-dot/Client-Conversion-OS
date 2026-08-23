@@ -192,6 +192,28 @@ async function getSearchPoolForIdentity(identity: {
   return [...results.values()];
 }
 
+
+/**
+ * HARD IDENTITY GATE (2026-08-23): a candidate contact may only be linked
+ * when the SURNAME agrees, or the full name matches exactly. A first name
+ * alone is never identity: the August audit found 17+ people wearing a
+ * same-first-name stranger's identity ("Alex Golden" welded onto Alex
+ * Raines' booking), each one created by score paths that never required
+ * the last name. Leads with no last name at all are never auto-linked.
+ */
+function surnameAgrees(
+  candidate: { firstName?: string | null; lastName?: string | null; contactName?: string | null },
+  identity: { firstName?: string | null; lastName?: string | null },
+): boolean {
+  const targetLast = normalizeName(identity.lastName);
+  if (!targetLast) return false;
+  const candidateLast = normalizeName(candidate.lastName);
+  if (candidateLast === targetLast) return true;
+  const targetFull = normalizeName(buildFullName(identity.firstName, identity.lastName));
+  const candidateFull = normalizeName(candidate.contactName);
+  return Boolean(targetFull) && candidateFull === targetFull;
+}
+
 function scoreExistingInstagramContact(
   candidate: GhlSearchContact,
   identity: {
@@ -200,6 +222,8 @@ function scoreExistingInstagramContact(
     eventAt?: string | null;
   },
 ): number {
+  if (!surnameAgrees(candidate, identity)) return -1000;
+
   let score = 0;
   const source = normalizeText(candidate.source);
   const medium = normalizeText(candidate.attributionSource?.medium);
@@ -236,6 +260,8 @@ function scoreManychatManagedContact(
     dateAdded?: string | null;
   },
 ): number {
+  if (!surnameAgrees(candidate, identity)) return -1000;
+
   let score = 0;
   const source = normalizeText(candidate.source);
   const candidateFirst = normalizeName(candidate.firstName);

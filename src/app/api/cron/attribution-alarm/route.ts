@@ -80,6 +80,22 @@ export async function GET(req: NextRequest) {
     (r) => !r.recording_link || !String(r.recording_link).trim(),
   );
 
+  // Third check (Alex, 8/23): the staleness sentinels. The system wrote 181
+  // silent alerts while the Fathom pipe died; nothing read them. Now any
+  // data source that has stopped flowing shows up here every morning.
+  const { data: staleRows } = await db
+    .from("source_freshness_alerts")
+    .select("source, hours_stale, checked_at")
+    .gte("checked_at", new Date(Date.now() - 26 * 3600 * 1000).toISOString())
+    .order("checked_at", { ascending: false });
+  const staleBySource = new Map<string, number>();
+  for (const r of staleRows || []) {
+    if (!staleBySource.has(r.source as string)) {
+      staleBySource.set(r.source as string, Math.round(Number(r.hours_stale) || 0));
+    }
+  }
+  const stale = [...staleBySource.entries()];
+
   const summary = {
     ok: true,
     day: label,
@@ -87,8 +103,9 @@ export async function GET(req: NextRequest) {
     missingIdentity: missing.length,
     takenCalls: (takenRows || []).length,
     takenWithoutRecordingLink: noLink.length,
+    staleSources: stale.length,
   };
-  if (missing.length === 0 && noLink.length === 0) return NextResponse.json(summary);
+  if (missing.length === 0 && noLink.length === 0 && stale.length === 0) return NextResponse.json(summary);
 
   const parts: string[] = [];
   if (missing.length > 0) {
@@ -108,6 +125,10 @@ export async function GET(req: NextRequest) {
     parts.push(
       `${noLink.length} of ${(takenRows || []).length} taken calls have no recording link pasted:\n${lines.join("\n")}`,
     );
+  }
+  if (stale.length > 0) {
+    const lines = stale.map(([src, hrs]) => `• ${src}: nothing new for ${hrs} hours`);
+    parts.push(`Data pipes that have gone quiet:\n${lines.join("\n")}`);
   }
   const msg = `Attribution alarm for ${label}:\n${parts.join("\n\n")}`;
 
