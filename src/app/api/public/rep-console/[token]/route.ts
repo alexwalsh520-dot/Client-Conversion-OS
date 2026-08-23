@@ -179,7 +179,13 @@ export async function GET(
   const appts = apptRes.rows
     .map((r) => ({ row: r, cal: engineCalendar(r.calendar_id) }))
     .filter((x): x is { row: (typeof apptRes.rows)[number]; cal: NonNullable<ReturnType<typeof engineCalendar>> } =>
-      Boolean(x.cal && (scope.clientKey === "all" || x.cal.client === scope.clientKey)),
+      Boolean(
+        x.cal &&
+          // Onboarding calls are a coaching workflow, not closer work — keep
+          // them off the closers' console (reschedules stay: real sales calls).
+          x.cal.side !== "onboarding" &&
+          (scope.clientKey === "all" || x.cal.client === scope.clientKey),
+      ),
     )
     .filter((x) => {
       const day = x.row.start_time ? etDay(x.row.start_time) : null;
