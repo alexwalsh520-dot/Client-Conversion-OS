@@ -1,7 +1,8 @@
 /* Public client call-metrics view — strip ALL CCOS app chrome so the client
    sees only their call numbers, full-bleed, with no sidebar/nav into the rest
-   of the app. Self-contained LIGHT palette (no dependency on the app theme
-   toggle). */
+   of the app. Styled to MATCH THE SALES HUB: the app's dark charcoal + warm
+   gold theme, using the same :root variables globals.css defines (with literal
+   fallbacks so the page can never render unthemed). */
 
 .app-layout:has(.pub-cm-page) .sidebar,
 .app-layout:has(.pub-unavailable) .sidebar {
@@ -22,46 +23,45 @@
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  background: #f5f6f8;
+  background: var(--bg-primary, #0c0c0c);
   padding: 24px;
 }
 
 .pub-unavailable-card {
   max-width: 420px;
   text-align: center;
-  background: #ffffff;
-  border: 1px solid #e4e6eb;
+  background: var(--bg-card, rgba(18, 18, 18, 0.75));
+  border: 1px solid var(--border-primary, rgba(255, 255, 255, 0.06));
   border-radius: 16px;
   padding: 40px 32px;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
 }
 
 .pub-unavailable-card h1 {
   margin: 0 0 12px;
   font-size: 20px;
   font-weight: 600;
-  color: #111827;
+  color: var(--text-primary, #ffffff);
 }
 
 .pub-unavailable-card p {
   margin: 0;
   font-size: 14px;
   line-height: 1.5;
-  color: #6b7280;
+  color: var(--text-3, rgba(255, 255, 255, 0.55));
 }
 
 /* ── Dashboard ─────────────────────────────────────────────────────────── */
 
 .pub-cm-page {
   min-height: 100vh;
-  background: #f5f6f8;
-  color: #111827;
+  background: var(--bg-primary, #0c0c0c);
+  color: var(--text-primary, #ffffff);
   padding: 20px 16px 48px;
   font-size: 14px;
 }
 
 .pub-cm-inner {
-  max-width: 860px;
+  max-width: 960px;
   margin: 0 auto;
 }
 
@@ -70,7 +70,7 @@
   font-size: 19px;
   font-weight: 700;
   letter-spacing: -0.01em;
-  color: #111827;
+  color: var(--text-primary, #ffffff);
 }
 
 /* Metrics / Call Calendar tab switch. */
@@ -78,16 +78,20 @@
   display: flex;
   gap: 6px;
   margin-top: 14px;
-  background: #eaecf0;
+  background: var(--bg-glass, rgba(255, 255, 255, 0.025));
+  border: 1px solid var(--border-primary, rgba(255, 255, 255, 0.06));
   border-radius: 10px;
   padding: 4px;
   width: fit-content;
 }
 
 .pub-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   border: none;
   background: transparent;
-  color: #6b7280;
+  color: var(--text-3, rgba(255, 255, 255, 0.55));
   border-radius: 8px;
   padding: 7px 16px;
   font-size: 13px;
@@ -97,118 +101,39 @@
 }
 
 .pub-tab:hover {
-  color: #111827;
+  color: var(--text-primary, #ffffff);
 }
 
 .pub-tab.is-active {
-  background: #ffffff;
-  color: #111827;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  background: var(--accent-soft, rgba(201, 169, 110, 0.1));
+  color: var(--accent, #c9a96e);
 }
 
-/* Live calendar of upcoming calls — prospect name + time only. */
-.pub-cal {
-  margin-top: 16px;
-  background: #ffffff;
-  border: 1px solid #e4e6eb;
-  border-radius: 14px;
-  overflow: hidden;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-}
-
-.pub-cal-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 12px 14px;
-}
-
-.pub-cal-title {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: #6b7280;
-}
-
-.pub-cal-note {
-  font-size: 11px;
-  color: #9ca3af;
-}
-
-.pub-cal-day {
-  border-top: 1px solid #eef0f3;
-}
-
-.pub-cal-day h2 {
-  margin: 0;
-  padding: 10px 14px 6px;
-  font-size: 13px;
-  font-weight: 700;
-  color: #111827;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.pub-cal-today {
+.pub-tab-badge {
   font-size: 10px;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: #047857;
-  background: #d1fae5;
   border-radius: 999px;
-  padding: 2px 8px;
-}
-
-.pub-cal-day ul {
-  list-style: none;
-  margin: 0;
-  padding: 0 0 8px;
-}
-
-.pub-cal-day li {
-  display: flex;
-  align-items: baseline;
-  gap: 14px;
-  padding: 7px 14px;
-}
-
-.pub-cal-day li + li {
-  border-top: 1px solid #f5f6f8;
-}
-
-.pub-cal-time {
-  font-size: 12px;
-  font-weight: 600;
-  color: #6b7280;
+  padding: 1px 7px;
+  background: var(--accent, #c9a96e);
+  color: #0c0c0c;
   font-variant-numeric: tabular-nums;
-  min-width: 66px;
-  text-align: right;
-}
-
-.pub-cal-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: #111827;
 }
 
 .pub-refresh-btn {
-  border: 1px solid #d7dae0;
-  background: #ffffff;
-  color: #111827;
+  border: 1px solid var(--border-primary, rgba(255, 255, 255, 0.06));
+  background: var(--bg-glass, rgba(255, 255, 255, 0.025));
+  color: var(--text-secondary, #e2e2e2);
   border-radius: 8px;
   padding: 7px 12px;
   font-size: 12px;
   font-weight: 600;
+  font-family: inherit;
   cursor: pointer;
 }
 
 .pub-refresh-btn:hover:not(:disabled) {
-  background: #f3f4f6;
+  background: var(--bg-glass-hover, rgba(255, 255, 255, 0.055));
+  border-color: var(--border-hover, rgba(255, 255, 255, 0.14));
 }
 
 .pub-refresh-btn:disabled {
@@ -236,19 +161,19 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #6b7280;
+  color: var(--text-3, rgba(255, 255, 255, 0.55));
 }
 
 .pub-range-field input[type="date"] {
-  border: 1px solid #d7dae0;
-  background: #ffffff;
-  color: #111827;
+  border: 1px solid var(--border-primary, rgba(255, 255, 255, 0.06));
+  background: var(--bg-glass, rgba(255, 255, 255, 0.025));
+  color: var(--text-primary, #ffffff);
   border-radius: 8px;
   padding: 6px 10px;
   font-size: 13px;
   font-weight: 600;
   font-family: inherit;
-  color-scheme: light;
+  color-scheme: dark;
 }
 
 .pub-range-field input[type="date"]:disabled {
@@ -258,41 +183,34 @@
 /* Stat cards — tappable, the active one drives the list below. */
 .pub-stat-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 10px;
 }
 
 @media (max-width: 760px) {
-  .pub-stat-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-
-@media (max-width: 480px) {
   .pub-stat-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 }
 
 .pub-stat {
-  background: #ffffff;
-  border: 1px solid #e4e6eb;
+  background: var(--bg-card, rgba(18, 18, 18, 0.75));
+  border: 1px solid var(--border-primary, rgba(255, 255, 255, 0.06));
   border-radius: 14px;
   padding: 14px 14px 12px;
   text-align: left;
   color: inherit;
   font: inherit;
   cursor: pointer;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
 .pub-stat:hover {
-  border-color: #c9cdd4;
+  border-color: var(--border-hover, rgba(255, 255, 255, 0.14));
 }
 
 .pub-stat.is-active {
-  border-color: #059669;
-  background: #ecfdf5;
+  border-color: var(--accent, #c9a96e);
+  background: var(--accent-soft, rgba(201, 169, 110, 0.1));
 }
 
 .pub-stat .pub-stat-label {
@@ -300,7 +218,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #6b7280;
+  color: var(--text-3, rgba(255, 255, 255, 0.55));
   margin: 0 0 6px;
   white-space: nowrap;
 }
@@ -310,24 +228,36 @@
   font-weight: 700;
   letter-spacing: -0.01em;
   margin: 0;
-  color: #111827;
+  color: var(--text-primary, #ffffff);
   font-variant-numeric: tabular-nums;
+}
+
+/* Sales Hub value colors: cash/wins green, losses red, rates by threshold. */
+.pub-stat .pub-stat-value.tone-good {
+  color: var(--success, #7ec9a0);
+}
+
+.pub-stat .pub-stat-value.tone-warn {
+  color: var(--warning, #e8c36a);
+}
+
+.pub-stat .pub-stat-value.tone-bad {
+  color: var(--danger, #d98e8e);
 }
 
 .pub-stat .pub-stat-sub {
   margin: 4px 0 0;
   font-size: 11px;
-  color: #6b7280;
+  color: var(--text-3, rgba(255, 255, 255, 0.55));
 }
 
 /* Who's behind the number. */
 .pub-list {
   margin-top: 18px;
-  background: #ffffff;
-  border: 1px solid #e4e6eb;
+  background: var(--bg-card, rgba(18, 18, 18, 0.75));
+  border: 1px solid var(--border-primary, rgba(255, 255, 255, 0.06));
   border-radius: 14px;
   overflow: hidden;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
 .pub-list-title {
@@ -336,7 +266,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #6b7280;
+  color: var(--text-3, rgba(255, 255, 255, 0.55));
   margin: 0;
 }
 
@@ -356,7 +286,7 @@
   padding: 9px 10px;
   text-align: left;
   font-size: 13px;
-  border-top: 1px solid #eef0f3;
+  border-top: 1px solid var(--border-primary, rgba(255, 255, 255, 0.06));
   white-space: nowrap;
 }
 
@@ -365,14 +295,14 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #6b7280;
+  color: var(--text-3, rgba(255, 255, 255, 0.55));
   border-top: none;
 }
 
 .pub-list th:first-child,
 .pub-list td:first-child {
   padding-left: 14px;
-  color: #374151;
+  color: var(--text-secondary, #e2e2e2);
 }
 
 .pub-list th:last-child,
@@ -382,7 +312,7 @@
 
 .pub-cell-name {
   font-weight: 600;
-  color: #111827;
+  color: var(--text-primary, #ffffff);
 }
 
 @media (max-width: 420px) {
@@ -393,7 +323,7 @@
   }
 }
 
-/* Status chips. */
+/* Status chips — Sales Hub soft-tint palette. */
 .pub-chip {
   display: inline-block;
   font-size: 11px;
@@ -404,33 +334,122 @@
 }
 
 .pub-chip-upcoming {
-  color: #1d4ed8;
-  background: #dbeafe;
+  color: var(--accent, #c9a96e);
+  background: var(--accent-soft, rgba(201, 169, 110, 0.1));
 }
 
 .pub-chip-taken {
-  color: #374151;
-  background: #eef0f3;
+  color: var(--text-secondary, #e2e2e2);
+  background: var(--bg-glass-hover, rgba(255, 255, 255, 0.055));
 }
 
 .pub-chip-closed {
-  color: #047857;
-  background: #d1fae5;
+  color: var(--success, #7ec9a0);
+  background: var(--success-soft, rgba(126, 201, 160, 0.1));
 }
 
 .pub-chip-no {
-  color: #b45309;
-  background: #fef3c7;
+  color: var(--warning, #e8c36a);
+  background: var(--warning-soft, rgba(232, 195, 106, 0.1));
+}
+
+/* Live calendar of upcoming calls — prospect name + time only. */
+.pub-cal {
+  margin-top: 16px;
+  background: var(--bg-card, rgba(18, 18, 18, 0.75));
+  border: 1px solid var(--border-primary, rgba(255, 255, 255, 0.06));
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.pub-cal-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.pub-cal-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3, rgba(255, 255, 255, 0.55));
+}
+
+.pub-cal-note {
+  font-size: 11px;
+  color: var(--text-muted, #52525b);
+}
+
+.pub-cal-day {
+  border-top: 1px solid var(--border-primary, rgba(255, 255, 255, 0.06));
+}
+
+.pub-cal-day h2 {
+  margin: 0;
+  padding: 10px 14px 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary, #ffffff);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pub-cal-today {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent, #c9a96e);
+  background: var(--accent-soft, rgba(201, 169, 110, 0.1));
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.pub-cal-day ul {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 8px;
+}
+
+.pub-cal-day li {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 7px 14px;
+}
+
+.pub-cal-day li + li {
+  border-top: 1px solid var(--border-glass, rgba(255, 255, 255, 0.05));
+}
+
+.pub-cal-time {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-3, rgba(255, 255, 255, 0.55));
+  font-variant-numeric: tabular-nums;
+  min-width: 66px;
+  text-align: right;
+}
+
+.pub-cal-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #ffffff);
 }
 
 /* Error/loading states. */
 .pub-state {
   padding: 48px 16px;
   text-align: center;
-  color: #6b7280;
+  color: var(--text-3, rgba(255, 255, 255, 0.55));
   font-size: 14px;
 }
 
 .pub-state.pub-state-error {
-  color: #dc2626;
+  color: var(--danger, #d98e8e);
 }

@@ -14,9 +14,10 @@
 //     fetchSheetData — the moment a booked call lands on the tracker it shows
 //     here. Rows are attributed to the client via the Offer column
 //     (creatorKeyFromText), the same detector the rest of the pipeline uses.
-//   * A blank "Call Taken" cell means the call hasn't happened yet — those rows
-//     are the UPCOMING bucket. "Yes"/"No" is the decider for taken; a WIN
-//     outcome is the decider for closed; AOV = cash collected ÷ closes.
+//   * Metric formulas are the Sales Hub's computeMetrics verbatim: taken =
+//     Call Taken "yes" OR cash on the row; wins = taken WIN rows; losses =
+//     taken − wins; show rate = taken ÷ (taken + no-shows); close rate =
+//     wins ÷ taken; AOV = cash collected ÷ wins.
 //   * ?from=YYYY-MM-DD&to=YYYY-MM-DD picks the date window. Default is the
 //     current calendar month (full month, so future upcoming calls are
 //     visible). Clamped to the tracker's range and capped at a year so a
@@ -177,27 +178,35 @@ async function fetchUpcomingCalls(clientKey: CreatorKey): Promise<UpcomingCall[]
 }
 
 // Defensive allow-list copy — only these fields ever leave the route.
-function publicRow(row: SheetRow) {
-  const isWin = row.outcome === "WIN";
+// Stage rules mirror the Sales Hub's computeMetrics (UnifiedDashboard) exactly
+// so the client's numbers always agree with the internal hub: cash on a row
+// means the call happened and closed even if Call Taken was never flipped.
+function publicRow(row: SheetRow, todayEt: string) {
+  const taken = row.callTakenStatus === "yes" || row.cashCollected > 0;
+  const isWin = taken && row.outcome === "WIN";
   const stage: Stage = isWin
     ? "closed"
-    : row.callTakenStatus === "pending"
-      ? "upcoming"
-      : row.callTakenStatus === "yes"
-        ? "taken"
+    : taken
+      ? "taken"
+      : row.callTakenStatus === "pending"
+        ? "upcoming"
         : "no";
   const statusLabel =
     stage === "closed"
       ? "Closed Won"
       : stage === "upcoming"
-        ? "Upcoming"
+        // A blank Call Taken on a past date isn't "upcoming" — the call date
+        // passed and the outcome just hasn't been logged yet.
+        ? row.date >= todayEt
+          ? "Upcoming"
+          : "Pending"
         : stage === "taken"
           ? row.outcome
             ? OUTCOME_LABELS[row.outcome] || titleCase(row.outcome)
             : "Taken"
           : row.outcome
             ? OUTCOME_LABELS[row.outcome] || titleCase(row.outcome)
-            : "Not Taken";
+            : "No Show";
   return {
     date: row.date,
     name: row.name.trim(),
@@ -205,7 +214,7 @@ function publicRow(row: SheetRow) {
     closer: row.closer ? titleCase(row.closer) : "—",
     stage,
     statusLabel,
-    taken: row.callTakenStatus === "yes",
+    taken,
     // Cash only on closed deals — it's the client's own revenue, and it's what
     // makes the AOV number auditable from the list.
     cashCollected: isWin ? row.cashCollected : null,
@@ -279,18 +288,25 @@ export async function GET(
     const rows = allRows
       .filter((row) => row.programLength !== "Subscription")
       .filter((row) => creatorKeyFromText(row.offer) === clientKey)
-      .map(publicRow);
+      .map((row) => publicRow(row, today));
 
+    // Same formulas as the Sales Hub's computeMetrics — the client's dashboard
+    // must never disagree with the internal one.
     const booked = rows.length;
-    const upcoming = rows.filter((r) => r.stage === "upcoming").length;
     const taken = rows.filter((r) => r.taken).length;
-    const closedRows = rows.filter((r) => r.stage === "closed");
-    const closed = closedRows.length;
-    const cashCollected = closedRows.reduce(
+    const noShows = rows.filter((r) => r.stage === "no").length;
+    const pending = rows.filter((r) => r.stage === "upcoming").length;
+    const winRows = rows.filter((r) => r.stage === "closed");
+    const wins = winRows.length;
+    const losses = taken - wins;
+    const showDen = taken + noShows;
+    const showRate = showDen > 0 ? taken / showDen : null;
+    const closeRate = taken > 0 ? wins / taken : null;
+    const cashCollected = winRows.reduce(
       (sum, r) => sum + (r.cashCollected || 0),
       0,
     );
-    const aov = closed > 0 ? cashCollected / closed : null;
+    const aov = wins > 0 ? cashCollected / wins : null;
 
     return NextResponse.json(
       {
@@ -302,7 +318,18 @@ export async function GET(
         defaultTo: defaults.to,
         clientLabel: CREATORS_BY_KEY[clientKey].name,
         generatedAt: new Date().toISOString(),
-        metrics: { booked, upcoming, taken, closed, cashCollected, aov },
+        metrics: {
+          booked,
+          taken,
+          wins,
+          losses,
+          noShows,
+          pending,
+          cashCollected,
+          aov,
+          showRate,
+          closeRate,
+        },
         rows,
         upcomingCalls,
       },
