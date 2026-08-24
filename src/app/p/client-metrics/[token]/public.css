@@ -4,6 +4,32 @@
    gold theme, using the same :root variables globals.css defines (with literal
    fallbacks so the page can never render unthemed). */
 
+/* Pin the hub's DARK values locally: the app flips html.light from the
+   visitor's OS preference, but this page is a branded client-facing surface —
+   it must look like the Sales Hub for every viewer, not follow their OS. */
+.pub-cm-page,
+.pub-unavailable {
+  --bg-primary: #0c0c0c;
+  --bg-card: rgba(18, 18, 18, 0.75);
+  --bg-glass: rgba(255, 255, 255, 0.025);
+  --bg-glass-hover: rgba(255, 255, 255, 0.055);
+  --border-primary: rgba(255, 255, 255, 0.06);
+  --border-hover: rgba(255, 255, 255, 0.14);
+  --border-glass: rgba(255, 255, 255, 0.05);
+  --text-primary: #ffffff;
+  --text-secondary: #e2e2e2;
+  --text-muted: #52525b;
+  --text-3: rgba(255, 255, 255, 0.55);
+  --accent: #c9a96e;
+  --accent-soft: rgba(201, 169, 110, 0.1);
+  --success: #7ec9a0;
+  --success-soft: rgba(126, 201, 160, 0.1);
+  --warning: #e8c36a;
+  --warning-soft: rgba(232, 195, 106, 0.1);
+  --danger: #d98e8e;
+  --danger-soft: rgba(217, 142, 142, 0.1);
+}
+
 .app-layout:has(.pub-cm-page) .sidebar,
 .app-layout:has(.pub-unavailable) .sidebar {
   display: none !important;
