@@ -2,14 +2,14 @@
 
 // Client-facing call-metrics dashboard (public token link, no CCOS login).
 //
-// Four numbers off the sales tracker — calls booked, calls taken, calls
-// closed, AOV — plus the upcoming bucket (booked rows whose "Call Taken" cell
-// is still blank). Tapping a stat card shows exactly who is behind that
-// number. The window is a from/to date range; the default is the current full
-// calendar month so upcoming calls stay visible.
-//
-// Two tabs: Metrics (the numbers above) and Call Calendar — the live GHL
-// calendar of upcoming booked calls, prospect name + time only.
+// Two tabs, styled to match the internal Sales Hub (dark charcoal + gold):
+//   * Metrics — Cash Collected, AOV, Close Rate, Show Rate, Calls Booked,
+//     Calls Taken, Wins, Losses (Sales Hub formulas), with the list of
+//     everyone who booked and their outcome underneath. Tapping a tile
+//     filters the list to the people behind that number.
+//   * Call Calendar — the live GHL calendar of upcoming booked calls,
+//     prospect name + time only. The "upcoming" count shown on the metrics
+//     tab is THIS list's length, so the two tabs always agree.
 //
 // Data comes from /api/public/client-metrics/<token> (token-checked, scoped
 // server-side to ONE client). Re-pulls every 5 minutes, on tab focus, and on
@@ -47,17 +47,29 @@ interface Payload {
   generatedAt: string;
   metrics: {
     booked: number;
-    upcoming: number;
     taken: number;
-    closed: number;
+    wins: number;
+    losses: number;
+    noShows: number;
+    pending: number;
     cashCollected: number;
     aov: number | null;
+    showRate: number | null;
+    closeRate: number | null;
   };
   rows: Row[];
   upcomingCalls?: UpcomingCall[];
 }
 
-type TileId = "booked" | "upcoming" | "taken" | "closed" | "aov";
+type TileId =
+  | "cash"
+  | "aov"
+  | "closeRate"
+  | "showRate"
+  | "booked"
+  | "taken"
+  | "wins"
+  | "losses";
 type ViewId = "metrics" | "calendar";
 
 const REFRESH_MS = 5 * 60_000;
@@ -69,6 +81,17 @@ function fmtMoney(value: number | null) {
     currency: "USD",
     maximumFractionDigits: 0,
   });
+}
+
+function fmtPct(value: number | null) {
+  if (value === null || !Number.isFinite(value)) return "—";
+  return `${Math.round(value * 100)}%`;
+}
+
+// Same thresholds the Sales Hub uses to color close/show rates.
+function rateTone(value: number | null): "good" | "warn" | "bad" | "" {
+  if (value === null || !Number.isFinite(value)) return "";
+  return value >= 0.7 ? "good" : value >= 0.5 ? "warn" : "bad";
 }
 
 function fmtDay(dateStr: string) {
@@ -115,32 +138,50 @@ function fmtRange(from: string, to: string) {
 
 const TILE_META: Record<
   TileId,
-  { label: string; filter: (row: Row) => boolean; empty: string }
+  { label: string; filter: (row: Row) => boolean; empty: string; showCash?: boolean }
 > = {
+  cash: {
+    label: "Cash Collected",
+    filter: (row) => row.stage === "closed",
+    empty: "No closed calls in this range.",
+    showCash: true,
+  },
+  aov: {
+    label: "AOV",
+    filter: (row) => row.stage === "closed",
+    empty: "No closed calls in this range.",
+    showCash: true,
+  },
+  closeRate: {
+    label: "Close Rate",
+    filter: (row) => row.stage === "closed",
+    empty: "No closed calls in this range.",
+  },
+  showRate: {
+    label: "Show Rate",
+    filter: (row) => row.taken,
+    empty: "No calls taken in this range.",
+  },
   booked: {
     label: "Calls Booked",
     filter: () => true,
     empty: "No calls booked in this range.",
-  },
-  upcoming: {
-    label: "Upcoming Calls",
-    filter: (row) => row.stage === "upcoming",
-    empty: "No upcoming calls on the tracker.",
   },
   taken: {
     label: "Calls Taken",
     filter: (row) => row.taken,
     empty: "No calls taken in this range.",
   },
-  closed: {
-    label: "Calls Closed",
+  wins: {
+    label: "Wins",
     filter: (row) => row.stage === "closed",
-    empty: "No closed calls in this range.",
+    empty: "No wins in this range.",
+    showCash: true,
   },
-  aov: {
-    label: "AOV",
-    filter: (row) => row.stage === "closed",
-    empty: "No closed calls in this range.",
+  losses: {
+    label: "Losses",
+    filter: (row) => row.taken && row.stage !== "closed",
+    empty: "No losses in this range.",
   },
 };
 
@@ -247,14 +288,12 @@ export default function ClientMetricsView({ token }: { token: string }) {
   if (!data) return null;
 
   const m = data.metrics;
+  // ONE upcoming number everywhere: the live calendar's count.
+  const upcomingCount = data.upcomingCalls?.length ?? 0;
   const from = range?.from ?? data.from;
   const to = range?.to ?? data.to;
   const isDefaultRange = data.from === data.defaultFrom && data.to === data.defaultTo && !range;
-  const showRate = m.taken > 0 && m.booked - m.upcoming > 0
-    ? m.taken / (m.booked - m.upcoming)
-    : null;
-  const closeRate = m.taken > 0 ? m.closed / m.taken : null;
-  const showCash = tile === "closed" || tile === "aov";
+  const showCash = Boolean(TILE_META[tile].showCash);
 
   const setFrom = (value: string) => {
     if (!value) return;
@@ -269,31 +308,52 @@ export default function ClientMetricsView({ token }: { token: string }) {
     id: TileId;
     value: string;
     sub: string;
+    tone?: "good" | "warn" | "bad" | "";
   }> = [
     {
-      id: "booked",
-      value: String(m.booked),
-      sub: `${m.upcoming} upcoming`,
-    },
-    {
-      id: "upcoming",
-      value: String(m.upcoming),
-      sub: "not held yet",
-    },
-    {
-      id: "taken",
-      value: String(m.taken),
-      sub: showRate !== null ? `${Math.round(showRate * 100)}% show rate` : "of calls held so far",
-    },
-    {
-      id: "closed",
-      value: String(m.closed),
-      sub: closeRate !== null ? `${Math.round(closeRate * 100)}% of calls taken` : "no calls taken yet",
+      id: "cash",
+      value: fmtMoney(m.cashCollected),
+      sub: `from ${m.wins} ${m.wins === 1 ? "win" : "wins"}`,
+      tone: "good",
     },
     {
       id: "aov",
       value: fmtMoney(m.aov),
-      sub: `${fmtMoney(m.cashCollected)} collected / ${m.closed} closed`,
+      sub: "per win",
+    },
+    {
+      id: "closeRate",
+      value: fmtPct(m.closeRate),
+      sub: `${m.wins} of ${m.taken} taken`,
+      tone: rateTone(m.closeRate),
+    },
+    {
+      id: "showRate",
+      value: fmtPct(m.showRate),
+      sub: `${m.noShows} no-shows`,
+      tone: rateTone(m.showRate),
+    },
+    {
+      id: "booked",
+      value: String(m.booked),
+      sub: `${upcomingCount} upcoming`,
+    },
+    {
+      id: "taken",
+      value: String(m.taken),
+      sub: "calls held",
+    },
+    {
+      id: "wins",
+      value: String(m.wins),
+      sub: "closed won",
+      tone: "good",
+    },
+    {
+      id: "losses",
+      value: String(m.losses),
+      sub: "taken, not closed",
+      tone: m.losses > 0 ? "bad" : "",
     },
   ];
 
@@ -318,6 +378,9 @@ export default function ClientMetricsView({ token }: { token: string }) {
             onClick={() => setView("calendar")}
           >
             Call Calendar
+            {upcomingCount > 0 ? (
+              <span className="pub-tab-badge">{upcomingCount}</span>
+            ) : null}
           </button>
         </nav>
 
@@ -410,7 +473,9 @@ export default function ClientMetricsView({ token }: { token: string }) {
               onClick={() => setTile(t.id)}
             >
               <p className="pub-stat-label">{TILE_META[t.id].label}</p>
-              <p className="pub-stat-value">{t.value}</p>
+              <p className={`pub-stat-value${t.tone ? ` tone-${t.tone}` : ""}`}>
+                {t.value}
+              </p>
               <p className="pub-stat-sub">{t.sub}</p>
             </button>
           ))}
