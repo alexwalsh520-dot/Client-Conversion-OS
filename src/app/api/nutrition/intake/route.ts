@@ -21,6 +21,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
 import { notifyAdminOfNewIntake } from "@/lib/nutrition/notify-new-intake";
+import { upsertCoachingContact } from "@/lib/ghl/coaching-contacts";
 
 export const runtime = "nodejs";
 export const maxDuration = 15;
@@ -133,11 +134,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "email is required" }, { status: 400, headers });
   }
 
+  const db = getServiceSupabase();
+
+  // Detect first-ever submission BEFORE the upsert so we can gate the
+  // GHL "Nutrition Intake Confirmation" email trigger to first-timers
+  // only (per MAS request 2026-08-23). A row already existing for this
+  // email means the client is re-submitting, and we silently update
+  // without firing the confirmation email again.
+  const { data: existingRow } = await db
+    .from("nutrition_intake_forms")
+    .select("id")
+    .eq("email", email)
+    .maybeSingle();
+  const isFirstSubmission = !existingRow;
+
   // Upsert on email — the table has a UNIQUE(email) constraint, so an
   // insert would fail when a client re-submits (e.g. after a coach asks
   // them to redo the form). Semantically the intake is the client's
   // current questionnaire state, so latest submission overwrites.
-  const db = getServiceSupabase();
   const { data, error } = await db
     .from("nutrition_intake_forms")
     .upsert(row, { onConflict: "email" })
@@ -171,6 +185,33 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     });
   } catch (err) {
     console.warn("[api/nutrition/intake] notifyAdminOfNewIntake failed:", err);
+  }
+
+  // Fire the GHL "Nutrition Intake Confirmation" workflow, but only on
+  // the client's very first submission. Resubmissions (upserts onto an
+  // existing row) intentionally do not re-tag — the confirmation email
+  // should feel like a one-time acknowledgement, not spam. Awaited so
+  // Vercel doesn't freeze the function before the HTTP call goes out.
+  if (isFirstSubmission) {
+    try {
+      const result = await upsertCoachingContact({
+        email,
+        firstName,
+        lastName: String(row.last_name ?? ""),
+        phone: (row.phone as string | undefined) ?? null,
+        tags: ["ccos-intake-submitted"],
+        customFields: {
+          fitness_goal: (row.fitness_goal as string | undefined) ?? "",
+          current_weight: (row.current_weight as string | undefined) ?? "",
+          goal_weight: (row.goal_weight as string | undefined) ?? "",
+        },
+      });
+      if (!result.ok && !result.skipped) {
+        console.warn("[api/nutrition/intake] GHL upsert failed:", result.error);
+      }
+    } catch (err) {
+      console.warn("[api/nutrition/intake] GHL upsert threw:", err);
+    }
   }
 
   return NextResponse.json(

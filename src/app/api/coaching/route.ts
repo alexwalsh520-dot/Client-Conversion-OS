@@ -7,6 +7,7 @@ import { getServiceSupabase } from "@/lib/supabase";
 import { appendClientToSheets, updateMilestoneInSheet } from "@/lib/sheets";
 import { postToCoachingChannel } from "@/lib/slack";
 import { notifyAdminOfNewClient } from "@/lib/coaching/notify-new-client";
+import { upsertCoachingContact } from "@/lib/ghl/coaching-contacts";
 
 type Action =
   | "upsert_client"
@@ -183,6 +184,36 @@ export async function POST(req: NextRequest) {
         }).catch((err) => {
           console.warn("[api/coaching upsert_client] notifyAdminOfNewClient failed:", err);
         });
+
+        // Fire the GHL "New Client Welcome" workflow (40-min delayed
+        // email, handled inside GHL). Skip when the client has no email
+        // on record — nothing GHL can do with a phone-only contact for
+        // this flow. Awaited so Vercel doesn't freeze before it goes.
+        if (payload.email) {
+          try {
+            const nameParts = String(payload.name ?? "").trim().split(/\s+/);
+            const firstName = nameParts[0] ?? "";
+            const lastName = nameParts.slice(1).join(" ");
+            const result = await upsertCoachingContact({
+              email: payload.email,
+              firstName,
+              lastName,
+              phone: payload.phone ?? null,
+              tags: ["ccos-new-client"],
+              customFields: {
+                coach_name: payload.coachName ?? "",
+                start_date: payload.startDate ?? "",
+                end_date: payload.endDate ?? "",
+                program: payload.program ?? "",
+              },
+            });
+            if (!result.ok && !result.skipped) {
+              console.warn("[api/coaching upsert_client] GHL upsert failed:", result.error);
+            }
+          } catch (err) {
+            console.warn("[api/coaching upsert_client] GHL upsert threw:", err);
+          }
+        }
 
         return NextResponse.json({ success: true, data });
       }
