@@ -11,8 +11,11 @@ const GHL_BASE = "https://services.leadconnectorhq.com";
 const GHL_VERSION = "2021-07-28";
 
 function getConfig(): { token: string; locationId: string } | null {
-  const token = process.env.GHL_ACCESS_TOKEN;
-  const locationId = process.env.GHL_LOCATION_ID;
+  // MAS set these up on Vercel as _NUTRI-suffixed. Check those first so we
+  // pick up the coaching integration; fall back to the unsuffixed names in
+  // case a future setup uses those defaults instead.
+  const token = process.env.GHL_ACCESS_TOKEN_NUTRI || process.env.GHL_ACCESS_TOKEN;
+  const locationId = process.env.GHL_LOCATION_ID_NUTRI || process.env.GHL_LOCATION_ID;
   if (!token || !locationId) return null;
   return { token, locationId };
 }
