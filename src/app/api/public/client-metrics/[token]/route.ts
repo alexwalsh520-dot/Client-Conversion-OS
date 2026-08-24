@@ -24,10 +24,17 @@
 //   * Only call-level facts the client already owns leave this route: date,
 //     name, setter, closer, status, and cash on closed deals. No call notes,
 //     no recording links, no ManyChat links.
+//   * upcomingCalls is the LIVE CALENDAR: booked, non-cancelled appointments
+//     from ghl_appointments (the GHL webhook mirror) on this client's pinned
+//     sales calendars, from now forward. Prospect name + start time only —
+//     no closer, no calendar/appointment title. Reschedule calendars are
+//     excluded because their client attribution is ambiguous (they default
+//     to another client), and a wrong guess would leak someone else's lead.
 // ─────────────────────────────────────────────────────────────────────────────
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
 import { fetchSheetData, type SheetRow } from "@/lib/google-sheets";
+import { engineCalendar } from "@/lib/metrics-engine/calendars";
 import {
   creatorKeyFromText,
   isCreatorKey,
@@ -119,6 +126,55 @@ const OUTCOME_LABELS: Record<string, string> = {
 };
 
 type Stage = "upcoming" | "taken" | "closed" | "no";
+
+// How far forward the live calendar looks. Calls rarely book further out, and
+// the bound keeps the query cheap.
+const CALENDAR_LOOKAHEAD_DAYS = 45;
+
+interface UpcomingCall {
+  id: string;
+  name: string;
+  startTime: string; // ISO instant
+}
+
+/**
+ * The live calendar: booked, non-cancelled appointments on this client's
+ * pinned SALES calendars (dm + outbound), from now forward. Degrades to []
+ * on any failure — the metrics half of the payload must still render.
+ */
+async function fetchUpcomingCalls(clientKey: CreatorKey): Promise<UpcomingCall[]> {
+  try {
+    const sb = getServiceSupabase();
+    const nowIso = new Date().toISOString();
+    const horizonIso = new Date(
+      Date.now() + CALENDAR_LOOKAHEAD_DAYS * 86_400_000,
+    ).toISOString();
+    const { data, error } = await sb
+      .from("ghl_appointments")
+      .select("appointment_id, calendar_id, contact_name, start_time, status, event_type")
+      .gte("start_time", nowIso)
+      .lte("start_time", horizonIso)
+      .order("start_time", { ascending: true })
+      .limit(500);
+    if (error || !data) return [];
+    return data
+      .filter((r) => {
+        const cal = engineCalendar(r.calendar_id);
+        if (!cal || cal.client !== clientKey) return false;
+        // Sales calendars only; reschedule calendars are client-ambiguous and
+        // onboarding calls aren't part of the sales-call story.
+        if (cal.side !== "dm" && cal.side !== "outbound") return false;
+        return !`${r.status || ""} ${r.event_type || ""}`.toLowerCase().includes("cancel");
+      })
+      .map((r) => ({
+        id: String(r.appointment_id),
+        name: (r.contact_name || "").trim() || "Booked Call",
+        startTime: new Date(r.start_time).toISOString(),
+      }));
+  } catch {
+    return [];
+  }
+}
 
 // Defensive allow-list copy — only these fields ever leave the route.
 function publicRow(row: SheetRow) {
@@ -213,9 +269,13 @@ export async function GET(
   if (from > to) [from, to] = [to, from];
   if (shiftDate(from, MAX_RANGE_DAYS) < to) to = shiftDate(from, MAX_RANGE_DAYS);
 
-  // 3) Live read of the tracker, scoped hard to this token's client.
+  // 3) Live read of the tracker, scoped hard to this token's client. The GHL
+  //    calendar read runs alongside and degrades to [] on its own failures.
   try {
-    const allRows = await fetchSheetData(from, to);
+    const [allRows, upcomingCalls] = await Promise.all([
+      fetchSheetData(from, to),
+      fetchUpcomingCalls(clientKey),
+    ]);
     const rows = allRows
       .filter((row) => row.programLength !== "Subscription")
       .filter((row) => creatorKeyFromText(row.offer) === clientKey)
@@ -244,6 +304,7 @@ export async function GET(
         generatedAt: new Date().toISOString(),
         metrics: { booked, upcoming, taken, closed, cashCollected, aov },
         rows,
+        upcomingCalls,
       },
       { headers: NO_STORE_HEADERS },
     );

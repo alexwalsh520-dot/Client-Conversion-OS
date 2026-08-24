@@ -73,6 +73,129 @@
   color: #111827;
 }
 
+/* Metrics / Call Calendar tab switch. */
+.pub-tabs {
+  display: flex;
+  gap: 6px;
+  margin-top: 14px;
+  background: #eaecf0;
+  border-radius: 10px;
+  padding: 4px;
+  width: fit-content;
+}
+
+.pub-tab {
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  border-radius: 8px;
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.pub-tab:hover {
+  color: #111827;
+}
+
+.pub-tab.is-active {
+  background: #ffffff;
+  color: #111827;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+/* Live calendar of upcoming calls — prospect name + time only. */
+.pub-cal {
+  margin-top: 16px;
+  background: #ffffff;
+  border: 1px solid #e4e6eb;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.pub-cal-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.pub-cal-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6b7280;
+}
+
+.pub-cal-note {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.pub-cal-day {
+  border-top: 1px solid #eef0f3;
+}
+
+.pub-cal-day h2 {
+  margin: 0;
+  padding: 10px 14px 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #111827;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pub-cal-today {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #047857;
+  background: #d1fae5;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.pub-cal-day ul {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 8px;
+}
+
+.pub-cal-day li {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 7px 14px;
+}
+
+.pub-cal-day li + li {
+  border-top: 1px solid #f5f6f8;
+}
+
+.pub-cal-time {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+  font-variant-numeric: tabular-nums;
+  min-width: 66px;
+  text-align: right;
+}
+
+.pub-cal-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+}
+
 .pub-refresh-btn {
   border: 1px solid #d7dae0;
   background: #ffffff;
