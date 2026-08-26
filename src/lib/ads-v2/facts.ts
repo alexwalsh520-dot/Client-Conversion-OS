@@ -648,6 +648,14 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
   // setter. Done in the database, the window stops mattering.
   await db.rpc("adsv2_stamp_facts_setters", { p_from: factFrom, p_to: bookTo });
 
+  // Part F (2026-08-26): a sale with no keyword inherits the SAME PERSON's
+  // attributed booking when the match is deterministic (hard subscriber key, or
+  // exact name within the same client and a tight window) and every matching
+  // booking agrees on one keyword. Human resolutions outrank it (the carry
+  // skips resolved sales), and it runs before the origins labeler so the misc
+  // chat rule never claims a row whose booking already proves an ad.
+  await db.rpc("adsv2_label_sale_carry", { p_from: factFrom, p_to: saleTo });
+
   // Correct sale origins, windowless and set-based in the database: sales whose
   // keyword came through a page outside the active roster get the honest label
   // 'former_creator_ad' instead of 'unknown', and a sale whose subscriber sent

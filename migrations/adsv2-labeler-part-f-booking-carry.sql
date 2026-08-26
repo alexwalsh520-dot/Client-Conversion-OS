@@ -1,0 +1,22 @@
+-- 2026-08-26 · Repo record of live migration adsv2_labeler_part_f_booking_carry
+-- (build #11, the Joseph Jackson class fix)
+--
+-- New function public.adsv2_label_sale_carry(p_from, p_to): a sale with no
+-- keyword inherits the SAME PERSON's attributed booking when the match is
+-- deterministic: hard subscriber key (sale subscriber = booking
+-- linked_subscriber_id), or exact stripped-name within the same client and a
+-- booking window of sale day -45..+3, and only when every matching booking
+-- agrees on ONE keyword and ONE client. Guards: skips human-resolved sales
+-- (resolutions outrank), skips organic sale rows, skips test-named rows.
+-- Writes evidence_key 'booking_attribution_carry' (added to the sale facts
+-- evidence_key check constraint), clears blank_reason and awaiting_review,
+-- fills client_key only when the sheet left it blank (sheet decides WHO).
+-- Wired in facts.ts BEFORE adsv2_label_sale_origins, so the misc chat rule
+-- (part E) never claims a row whose booking already proves an ad.
+--
+-- First run 7/1-8/26: exactly 8 rows carried (all previously verified booking
+-- attributions: Enzo Napole fit, Haley Wellborn good, Dominic Charqueno base,
+-- Prathyusha qualified, Angel Castro renewed, Alyssa Olivas leaner, Connor
+-- Glynn intake, Caira Samano centered; all $0 cash rows, 3 taken calls).
+-- Second run: 0 (idempotent). "Jake Test" row correctly excluded.
+-- Full function body lives in Supabase migration history under this name.
