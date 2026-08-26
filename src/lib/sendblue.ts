@@ -7,7 +7,10 @@
 // ---------------------------------------------------------------------------
 
 const SENDBLUE_SEND_BASE_URL = "https://api.sendblue.co/api";
-const SENDBLUE_READ_BASE_URL = "https://api.sendblue.co/api/v2";
+// Reads must hit api.sendblue.COM — the .co host rejects /api/v2 reads with
+// "Did not get inputs for authorization" (verified live 2026-08-23), which the
+// catch below turned into silent empty threads.
+const SENDBLUE_READ_BASE_URL = "https://api.sendblue.com/api/v2";
 
 // ---------------------------------------------------------------------------
 // Helpers
