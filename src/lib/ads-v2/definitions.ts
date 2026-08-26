@@ -138,11 +138,11 @@ export const COLUMNS: readonly ColumnDef[] = [
   },
   {
     key: "taken",
-    label: "Calls taken",
+    label: "Ad calls taken",
     sentence:
-      "How many strategy calls took place in this window, counted on the day the call happened, including ones booked earlier.",
+      "How many AD-ATTRIBUTED strategy calls took place in this window, counted on the day the call happened, including ones booked earlier. The team's total calls taken is bigger: it also includes organic, misc chat, and not-yet-attributed calls, which this paid view does not count.",
     source:
-      "The sales tracker, which only lists calls that took place. Counted by call day, so this can differ from the show-rate group, which counts people booked in this window.",
+      "The sales tracker, which only lists calls that took place, filtered to calls tied to an ad keyword. Counted by call day, so this can differ from the show-rate group, which counts people booked in this window.",
     format: "int",
     logged: true,
   },

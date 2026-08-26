@@ -176,10 +176,11 @@ export const CARD_DEFS: readonly CardDef[] = [
   },
   {
     id: "calls_taken",
-    label: "Calls taken",
-    meta: "Calls that happened",
-    sentence: "How many strategy calls took place each day.",
-    source: "The sales tracker, which only lists calls that took place.",
+    label: "Ad calls taken",
+    meta: "Ad-attributed calls that happened",
+    sentence:
+      "How many AD-ATTRIBUTED strategy calls took place each day. The team's total calls taken is bigger: organic, misc chat, and not-yet-attributed calls are not in this paid view.",
+    source: "The sales tracker, which only lists calls that took place, filtered to calls tied to an ad keyword.",
     format: "int",
     value: (t) => t.taken,
     point: (d) => d.taken,
