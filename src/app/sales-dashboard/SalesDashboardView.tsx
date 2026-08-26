@@ -783,8 +783,24 @@ export default function SalesDashboardView() {
             {(() => {
               const adherence = data.adherence ?? null;
               const closers: SalesBoardAdherenceRep[] = adherence?.closers ?? [];
+              // Team row first: most DM bookings carry no closer attribution
+              // yet, so the team aggregate (which includes them) is the number
+              // that means something today.
+              const rows: SalesBoardAdherenceRep[] = adherence
+                ? [
+                    {
+                      rep_key: "__team__",
+                      name: "Team (all graded calls)",
+                      pre_call: adherence.team.pre_call,
+                      closing: null,
+                    },
+                    ...closers,
+                  ]
+                : [];
               const nothingGraded =
-                !adherence || adherence.migration_pending || closers.length === 0;
+                !adherence ||
+                adherence.migration_pending ||
+                (adherence.team.pre_call.graded === 0 && closers.length === 0);
               if (nothingGraded) {
                 return (
                   <div
@@ -830,7 +846,7 @@ export default function SalesDashboardView() {
                         </tr>
                       </thead>
                       <tbody>
-                        {closers.map((rep) => {
+                        {rows.map((rep) => {
                           const isOpen = openAdherenceRep === rep.rep_key;
                           return (
                             <Fragment key={rep.rep_key}>
