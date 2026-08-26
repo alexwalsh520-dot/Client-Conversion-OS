@@ -15,13 +15,17 @@
 //      breakdowns, and the cash-ordered closer table (click to expand).
 //   3. Setter Performance — new leads / booked / booking rate; the count
 //      cells expand into source distributions. Includes the "Ai" setter.
-//   4. Response Times     — per-setter + team medians from the engine's
+//   4. Rep Adherence      — AI-graded pre-call confirmation SOP compliance
+//      per closer (click to expand the six checks), plus the closing-script
+//      placeholder slot (script arrives later).
+//   5. Response Times     — per-setter + team medians from the engine's
 //      response-time library (same warehouse data).
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   BarChart3,
+  ClipboardCheck,
   Clock,
   Loader2,
   Trophy,
@@ -36,6 +40,7 @@ import { fmtDollars, fmtNumber, fmtPercent } from "@/lib/formatters";
 import { rangeForPreset, todayEt, type DayRange, type PresetId } from "@/lib/ads-v2/time";
 import type { CallType } from "@/lib/metrics-engine/types";
 import type {
+  SalesBoardAdherenceRep,
   SalesBoardResponse,
   SalesBoardRtGroup,
   SalesStatSet,
@@ -342,6 +347,7 @@ export default function SalesDashboardView() {
   const [teamCallTypeOpen, setTeamCallTypeOpen] = useState(false);
   const [teamLeadTypeOpen, setTeamLeadTypeOpen] = useState(false);
   const [openSetterCell, setOpenSetterCell] = useState<{ key: string; kind: "leads" | "booked" } | null>(null);
+  const [openAdherenceRep, setOpenAdherenceRep] = useState<string | null>(null);
 
   const clientPartial = clientSel !== null && clientSel.length < CLIENT_OPTIONS.length;
   const nothingSelected = clientSel !== null && clientSel.length === 0;
@@ -768,7 +774,205 @@ export default function SalesDashboardView() {
             </div>
           </div>
 
-          {/* ── Section 4: Response Times ───────────────────────────── */}
+          {/* ── Section 4: Rep Adherence ────────────────────────────── */}
+          <div className="section" style={{ marginTop: 24 }}>
+            <h2 className="section-title">
+              <ClipboardCheck size={16} />
+              Rep Adherence
+            </h2>
+            {(() => {
+              const adherence = data.adherence ?? null;
+              const closers: SalesBoardAdherenceRep[] = adherence?.closers ?? [];
+              const nothingGraded =
+                !adherence || adherence.migration_pending || closers.length === 0;
+              if (nothingGraded) {
+                return (
+                  <div
+                    className="glass-static"
+                    style={{ padding: 18, fontSize: 13, color: "var(--text-muted)" }}
+                  >
+                    No graded calls yet — grading runs every 2 hours.
+                  </div>
+                );
+              }
+              const awaitingPill = (
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    marginLeft: 8,
+                    padding: "2px 8px",
+                    borderRadius: 999,
+                    border: "1px solid var(--border-subtle)",
+                    background: "rgba(127,127,127,0.08)",
+                    fontSize: 10,
+                    fontWeight: 600,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.4px",
+                    color: "var(--text-muted)",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Awaiting closing script
+                </span>
+              );
+              return (
+                <>
+                  <div className="glass-static" style={{ overflow: "auto" }}>
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Closer</th>
+                          <th>Pre-Call Adherence</th>
+                          <th>Calls Graded</th>
+                          <th>Closing Script</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {closers.map((rep) => {
+                          const isOpen = openAdherenceRep === rep.rep_key;
+                          return (
+                            <Fragment key={rep.rep_key}>
+                              <tr
+                                onClick={() =>
+                                  setOpenAdherenceRep(isOpen ? null : rep.rep_key)
+                                }
+                                style={{ cursor: "pointer" }}
+                              >
+                                <td style={{ fontWeight: 600, color: "var(--text-primary)" }}>
+                                  <span
+                                    style={{
+                                      display: "inline-block",
+                                      width: 12,
+                                      color: "var(--text-muted)",
+                                    }}
+                                  >
+                                    {isOpen ? "▾" : "▸"}
+                                  </span>
+                                  {rep.name}
+                                </td>
+                                <td>
+                                  <span
+                                    style={{
+                                      color: rateColor(rep.pre_call.avg_score),
+                                      fontWeight: 600,
+                                    }}
+                                  >
+                                    {fmtRate(rep.pre_call.avg_score)}
+                                  </span>
+                                </td>
+                                <td>
+                                  {fmtNumber(rep.pre_call.graded)}
+                                  {rep.pre_call.thread_missing > 0 ? (
+                                    <span
+                                      style={{
+                                        marginLeft: 6,
+                                        fontSize: 11,
+                                        color: "var(--text-muted)",
+                                      }}
+                                      title="Calls with no SendBlue thread found — not counted in the average"
+                                    >
+                                      (+{rep.pre_call.thread_missing} no thread)
+                                    </span>
+                                  ) : null}
+                                </td>
+                                <td>
+                                  <span style={{ color: "var(--text-muted)" }}>—</span>
+                                  {awaitingPill}
+                                </td>
+                              </tr>
+                              {isOpen && (
+                                <tr style={{ background: "rgba(127,127,127,0.06)" }}>
+                                  <td colSpan={4} style={{ padding: "14px 16px 16px 28px" }}>
+                                    <div
+                                      style={{
+                                        fontSize: 11,
+                                        textTransform: "uppercase",
+                                        letterSpacing: "0.5px",
+                                        fontWeight: 600,
+                                        color: "var(--text-muted)",
+                                        marginBottom: 8,
+                                      }}
+                                    >
+                                      {rep.name} — pre-call SOP checks
+                                    </div>
+                                    <table className="data-table" style={{ fontSize: 12 }}>
+                                      <thead>
+                                        <tr>
+                                          <th>Check</th>
+                                          <th>Pass Rate</th>
+                                          <th>Passed / Applicable</th>
+                                          <th>Latest Example</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {rep.pre_call.checks.map((c) => (
+                                          <tr key={c.id}>
+                                            <td
+                                              style={{
+                                                fontWeight: 600,
+                                                color: "var(--text-secondary)",
+                                              }}
+                                            >
+                                              {c.label}
+                                            </td>
+                                            <td>
+                                              <span
+                                                style={{
+                                                  color: rateColor(c.rate),
+                                                  fontWeight: 600,
+                                                }}
+                                              >
+                                                {fmtRate(c.rate)}
+                                              </span>
+                                            </td>
+                                            <td style={{ color: "var(--text-secondary)" }}>
+                                              {c.applicable > 0
+                                                ? `${fmtNumber(c.passed)} / ${fmtNumber(c.applicable)}`
+                                                : "—"}
+                                            </td>
+                                            <td
+                                              style={{
+                                                color: "var(--text-muted)",
+                                                fontStyle: c.latest_evidence
+                                                  ? "italic"
+                                                  : undefined,
+                                                maxWidth: 420,
+                                                overflow: "hidden",
+                                                textOverflow: "ellipsis",
+                                                whiteSpace: "nowrap",
+                                              }}
+                                              title={c.latest_evidence ?? undefined}
+                                            >
+                                              {c.latest_evidence
+                                                ? `“${c.latest_evidence}”`
+                                                : "—"}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "8px 2px 0" }}>
+                    Pre-call adherence is AI-graded from each call&apos;s SendBlue thread
+                    against the confirmation SOP (grading runs every 2 hours). Calls with
+                    no thread found are excluded from averages.
+                  </p>
+                </>
+              );
+            })()}
+          </div>
+
+          {/* ── Section 5: Response Times ───────────────────────────── */}
           <div className="section" style={{ marginTop: 24 }}>
             <h2 className="section-title">
               <Clock size={16} />
