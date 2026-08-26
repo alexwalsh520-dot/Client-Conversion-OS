@@ -197,7 +197,7 @@ export async function getMessages(
     ? phoneNumber
     : `+1${phoneNumber.replace(/\D/g, "")}`;
 
-  const limit = Math.max(1, Math.min(500, Math.floor(opts?.limit ?? 25)));
+  const limit = Math.max(1, Math.min(100, Math.floor(opts?.limit ?? 25))) // SendBlue hard-caps limit at 100;
 
   try {
     const data = await sendBlueFetch<SendBlueResponse>(
