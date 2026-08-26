@@ -14,6 +14,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { SALES_MANAGER_PROMPT, mmSubmitCallReview } from "@/lib/micromanager";
 import { jeremySend, jeremyPoll } from "@/lib/jeremy";
 import { postAsCso } from "@/lib/slack";
+import { getRoster } from "@/lib/fathom-team-calls";
 
 type Sb = SupabaseClient;
 
@@ -315,12 +316,20 @@ async function dispatchCalls(sb: Sb): Promise<string[]> {
     .order("recorded_at", { ascending: false })
     .limit(300);
 
+  const roster = getRoster();
   const candidates = ((calls || []) as PendingCall[]).filter((c) => {
     if (done.has(c.fathom_id) || blocked.has(c.fathom_id)) return false;
     const t = String(c.title || "").toLowerCase();
     if (INTERNAL_TITLE_PATTERNS.some((p) => t.includes(p))) return false;
     if (typeof c.duration_sec === "number" && c.duration_sec < MIN_DURATION_SEC) return false;
     if (!c.transcript || c.transcript.length < 1500) return false; // too thin to coach on
+    // Internal calls (1:1s, team calls): every attendee is on the team roster.
+    // Same rule as fathom-team-calls — one unknown attendee means prospect.
+    const emails = Array.isArray(c.attendees)
+      ? (c.attendees as { email?: string }[])
+          .map((a) => String(a?.email || "").trim().toLowerCase()).filter(Boolean)
+      : [];
+    if (emails.length > 0 && emails.every((e) => roster.has(e) || e.endsWith("@clientconversion.io"))) return false;
     return true;
   });
 
