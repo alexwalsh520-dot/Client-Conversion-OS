@@ -87,7 +87,8 @@ const FOLLOW_UP_AFTER_MS = 24 * 60 * 60_000;
 /** Thread window: booking creation → call start + 1h. */
 const THREAD_TAIL_MS = 60 * 60_000;
 /** How many recent SendBlue messages to pull per phone number. */
-const SENDBLUE_FETCH_LIMIT = 150;
+// SendBlue rejects limit > 100 ("limit must be a number between 1 and 100").
+const SENDBLUE_FETCH_LIMIT = 100;
 
 const CLAUDE_MODEL = "claude-opus-5";
 
