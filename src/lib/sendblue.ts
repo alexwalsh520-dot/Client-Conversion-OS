@@ -160,10 +160,14 @@ export async function sendMessage(
  * and the content of their most recent response.
  *
  * @param phoneNumber - The phone number to check (E.164 format)
+ * @param opts        - Optional: { limit } — how many recent messages to pull
+ *                      (default 25, the original behavior; the adherence
+ *                      grader passes more to cover a whole booking window)
  * @returns Object with responded boolean and optional lastResponse text
  */
 export async function getMessages(
-  phoneNumber: string
+  phoneNumber: string,
+  opts?: { limit?: number }
 ): Promise<{
   responded: boolean;
   lastResponse?: string;
@@ -190,10 +194,12 @@ export async function getMessages(
     ? phoneNumber
     : `+1${phoneNumber.replace(/\D/g, "")}`;
 
+  const limit = Math.max(1, Math.min(500, Math.floor(opts?.limit ?? 25)));
+
   try {
     const data = await sendBlueFetch<SendBlueResponse>(
       SENDBLUE_READ_BASE_URL,
-      `/messages?number=${encodeURIComponent(normalizedNumber)}&limit=25&order_by=date_sent&order_direction=desc`
+      `/messages?number=${encodeURIComponent(normalizedNumber)}&limit=${limit}&order_by=date_sent&order_direction=desc`
     );
 
     const messages = Array.isArray(data.data) ? data.data : [];

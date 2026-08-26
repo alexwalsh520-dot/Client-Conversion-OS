@@ -31,7 +31,8 @@ import { ACTIVE_CREATORS, creatorKeyFromText } from "@/lib/creators";
 import { normalizeSetterKey } from "@/lib/ghl-dm-sync";
 import { getSetterLabelMap } from "@/lib/registry";
 import { getResponseTimeMetrics } from "@/lib/sales-hub/response-times";
-import { REPS } from "./team";
+import { REPS, REPS_BY_KEY } from "./team";
+import { ADHERENCE_CHECKS, type CheckVerdict } from "./adherence";
 import { chunk, safeFetchAllRows } from "./db";
 import { CALL_TYPES, LEAD_TYPES, type CallType, type LeadType } from "./types";
 
@@ -98,6 +99,42 @@ export interface SalesBoardRtGroup {
   missed_count: number;
 }
 
+export interface SalesBoardAdherenceCheck {
+  id: string;
+  label: string;
+  applicable: number;
+  passed: number;
+  /** passed ÷ applicable; null when never applicable. 0..1. */
+  rate: number | null;
+  /** Most recent example evidence quote for this check, if any. */
+  latest_evidence: string | null;
+}
+
+export interface SalesBoardAdherenceGroup {
+  /** Mean pre-call score over graded calls; null when nothing graded. 0..1. */
+  avg_score: number | null;
+  /** Calls with a real grade (SendBlue thread found and scored). */
+  graded: number;
+  /** Calls where no SendBlue thread was found (not counted in avg_score). */
+  thread_missing: number;
+  checks: SalesBoardAdherenceCheck[];
+}
+
+export interface SalesBoardAdherenceRep {
+  rep_key: string;
+  name: string;
+  pre_call: SalesBoardAdherenceGroup;
+  /** Closing-script adherence — null until the closing rubric ships. */
+  closing: null;
+}
+
+export interface SalesBoardAdherence {
+  team: { pre_call: SalesBoardAdherenceGroup; closing: null };
+  closers: SalesBoardAdherenceRep[];
+  /** True when migration 115 (metrics_adherence_scores) is not pasted yet. */
+  migration_pending: boolean;
+}
+
 export interface SalesBoardResponse {
   range: DayRange;
   /** Applied client filter as a comma-joined list, or null = all clients. */
@@ -118,6 +155,8 @@ export interface SalesBoardResponse {
     miss_threshold_seconds: number;
     error: string | null;
   };
+  /** Rep Adherence — AI-graded pre-call SOP compliance per closer. */
+  adherence: SalesBoardAdherence;
   /** Per-client distributions for the client expansion panels. */
   sources: Record<
     string,
@@ -240,6 +279,7 @@ interface EventRow {
     side?: string;
     start_time?: string | null;
     start_et_day?: string | null;
+    appointment_id?: string;
   } | null;
 }
 
@@ -492,6 +532,9 @@ export async function computeSalesBoard(params: {
   // ── Setters ────────────────────────────────────────────────────────────
   const setters = await computeSetters(db, range, clients, leadsRes.rows, events, callTypeOf);
 
+  // ── Rep adherence (pre-call SOP grades for calls in the window) ────────
+  const adherence = await computeAdherence(db, range, clients, events, callTypeOf);
+
   // ── Response times (the owner's own warehouse, wrapped) ────────────────
   let responseTimes: SalesBoardResponse["response_times"] = {
     team: null,
@@ -524,6 +567,7 @@ export async function computeSalesBoard(params: {
     lead_types: leadTypeBlocks,
     setters,
     response_times: responseTimes,
+    adherence,
     sources,
     migration_pending: migrationPending,
     generated_at: new Date().toISOString(),
@@ -754,4 +798,148 @@ async function computeSetters(
           : {}),
     }))
     .sort((a, b) => b.new_leads - a.new_leads || b.booked - a.booked);
+}
+
+// ── Rep-adherence computation ─────────────────────────────────────────────
+// Scores live in warehouse.metrics_adherence_scores keyed by appointment
+// (written by /api/cron/adherence-grade). The window is the CALL's window:
+// grades for appointments whose scheduled start ET day falls in the range —
+// exactly the booking events already fetched above (the dueRes set).
+
+interface AdherenceScoreRow {
+  appointment_key: string;
+  rep_key: string | null;
+  score: number | null;
+  thread_found: boolean;
+  graded_at: string;
+  checks: CheckVerdict[] | null;
+}
+
+const emptyAdherenceGroup = (): SalesBoardAdherenceGroup => ({
+  avg_score: null,
+  graded: 0,
+  thread_missing: 0,
+  checks: ADHERENCE_CHECKS.map((c) => ({
+    id: c.id,
+    label: c.label,
+    applicable: 0,
+    passed: 0,
+    rate: null,
+    latest_evidence: null,
+  })),
+});
+
+async function computeAdherence(
+  db: ReturnType<typeof getServiceSupabase>,
+  range: DayRange,
+  clients: string[],
+  events: EventRow[],
+  callTypeOf: (e: EventRow) => CallType,
+): Promise<SalesBoardAdherence> {
+  const empty: SalesBoardAdherence = {
+    team: { pre_call: emptyAdherenceGroup(), closing: null },
+    closers: [],
+    migration_pending: false,
+  };
+
+  // Sales appointments whose call starts inside the window.
+  const apptIds = new Set<string>();
+  for (const e of events) {
+    if (e.event_type !== "booking") continue;
+    if (callTypeOf(e) === "onboarding") continue;
+    const startDay = e.metadata?.start_et_day;
+    if (!startDay || startDay < range.from || startDay > range.to) continue;
+    const apptId = e.metadata?.appointment_id;
+    if (apptId) apptIds.add(apptId);
+  }
+  if (apptIds.size === 0) return empty;
+
+  const rows: AdherenceScoreRow[] = [];
+  for (const ids of chunk([...apptIds], 200)) {
+    const { rows: page, missing } = await safeFetchAllRows<AdherenceScoreRow>((from, to) =>
+      db
+        .schema("warehouse")
+        .from("metrics_adherence_scores")
+        .select("appointment_key, rep_key, score, thread_found, graded_at, checks")
+        .eq("kind", "pre_call")
+        .in("client_key", clients)
+        .in("appointment_key", ids)
+        .order("graded_at", { ascending: true })
+        .range(from, to),
+    );
+    if (missing) return { ...empty, migration_pending: true };
+    rows.push(...page);
+  }
+  if (rows.length === 0) return empty;
+  rows.sort((a, b) => a.graded_at.localeCompare(b.graded_at));
+
+  interface Acc {
+    scoreSum: number;
+    graded: number;
+    threadMissing: number;
+    byCheck: Map<string, { applicable: number; passed: number; latestEvidence: string | null }>;
+  }
+  const newAcc = (): Acc => ({ scoreSum: 0, graded: 0, threadMissing: 0, byCheck: new Map() });
+  const accs = new Map<string, Acc>();
+  const teamAcc = newAcc();
+
+  const fold = (acc: Acc, r: AdherenceScoreRow) => {
+    if (r.score === null || !r.thread_found) {
+      acc.threadMissing += 1;
+      return;
+    }
+    acc.scoreSum += Number(r.score);
+    acc.graded += 1;
+    for (const c of r.checks ?? []) {
+      if (!c || !c.applicable) continue;
+      let bucket = acc.byCheck.get(c.id);
+      if (!bucket) acc.byCheck.set(c.id, (bucket = { applicable: 0, passed: 0, latestEvidence: null }));
+      bucket.applicable += 1;
+      if (c.passed) bucket.passed += 1;
+      // Rows are graded_at-ascending, so the last non-empty quote wins.
+      if (c.evidence) bucket.latestEvidence = c.evidence;
+    }
+  };
+
+  for (const r of rows) {
+    fold(teamAcc, r);
+    if (r.rep_key) {
+      let acc = accs.get(r.rep_key);
+      if (!acc) accs.set(r.rep_key, (acc = newAcc()));
+      fold(acc, r);
+    }
+  }
+
+  const toGroup = (acc: Acc): SalesBoardAdherenceGroup => ({
+    avg_score: acc.graded > 0 ? acc.scoreSum / acc.graded : null,
+    graded: acc.graded,
+    thread_missing: acc.threadMissing,
+    checks: ADHERENCE_CHECKS.map((c) => {
+      const b = acc.byCheck.get(c.id);
+      return {
+        id: c.id,
+        label: c.label,
+        applicable: b?.applicable ?? 0,
+        passed: b?.passed ?? 0,
+        rate: b && b.applicable > 0 ? b.passed / b.applicable : null,
+        latest_evidence: b?.latestEvidence ?? null,
+      };
+    }),
+  });
+
+  const closers: SalesBoardAdherenceRep[] = [...accs.entries()]
+    .map(([repKey, acc]) => ({
+      rep_key: repKey,
+      name: REPS_BY_KEY[repKey]?.name ?? repKey.charAt(0).toUpperCase() + repKey.slice(1),
+      pre_call: toGroup(acc),
+      closing: null,
+    }))
+    .filter((c) => c.pre_call.graded > 0 || c.pre_call.thread_missing > 0)
+    .sort(
+      (a, b) =>
+        (b.pre_call.avg_score ?? -1) - (a.pre_call.avg_score ?? -1) ||
+        b.pre_call.graded - a.pre_call.graded,
+    );
+
+  return { team: { pre_call: toGroup(teamAcc), closing: null }, closers, migration_pending: false };
 }
