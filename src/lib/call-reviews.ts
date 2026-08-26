@@ -28,6 +28,8 @@ const APP_URL = "https://client-conversion-os.vercel.app";
 // Same internal-meeting patterns the Sales Hub and Micromanager overview use.
 const INTERNAL_TITLE_PATTERNS = [
   "sales team huddle", "c suite", "management", "setter connect", "training", "interview", "1:1", "huddle",
+  // Post-sale onboarding calls are not sales calls; the Hormozi review does not apply.
+  "onboarding",
 ];
 
 // Our creator clients: a call with them is coaching, not a prospect sales call.
@@ -38,6 +40,14 @@ const CLIENT_IDENTITIES = [
   "@recruitreadyfitness.com", // Jake's company
   "@start2finishcoaching.com", // Tyson's company (Will the closer is on the roster separately)
   "tysonnek29@gmail.com", // Tyson's personal address on calendar invites
+  // Former/other creator clients — emails taken from their actual call invites.
+  "keithholland35@gmail.com", // Keith
+  "lucyeliza8@gmail.com", // Lucy
+  "antwanrarcusfit@gmail.com", // Antwan
+  "zoandemfit@gmail.com", // Zoe & Emily
+  "averyjfisk@gmail.com", // Avery
+  "naomidem122@gmail.com", // Naomi
+  "@sendblue.com", // vendor
 ];
 function isClientIdentity(email: string): boolean {
   const extra = (process.env.CALL_REVIEW_CLIENT_EMAILS || "")
