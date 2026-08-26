@@ -44,3 +44,13 @@ where lane is null
 -- (Full CREATE OR REPLACE applied live; identical to the 2026-08-22 version
 -- except the pass-2 insert column list gains `lane` and the select gains the
 -- literal 'off_calendar'.)
+
+-- POSTSCRIPT (2026-08-26, applied live as adsv2_booking_facts_view_lane):
+-- public.adsv2_booking_facts is a VIEW over the warehouse table, and the app
+-- writes through it. Adding the column to the base table alone made the first
+-- post-deploy sync fail its insert and left the booking window empty until the
+-- next rebuild. Fix: the view was recreated with `lane` appended and the
+-- PostgREST schema cache reloaded (notify pgrst, 'reload schema'), then the
+-- sync re-run rebuilt the window cleanly.
+-- LESSON for every future adsv2 column: base table + public view + schema
+-- reload, all three, BEFORE the code that writes the column deploys.
