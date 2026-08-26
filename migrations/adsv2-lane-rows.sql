@@ -1,0 +1,9 @@
+-- 2026-08-26 · Repo record of live migration adsv2_lane_rows (build #12 data layer)
+-- public.adsv2_lane_rows(p_clients, p_from, p_to): one row per (creator, bucket)
+-- over the window, Alex's signed lead buckets: organic / misc_chat / follower /
+-- not_attributed. Null = not measurable for that bucket (rendered as a dash,
+-- never zero). misc_chat follows the signed folder ruling. not_attributed =
+-- bookings awaiting proof + sales with no recorded origin (the review list).
+-- Creator-less rows file under 'team'. Called in buildDaySeries (precompute
+-- path) and stored on the metrics payload as `lanes`.
+-- Full function body lives in Supabase migration history under adsv2_lane_rows.

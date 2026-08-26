@@ -167,6 +167,16 @@ interface RevenueDayRow {
   tracker_all_cents: number;
 }
 
+interface LaneRowSql {
+  client_key: string;
+  bucket: string;
+  dms: number | null;
+  booked: number | null;
+  taken: number | null;
+  wins: number | null;
+  collected_usd_cents: number | null;
+}
+
 // The Metrics-card day series. Same account/window/status filters and the same
 // DB (set-based) work as the table; run in the precompute job, never a request.
 // Its total equals the table payload's total by construction.
@@ -178,6 +188,7 @@ export async function buildDaySeries(
   const clients = clientsForAccount(query.account);
   let days: MetricsDay[] = [];
   let revenue: RevenueCategories | undefined;
+  let lanes: import("./types").LaneRow[] | undefined;
   if (clients.length > 0) {
     const { data, error } = await db.rpc("adsv2_window_days", {
       p_clients: clients,
@@ -225,6 +236,24 @@ export async function buildDaySeries(
       otherOriginAllCents: sumBy(days, (d) => d.otherOriginAllCents ?? 0),
       trackerAllCents: sumBy(days, (d) => d.trackerAllCents ?? 0),
     };
+    // The non-ad lanes table (organic / misc chat / follower / not attributed),
+    // one row per creator per bucket. Same precompute path as everything else,
+    // so the tab still only ever reads stored snapshots.
+    const { data: laneData, error: laneErr } = await db.rpc("adsv2_lane_rows", {
+      p_clients: clients,
+      p_from: query.dateFrom,
+      p_to: query.dateTo,
+    });
+    if (laneErr) throw new Error(`adsv2_lane_rows failed: ${laneErr.message}`);
+    lanes = ((laneData || []) as LaneRowSql[]).map((r) => ({
+      clientKey: r.client_key,
+      bucket: r.bucket as import("./types").LaneRow["bucket"],
+      dms: r.dms,
+      booked: r.booked,
+      taken: r.taken,
+      wins: r.wins,
+      collectedCents: r.collected_usd_cents,
+    }));
   }
   // Total over the union of days (base sums), so the cards' big numbers derive
   // exactly like the table's TOTAL row.
@@ -251,6 +280,7 @@ export async function buildDaySeries(
     days,
     total,
     revenue,
+    lanes,
     generatedAt: new Date().toISOString(),
   };
 }

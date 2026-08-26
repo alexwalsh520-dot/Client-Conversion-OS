@@ -532,7 +532,9 @@ function NodeRows({
             ) : (
               <span className="chevron" />
             )}
-            <span className={`camp-dot ${dotClass}`} />
+            <span className={`creator-pill ${dotClass}`}>
+              {node.clientKey === "jake" ? "Jake" : "Tyson"}
+            </span>
             {isFlat && (
               <>
                 <span className="flat-camp">{flatCampaign}</span>

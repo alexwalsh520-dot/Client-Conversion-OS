@@ -157,6 +157,18 @@ export interface RevenueCategories {
  *  table payload's total, so the cards follow the Active/Finished filter the
  *  same way the table does (owner call, Alex 2026-08-08), and the board shows
  *  a visible scope note whenever that filter is narrowing the numbers. */
+/** One row of the lanes table: a creator x bucket slice of the funnel.
+ *  Null means "not measurable for this bucket", shown as a dash, never zero. */
+export interface LaneRow {
+  clientKey: string;
+  bucket: "organic" | "misc_chat" | "follower" | "not_attributed";
+  dms: number | null;
+  booked: number | null;
+  taken: number | null;
+  wins: number | null;
+  collectedCents: number | null;
+}
+
 export interface AdsV2MetricsPayload {
   account: AdsV2Account;
   status: AdsV2Status;
@@ -167,6 +179,9 @@ export interface AdsV2MetricsPayload {
   total: BaseMetrics;
   /** Window totals for the revenue category cards (optional on old snapshots). */
   revenue?: RevenueCategories;
+  /** The non-ad lanes (organic / misc chat / follower / not attributed),
+   *  one row per creator per bucket (optional on old snapshots). */
+  lanes?: LaneRow[];
   generatedAt: string;
   preparing?: boolean;
 }

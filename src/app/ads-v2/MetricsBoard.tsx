@@ -11,6 +11,7 @@ import { CARD_BY_ID, CARD_DEFS, DEFAULT_CARD_IDS, type CardDef, type CardFormat 
 import type { AdsV2MetricsPayload, BaseMetrics, MetricsDay, RevenueCategories } from "@/lib/ads-v2/types";
 import { IcCheck, IcEdit, IcPlus } from "./icons";
 import { fmtMD } from "./format";
+import LanesTable from "./LanesTable";
 import LineChart from "./LineChart";
 
 const STORE_KEY = "ccos.adsv2.metricCards.v1";
@@ -379,6 +380,10 @@ export default function MetricsBoard({
 
   return (
     <>
+      {/* The non-ad lanes, directly under the campaign performance table.
+          Hidden on client share links: misc chat and the review lane span the
+          whole team, not the creator holding the link. */}
+      {!publicToken && ready && metrics?.lanes && <LanesTable lanes={metrics.lanes} />}
       <div className="metric-board-head">
         <h2 className="metric-board-title">
           Metrics

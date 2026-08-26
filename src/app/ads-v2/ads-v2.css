@@ -509,6 +509,7 @@ html.light .adsv2 {
 .adsv2 .flat-cell > .camp-check,
 .adsv2 .flat-cell > .chevron,
 .adsv2 .flat-cell > .camp-dot,
+.adsv2 .flat-cell > .creator-pill,
 .adsv2 .flat-cell > .flat-sep,
 .adsv2 .flat-cell > .ad-count-chip,
 .adsv2 .flat-cell > .status-pill {
@@ -578,6 +579,7 @@ html.light .adsv2 {
 .adsv2 .campaign-cell > .camp-check,
 .adsv2 .campaign-cell > .chevron,
 .adsv2 .campaign-cell > .camp-dot,
+.adsv2 .campaign-cell > .creator-pill,
 .adsv2 .campaign-cell > .ad-count-chip,
 .adsv2 .campaign-cell > .status-pill {
   flex: 0 0 auto;
@@ -2012,4 +2014,109 @@ body.metric-dragging {
 .adsv2 .shield-funnel-kw {
   font-size: 10.5px;
   color: var(--text-3);
+}
+
+/* ── Creator pill (replaces the colored dots) + the lanes table ─────────── */
+.adsv2 .creator-pill {
+  flex: none;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  background: transparent;
+}
+.adsv2 .creator-pill.tyson {
+  color: var(--gold);
+  border-color: color-mix(in srgb, var(--gold) 45%, transparent);
+}
+.adsv2 .creator-pill.jake {
+  color: var(--blue);
+  border-color: color-mix(in srgb, var(--blue) 45%, transparent);
+}
+.adsv2 .creator-pill.team {
+  color: var(--text-3);
+}
+
+.adsv2 .lanes-block {
+  margin-top: 18px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.adsv2 .lanes-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 13px 20px 11px;
+  border-bottom: 1px solid var(--border);
+}
+.adsv2 .lanes-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+.adsv2 .lanes-sub {
+  font-size: 11px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.adsv2 .lanes-block .table-scroll {
+  overflow-x: auto;
+}
+.adsv2 table.lanes-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+}
+.adsv2 table.lanes-table thead th {
+  background: var(--panel);
+  text-align: right;
+  padding: 10px 14px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+  font-weight: 500;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+.adsv2 table.lanes-table thead th.lane-label-col {
+  text-align: left;
+  padding-left: 20px;
+}
+.adsv2 table.lanes-table tbody td {
+  padding: 10px 14px;
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.adsv2 table.lanes-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.adsv2 table.lanes-table tbody td:first-child {
+  text-align: left;
+  padding-left: 20px;
+}
+.adsv2 table.lanes-table tbody tr:hover td {
+  background: var(--row-hover);
+}
+.adsv2 .lane-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.adsv2 .lane-name {
+  color: var(--text);
 }
