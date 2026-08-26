@@ -37,6 +37,7 @@ const CLIENT_IDENTITIES = [
   "recruitreadyfitness@gmail.com", // Jake Divljak
   "@recruitreadyfitness.com", // Jake's company
   "@start2finishcoaching.com", // Tyson's company (Will the closer is on the roster separately)
+  "tysonnek29@gmail.com", // Tyson's personal address on calendar invites
 ];
 function isClientIdentity(email: string): boolean {
   const extra = (process.env.CALL_REVIEW_CLIENT_EMAILS || "")
