@@ -30,6 +30,22 @@ const INTERNAL_TITLE_PATTERNS = [
   "sales team huddle", "c suite", "management", "setter connect", "training", "interview", "1:1", "huddle",
 ];
 
+// Our creator clients: a call with them is coaching, not a prospect sales call.
+// Entries are exact emails or @domains; extend via CALL_REVIEW_CLIENT_EMAILS
+// (comma-separated) without a deploy.
+const CLIENT_IDENTITIES = [
+  "recruitreadyfitness@gmail.com", // Jake Divljak
+  "@recruitreadyfitness.com", // Jake's company
+  "@start2finishcoaching.com", // Tyson's company (Will the closer is on the roster separately)
+];
+function isClientIdentity(email: string): boolean {
+  const extra = (process.env.CALL_REVIEW_CLIENT_EMAILS || "")
+    .split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
+  return [...CLIENT_IDENTITIES, ...extra].some((c) =>
+    c.startsWith("@") ? email.endsWith(c) : email === c
+  );
+}
+
 // Used when no guardrails row is saved in mm_scripts (role = "guardrails").
 export const DEFAULT_GUARDRAILS = `You are coaching a rep inside an established company. The offer, the prices, the booking process, and the overall script structure are fixed and are not yours to change. Never advise the rep to change the offer, discount, restructure pricing, rewrite the script, skip the company's process, or move the sale to another channel. All coaching must be about running the existing play better: discovery depth, tonality, objection handling, pacing, closing within the current script and offer. If the call's problems genuinely come from something outside the rep's control, say so in one line at the end under "Flag for management" instead of coaching around it.`;
 
@@ -329,7 +345,10 @@ async function dispatchCalls(sb: Sb): Promise<string[]> {
       ? (c.attendees as { email?: string }[])
           .map((a) => String(a?.email || "").trim().toLowerCase()).filter(Boolean)
       : [];
-    if (emails.length > 0 && emails.every((e) => roster.has(e) || e.endsWith("@clientconversion.io"))) return false;
+    const externals = emails.filter((e) => !roster.has(e) && !e.endsWith("@clientconversion.io"));
+    if (emails.length > 0 && externals.length === 0) return false; // internal call
+    // Creator-client coaching calls: every non-team attendee is a known client.
+    if (externals.length > 0 && externals.every(isClientIdentity)) return false;
     return true;
   });
 
