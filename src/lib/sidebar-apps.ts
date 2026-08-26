@@ -46,6 +46,8 @@ export type AppItem = {
   icon: React.ComponentType<{ size?: number }>;
   /** Restricts the app to exactly one person — overrides the admin bypass. */
   ownerEmail?: string;
+  /** Same as ownerEmail but for a short explicit list of people. */
+  ownerEmails?: string[];
   adminOnly?: boolean;
 };
 
@@ -68,7 +70,7 @@ export const NAV_ITEMS: AppItem[] = [
   { href: "/accountant", label: "Accountant", icon: Calculator },
   { href: "/sop", label: "SOPs", icon: BookOpen },
   // Private single-owner tabs — gated to ownerEmail in canViewApp (overrides admin).
-  { href: "/micromanager", label: "Micromanager", icon: ClipboardCheck, ownerEmail: "alexwalsh520@gmail.com" },
+  { href: "/micromanager", label: "Micromanager", icon: ClipboardCheck, ownerEmails: ["alexwalsh520@gmail.com", "matthew@clientconversion.io"] },
   { href: "/todos", label: "ToDos", icon: ListTodo, ownerEmail: "alexwalsh520@gmail.com" },
   { href: "/bottlenecks", label: "Bottlenecks", icon: Crosshair, ownerEmail: "alexwalsh520@gmail.com" },
   { href: "/supplements", label: "Supplements", icon: Pill, ownerEmail: "matthew@clientconversion.io" },
@@ -126,6 +128,7 @@ export type ViewerAccess = {
 
 /** Whether this person is allowed the app at all. Hiding is applied separately. */
 export function canViewApp(item: AppItem, v: ViewerAccess): boolean {
+  if (item.ownerEmails) return item.ownerEmails.some((e) => v.userEmail === e.toLowerCase());
   if (item.ownerEmail) return v.userEmail === item.ownerEmail.toLowerCase();
   if (item.adminOnly) return v.isAdmin;
   return (

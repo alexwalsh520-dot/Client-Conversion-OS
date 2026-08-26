@@ -155,9 +155,11 @@ export async function mmGetReviewPrompt(sb: Sb) {
   const { data: scripts } = await sb.from("mm_scripts").select("role,content");
   const closerScript = scripts?.find((s) => s.role === "closer")?.content?.trim() || null;
   const setterScript = scripts?.find((s) => s.role === "setter")?.content?.trim() || null;
+  const guardrails = scripts?.find((s) => s.role === "guardrails")?.content?.trim() || null;
   return {
     review_prompt: SALES_MANAGER_PROMPT,
     submit_contract: SUBMIT_CONTRACT,
+    coaching_boundaries: guardrails,
     closer_script: closerScript,
     setter_script: setterScript,
     note: closerScript

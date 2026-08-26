@@ -9,7 +9,7 @@ import { getSetterReportData } from "@/lib/setter-report-data";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const OWNER_EMAIL = "alexwalsh520@gmail.com";
+const OWNER_EMAILS = ["alexwalsh520@gmail.com", "matthew@clientconversion.io"];
 
 // Same internal-meeting patterns the Sales Hub uses to keep huddles out of the call list.
 const INTERNAL_TITLE_PATTERNS = [
@@ -30,7 +30,7 @@ function todayEt(): string {
 
 export async function GET(req: NextRequest) {
   const session = await auth();
-  if (session?.user?.email?.toLowerCase() !== OWNER_EMAIL) {
+  if (!OWNER_EMAILS.includes(session?.user?.email?.toLowerCase() || "")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
   const lo = new Date(from.getTime() - 36 * 3600 * 1000).toISOString();
   const hi = new Date(from.getTime() + 60 * 3600 * 1000).toISOString();
 
-  const [callsRes, reviewsRes, scriptsRes, sheetRows, setterReport, eodRes, dmReviewRes, closerRollupRes] =
+  const [callsRes, reviewsRes, scriptsRes, sheetRows, setterReport, eodRes, dmReviewRes, closerRollupRes, digestRes] =
     await Promise.all([
       sb.from("fathom_calls")
         .select("fathom_id,title,recorded_at,duration_sec,prospect_name,attendees")
@@ -55,6 +55,9 @@ export async function GET(req: NextRequest) {
       sb.from("eod_reports").select("submitted_by,date").gte("date", etDateOf(new Date(from.getTime() - 14 * 86400e3).toISOString())).lte("date", date),
       sb.from("mm_dm_reviews").select("setter_name,adherence_score").gte("created_at", new Date(from.getTime() - 30 * 86400e3).toISOString()),
       sb.from("mm_call_reviews").select("closer,grade,adherence_score,call_date").gte("call_date", etDateOf(new Date(from.getTime() - 30 * 86400e3).toISOString())),
+      // Daily digest: the one for the viewed day, else the latest before it.
+      sb.from("mm_daily_digests").select("digest_date,digest_md,review_count,created_at")
+        .lte("digest_date", date).order("digest_date", { ascending: false }).limit(1),
     ]);
 
   // ---- Calls for the day (sales calls only), joined with their reviews ----
@@ -171,5 +174,13 @@ export async function GET(req: NextRequest) {
       closer: !!(scriptsRes.data || []).find((s) => s.role === "closer" && String(s.content).trim()),
       setter: !!(scriptsRes.data || []).find((s) => s.role === "setter" && String(s.content).trim()),
     },
+    digest: digestRes.data?.[0]
+      ? {
+          date: digestRes.data[0].digest_date,
+          md: digestRes.data[0].digest_md,
+          reviewCount: digestRes.data[0].review_count,
+          isForViewedDay: digestRes.data[0].digest_date === date,
+        }
+      : null,
   }, { headers: { "Cache-Control": "no-store" } });
 }

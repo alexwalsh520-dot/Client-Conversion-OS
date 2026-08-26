@@ -4,14 +4,14 @@ import MicromanagerClient from "./MicromanagerClient";
 
 export const dynamic = "force-dynamic";
 
-// Private, single-owner tab. This server-side check is the hard gate — it blocks
+// Private tab for Alex + Matt. This server-side check is the hard gate — it blocks
 // every other user (including other admins) from rendering the page, independent of
 // the client-side sidebar visibility.
-const OWNER_EMAIL = "alexwalsh520@gmail.com";
+const OWNER_EMAILS = ["alexwalsh520@gmail.com", "matthew@clientconversion.io"];
 
 export default async function MicromanagerPage() {
   const session = await auth();
-  const isOwner = session?.user?.email?.toLowerCase() === OWNER_EMAIL;
+  const isOwner = OWNER_EMAILS.includes(session?.user?.email?.toLowerCase() || "");
 
   if (!isOwner) {
     return (

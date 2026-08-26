@@ -12,6 +12,14 @@
   ],
   "crons": [
     {
+      "path": "/api/cron/call-reviews",
+      "schedule": "7,37 * * * *"
+    },
+    {
+      "path": "/api/cron/call-reviews-digest",
+      "schedule": "30 23 * * *"
+    },
+    {
       "path": "/api/cron/instagram-token-refresh",
       "schedule": "0 8 * * *"
     },

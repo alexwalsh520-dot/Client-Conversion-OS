@@ -54,6 +54,7 @@ interface Overview {
     setters: { name: string; adherence: number | null; convos: number }[];
   };
   scripts: { closer: boolean; setter: boolean };
+  digest: { date: string; md: string; reviewCount: number | null; isForViewedDay: boolean } | null;
 }
 
 interface ReviewDetail {
@@ -382,6 +383,23 @@ export default function MicromanagerClient() {
               tip="Calls booked out of new leads this day, all setters combined."
             />
           </div>
+
+          {/* Daily digest (Layer 2): per-closer strengths/weaknesses + top low-hanging fruit */}
+          {data.digest && (
+            <>
+              <SectionTitle tip="Written once a day by the AI sales manager after the day's calls are reviewed: each closer's strengths and weaknesses, plus the team's top low-hanging fruit ranked by impact.">
+                Daily digest{data.digest.isForViewedDay ? "" : ` (latest: ${data.digest.date})`}
+              </SectionTitle>
+              <div style={{ borderRadius: 12, border: "1px solid var(--border-subtle)", background: "var(--bg-card)", padding: "16px 18px" }}>
+                {data.digest.reviewCount != null && (
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
+                    Built from {data.digest.reviewCount} reviewed call{data.digest.reviewCount === 1 ? "" : "s"}.
+                  </div>
+                )}
+                <ReviewMarkdown content={data.digest.md} />
+              </div>
+            </>
+          )}
 
           {/* Calls */}
           <SectionTitle tip="Every sales call taken this day. Click a row for the full Sales Manager review: Stop / Start / Keep, objection handling, red flags, drills.">

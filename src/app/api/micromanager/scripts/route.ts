@@ -6,11 +6,11 @@ import { getServiceSupabase } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
-const OWNER_EMAIL = "alexwalsh520@gmail.com";
+const OWNER_EMAILS = ["alexwalsh520@gmail.com", "matthew@clientconversion.io"];
 
 async function ownerOnly() {
   const session = await auth();
-  return session?.user?.email?.toLowerCase() === OWNER_EMAIL;
+  return OWNER_EMAILS.includes(session?.user?.email?.toLowerCase() || "");
 }
 
 export async function GET() {

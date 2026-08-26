@@ -5,11 +5,11 @@ import { getServiceSupabase } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
-const OWNER_EMAIL = "alexwalsh520@gmail.com";
+const OWNER_EMAILS = ["alexwalsh520@gmail.com", "matthew@clientconversion.io"];
 
 export async function GET(req: NextRequest) {
   const session = await auth();
-  if (session?.user?.email?.toLowerCase() !== OWNER_EMAIL) {
+  if (!OWNER_EMAILS.includes(session?.user?.email?.toLowerCase() || "")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const fathomId = req.nextUrl.searchParams.get("fathomId");
