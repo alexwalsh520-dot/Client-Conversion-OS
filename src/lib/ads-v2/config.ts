@@ -84,13 +84,35 @@ export const PHONE_SET_CALENDAR_IDS: Partial<Record<CreatorKey, readonly string[
   ],
 };
 
-/** The lane a booking came through. Stored on every booking fact. */
-export type BookingLane = "dm_sales" | "phone_set";
+// ── Onboarding sales lane ──────────────────────────────────────────────────
+// The business runs TWO kinds of onboarding calls. Nicole (the onboarding
+// specialist) takes post-purchase onboarding for people who already bought.
+// Closers ALSO take "onboarding calls": Skool $50/month downsell members book
+// one and get closed on it. Those are sales calls filed on an onboarding
+// calendar.
+//
+// Verified against live data 2026-08-26: the two lanes live on near-identical
+// calendar names with different ids. "Onboarding Call with The Forge"
+// (AeUhUrV21wWDuhEOQMbx) held ONLY closer-taken calls in August (Wobbe 13,
+// Chris 6, Austin 5, Broz 2), while "Onboarding Call w/ The Forge", both
+// "7 Day" calendars, and the RecruitReady onboarding calendars held ONLY
+// Nicole's post-purchase calls. We ingest the closer calendar as a sales lane,
+// and the facts builder ALSO skips any row on it assigned to Nicole, as a
+// belt-and-braces guard (assignment rides in the stored booking payload).
+export const ONBOARDING_SALES_CALENDAR_IDS: Partial<Record<CreatorKey, readonly string[]>> = {
+  tyson: [
+    "AeUhUrV21wWDuhEOQMbx", // Onboarding Call with The Forge (closer downsell lane)
+  ],
+};
 
-/** Every calendar id the booking facts ingest (sales + phone-set lanes). */
+/** The lane a booking came through. Stored on every booking fact. */
+export type BookingLane = "dm_sales" | "phone_set" | "onboarding_sales";
+
+/** Every calendar id the booking facts ingest (sales + phone-set + onboarding-sales lanes). */
 export const ALL_BOOKING_CALENDAR_IDS: readonly string[] = [
   ...ALL_SALES_CALENDAR_IDS,
   ...ADSV2_SERVED_CLIENTS.flatMap((k) => PHONE_SET_CALENDAR_IDS[k] ?? []),
+  ...ADSV2_SERVED_CLIENTS.flatMap((k) => ONBOARDING_SALES_CALENDAR_IDS[k] ?? []),
 ];
 
 /** Which served client + lane a booking calendar belongs to, or null. */
@@ -104,8 +126,16 @@ export function bookingCalendarInfo(
       return { client: key, lane: "phone_set" };
     }
   }
+  for (const key of ADSV2_SERVED_CLIENTS) {
+    if ((ONBOARDING_SALES_CALENDAR_IDS[key] ?? []).includes(calendarId)) {
+      return { client: key, lane: "onboarding_sales" };
+    }
+  }
   return null;
 }
+
+/** Post-purchase onboarding is Nicole's; her calls are never sales bookings. */
+export const ONBOARDING_SPECIALIST_FIRST_NAME = "nicole";
 
 // How far back the facts pass rebuilds each sync. Comfortably covers the
 // longest display window (30 days) plus buffer; older facts are never touched.

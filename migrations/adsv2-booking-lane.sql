@@ -19,7 +19,7 @@
 alter table warehouse.adsv2_booking_facts add column if not exists lane text;
 
 comment on column warehouse.adsv2_booking_facts.lane is
-  'Booking lane: dm_sales (Strategy Session calendars), phone_set (closer personal calendars, outbound-dialed leads), off_calendar (tracker-synthesized stand-in). Null only on rows last rebuilt before 2026-08-26.';
+  'Booking lane: dm_sales (Strategy Session calendars), phone_set (closer personal calendars, outbound-dialed leads), off_calendar (tracker-synthesized stand-in). Null only on rows last rebuilt before 2026-08-26. onboarding_sales = closer-taken downsell sales calls on the onboarding calendar (added 2026-08-26).';
 
 update warehouse.adsv2_booking_facts
 set lane = 'dm_sales'

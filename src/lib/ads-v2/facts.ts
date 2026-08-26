@@ -27,6 +27,7 @@ import {
   ADSV2_SERVED_CLIENTS,
   ALL_BOOKING_CALENDAR_IDS,
   bookingCalendarInfo,
+  ONBOARDING_SPECIALIST_FIRST_NAME,
   FACTS_LOOKBACK_DAYS,
   FACTS_UPCOMING_DAYS,
   SPEND_HISTORY_DAYS,
@@ -263,7 +264,10 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
         start_time: string | null;
         created_at: string | null;
         status: string | null;
-        raw_payload: { contact?: { attributionSource?: { url?: string } } } | null;
+        raw_payload: {
+          contact?: { attributionSource?: { url?: string } };
+          user?: { firstName?: string; lastName?: string };
+        } | null;
       }>((from, to) =>
         db
           .from("ghl_appointments")
@@ -284,6 +288,15 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
   for (const r of apptRows) {
     const calInfo = r.calendar_id ? bookingCalendarInfo(r.calendar_id) : null;
     if (!calInfo) continue;
+    // The onboarding-sales calendar hosts closer-taken downsell SALES calls,
+    // but if Nicole (post-purchase onboarding) ever takes a call there, it is
+    // not a sales booking and must not count.
+    if (
+      calInfo.lane === "onboarding_sales" &&
+      (r.raw_payload?.user?.firstName ?? "").trim().toLowerCase() === ONBOARDING_SPECIALIST_FIRST_NAME
+    ) {
+      continue;
+    }
     const client = calInfo.client;
     // The day the booking was MADE (Eastern), because Booked answers "how many
     // calls did the team book that day", not "how many calls were on the

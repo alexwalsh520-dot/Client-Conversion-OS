@@ -1,0 +1,16 @@
+-- 2026-08-26 · Onboarding sales lane (build #8, repo record; no live DDL needed,
+-- lane is an existing text column)
+--
+-- Two kinds of onboarding calls exist. Nicole Okpala (onboarding specialist)
+-- takes post-purchase onboarding. Closers also take "onboarding calls": Skool
+-- $50/month downsell members book one and get CLOSED on it. Verified in live
+-- data: calendar AeUhUrV21wWDuhEOQMbx ("Onboarding Call with The Forge") held
+-- only closer-taken calls in August (Wobbe 13, Chris 6, Austin 5, Broz 2),
+-- while "Onboarding Call w/ The Forge", both 7-Day calendars, and the
+-- RecruitReady onboarding calendars held only Nicole's calls. Per-person proof:
+-- Jundante sales call 8/8 -> Wobbe, his post-win onboarding 8/10 -> Nicole;
+-- same pattern for Ahmadov and Trevor.
+--
+-- The facts builder now ingests AeUhUrV21wWDuhEOQMbx as lane
+-- 'onboarding_sales' (Tyson), and skips any row there assigned to Nicole
+-- (assignment read from the stored booking payload's user object).
