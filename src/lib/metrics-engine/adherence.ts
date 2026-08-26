@@ -42,27 +42,19 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getServiceSupabase } from "@/lib/supabase";
 import { etDay, shiftDay, todayEt, ET_ZONE } from "@/lib/ads-v2/time";
 import { getMessages, isSendBlueConfigured } from "@/lib/sendblue";
-import { REPS_BY_KEY } from "./team";
+import { REPS_BY_KEY, repKeyFromGhlUserId } from "./team";
 import { chunk, isMissingRelation, safeFetchAllRows } from "./db";
 import type { CallType } from "./types";
 
 // ── The rubric ────────────────────────────────────────────────────────────
 
-export type AdherenceCheckId =
-  | "confirm"
-  | "agenda"
-  | "acknowledge"
-  | "excitement"
-  | "ready_ping"
-  | "follow_up";
+// Rubric narrowed by the owner (2026-08-26): exactly TWO lines are graded —
+// the discovery line and the commitment line. Nothing else counts.
+export type AdherenceCheckId = "discovery" | "commitment";
 
 export const ADHERENCE_CHECKS: ReadonlyArray<{ id: AdherenceCheckId; label: string }> = [
-  { id: "confirm", label: "Call time confirmed" },
-  { id: "agenda", label: "Agenda question asked" },
-  { id: "acknowledge", label: "Answer acknowledged" },
-  { id: "excitement", label: "Time-excitement confirmation" },
-  { id: "ready_ping", label: "T-5 ready ping" },
-  { id: "follow_up", label: "Follow-up when unconfirmed" },
+  { id: "discovery", label: 'Discovery line ("make it worth your while")' },
+  { id: "commitment", label: 'Commitment line ("any reason you wouldn\'t make it")' },
 ];
 
 export interface CheckVerdict {
@@ -78,12 +70,6 @@ export interface CheckVerdict {
 
 /** Max appointments graded per run (one Claude call each — cost guard). */
 const MAX_GRADES_PER_RUN = 40;
-/** Ready-ping window: an outbound message within this long before start. */
-const READY_PING_WINDOW_MS = 30 * 60_000;
-/** Small grace after start — "about to hop on" sent right at start still counts. */
-const READY_PING_GRACE_MS = 5 * 60_000;
-/** The unconfirmed follow-up clock: 24h after booking creation. */
-const FOLLOW_UP_AFTER_MS = 24 * 60 * 60_000;
 /** Thread window: booking creation → call start + 1h. */
 const THREAD_TAIL_MS = 60 * 60_000;
 /** How many recent SendBlue messages to pull per phone number. */
@@ -114,72 +100,29 @@ function etStamp(iso: string | null): string {
 // ── Claude: one structured call per appointment ───────────────────────────
 
 interface SemanticVerdict {
-  confirmed: boolean;
-  confirmed_evidence: string;
-  agenda_asked: boolean;
-  agenda_evidence: string;
-  acknowledged: boolean;
-  acknowledged_evidence: string;
-  time_excitement: boolean;
-  time_excitement_evidence: string;
-  ready_ping_genuine: boolean;
-  ready_ping_evidence: string;
-  follow_up_attempted: boolean;
-  follow_up_evidence: string;
+  discovery_asked: boolean;
+  discovery_evidence: string;
+  commitment_asked: boolean;
+  commitment_evidence: string;
 }
 
 const VERDICT_SCHEMA: Record<string, unknown> = {
   type: "object",
   properties: {
-    confirmed: {
-      type: "boolean",
-      description: "Did the prospect verbally commit to the call time at any point?",
-    },
-    confirmed_evidence: { type: "string", description: "Short quote, or empty string." },
-    agenda_asked: {
+    discovery_asked: {
       type: "boolean",
       description:
-        "Did the closer ask the agenda question (what the prospect wants help with on the call)? Paraphrases count.",
+        "Did the closer's side ask the DISCOVERY line — a question in the spirit of 'so I can make it worth your while/time… what's the main thing you want help with?' Paraphrases fully count; the intent is asking what the prospect wants out of the call.",
     },
-    agenda_evidence: { type: "string" },
-    acknowledged: {
-      type: "boolean",
-      description: "Did the closer acknowledge the prospect's agenda answer?",
-    },
-    acknowledged_evidence: { type: "string" },
-    time_excitement: {
+    discovery_evidence: { type: "string", description: "Short verbatim quote, or empty string." },
+    commitment_asked: {
       type: "boolean",
       description:
-        "Did the closer send an excited confirmation that references the call time (e.g. 'super stoked to speak with you tomorrow at 3')?",
+        "Did the closer's side ask the COMMITMENT line — in the spirit of 'other than something crazy happening, is there any reason you wouldn't make it?' Paraphrases fully count; the intent is locking a commitment that they will show up.",
     },
-    time_excitement_evidence: { type: "string" },
-    ready_ping_genuine: {
-      type: "boolean",
-      description:
-        "Among the messages flagged IN-READY-PING-WINDOW, is at least one a genuine pre-call ready ping ('ready to rock and roll?', 'about to hop on')? False if none were flagged.",
-    },
-    ready_ping_evidence: { type: "string" },
-    follow_up_attempted: {
-      type: "boolean",
-      description:
-        "Among the messages flagged LATE-FOLLOW-UP-CANDIDATE, is at least one a genuine attempt to re-engage the unconfirmed prospect? False if none were flagged.",
-    },
-    follow_up_evidence: { type: "string" },
+    commitment_evidence: { type: "string", description: "Short verbatim quote, or empty string." },
   },
-  required: [
-    "confirmed",
-    "confirmed_evidence",
-    "agenda_asked",
-    "agenda_evidence",
-    "acknowledged",
-    "acknowledged_evidence",
-    "time_excitement",
-    "time_excitement_evidence",
-    "ready_ping_genuine",
-    "ready_ping_evidence",
-    "follow_up_attempted",
-    "follow_up_evidence",
-  ],
+  required: ["discovery_asked", "discovery_evidence", "commitment_asked", "commitment_evidence"],
   additionalProperties: false,
 };
 
@@ -246,30 +189,20 @@ function buildPrompt(args: {
   bookedAtIso: string;
   startIso: string;
   messages: ThreadMessage[];
-  readyPingIdx: Set<number>;
-  followUpIdx: Set<number>;
 }): string {
   const lines = args.messages.map((m, i) => {
-    const flags = [
-      args.readyPingIdx.has(i) ? "IN-READY-PING-WINDOW" : null,
-      args.followUpIdx.has(i) ? "LATE-FOLLOW-UP-CANDIDATE" : null,
-    ]
-      .filter(Boolean)
-      .join(", ");
     const who = m.direction === "outbound" ? "CLOSER SIDE" : "PROSPECT";
-    return `${i + 1}. [${etStamp(m.sentAt)}] ${who}${flags ? ` {${flags}}` : ""}: ${m.content || "(no text — attachment/reaction)"}`;
+    return `${i + 1}. [${etStamp(m.sentAt)}] ${who}: ${m.content || "(no text — attachment/reaction)"}`;
   });
 
   return [
-    "You grade whether a sales closer followed the pre-call confirmation SOP in an iMessage group chat with a prospect. The chat has the closer's side (closer + a ghost influencer number — both count as CLOSER SIDE) and the prospect.",
+    "You grade whether a sales closer delivered TWO specific pre-call lines in an iMessage group chat with a prospect. The chat has the closer's side (closer + a ghost influencer number — both count as CLOSER SIDE) and the prospect.",
     "",
-    "The SOP, in order (exact wording is NEVER required — grade intent, paraphrases fully count):",
-    "1. Get the prospect to CONFIRM the call time (a verbal commitment like 'yes', 'works for me', 'see you then').",
-    "2. After confirmation, ask the AGENDA QUESTION — canonical form: \"Quick question so I can make it worth your time… what's the main thing you want help with when we chat?\"",
-    "3. ACKNOWLEDGE the prospect's answer (\"Read and understood brother\", \"Excited to dive into that on our call\", etc.).",
-    "4. Send a TIME-EXCITEMENT confirmation (\"Super stoked to speak with you tomorrow at 3\" / \"in a couple minutes\").",
-    "5. A READY PING shortly before the call (\"Ready to rock and roll?\", \"Standing by, whenever you're ready\", \"About to hop on\"). Only messages flagged {IN-READY-PING-WINDOW} can satisfy this — decide whether at least one of them genuinely is a ready ping.",
-    "6. If the prospect never confirmed: at least one FOLLOW-UP attempt. Only messages flagged {LATE-FOLLOW-UP-CANDIDATE} (sent 24h+ after booking) can satisfy this — decide whether at least one genuinely tries to re-engage the prospect.",
+    "Only these two things are graded (exact wording is NEVER required — grade intent, paraphrases fully count):",
+    "1. THE DISCOVERY LINE — canonical form: \"Quick question so I can make it worth your while… what's the main thing you want help with when we chat?\" Any question asking what the prospect wants to get out of the call, framed around making it worth their while/time, counts.",
+    "2. THE COMMITMENT LINE — canonical form: \"And other than something crazy happening, is there any reason you wouldn't make it?\" Any question locking in a commitment that they will show up (barring emergencies) counts.",
+    "",
+    "Nothing else in the thread is graded. Ignore confirmations, reminders, pings, and small talk except as context.",
     "",
     `Call context: closer = ${args.repName}; prospect = ${args.contactName || "unknown"}.`,
     `The call was booked at ${etStamp(args.bookedAtIso)} and scheduled to start at ${etStamp(args.startIso)}.`,
@@ -277,45 +210,29 @@ function buildPrompt(args: {
     "The thread (chronological, timestamps in Eastern Time):",
     lines.length ? lines.join("\n") : "(no messages)",
     "",
-    "Answer every field of the schema. Evidence fields: a SHORT verbatim quote (under 120 characters) from the message that best supports your verdict, or an empty string when the answer is false or nothing applies. If no message carries a flag needed for a check, answer false for that check.",
+    "Answer every field of the schema. Evidence fields: a SHORT verbatim quote (under 120 characters) from the closer-side message that best supports a true verdict, or an empty string when the answer is false.",
   ].join("\n");
 }
 
 // ── Assemble the verdict rows ─────────────────────────────────────────────
 
-function buildChecks(args: {
-  semantic: SemanticVerdict;
-  hasReadyPingCandidate: boolean;
-  hasFollowUpCandidate: boolean;
-  followUpWindowOpened: boolean;
-}): CheckVerdict[] {
-  const s = args.semantic;
-  const confirmed = s.confirmed;
+function buildChecks(semantic: SemanticVerdict): CheckVerdict[] {
   const label = (id: AdherenceCheckId) => ADHERENCE_CHECKS.find((c) => c.id === id)!.label;
-
-  const readyPingPassed = args.hasReadyPingCandidate && s.ready_ping_genuine;
-  const readyPingEvidence = args.hasReadyPingCandidate
-    ? s.ready_ping_evidence
-    : "No outbound message in the 30 minutes before the call.";
-
-  // Unconfirmed prospect: follow-up applies once the 24h window opened.
-  const followUpApplicable = !confirmed && args.followUpWindowOpened;
-  const followUpPassed = args.hasFollowUpCandidate && s.follow_up_attempted;
-  const followUpEvidence = followUpApplicable
-    ? args.hasFollowUpCandidate
-      ? s.follow_up_evidence
-      : "No outbound message sent 24h+ after booking."
-    : !confirmed
-      ? "Call started under 24h after booking — follow-up window never opened."
-      : "";
-
   return [
-    { id: "confirm", label: label("confirm"), applicable: true, passed: confirmed, evidence: s.confirmed_evidence },
-    { id: "agenda", label: label("agenda"), applicable: confirmed, passed: confirmed && s.agenda_asked, evidence: confirmed ? s.agenda_evidence : "" },
-    { id: "acknowledge", label: label("acknowledge"), applicable: confirmed, passed: confirmed && s.acknowledged, evidence: confirmed ? s.acknowledged_evidence : "" },
-    { id: "excitement", label: label("excitement"), applicable: confirmed, passed: confirmed && s.time_excitement, evidence: confirmed ? s.time_excitement_evidence : "" },
-    { id: "ready_ping", label: label("ready_ping"), applicable: confirmed, passed: confirmed && readyPingPassed, evidence: confirmed ? readyPingEvidence : "" },
-    { id: "follow_up", label: label("follow_up"), applicable: followUpApplicable, passed: followUpApplicable && followUpPassed, evidence: followUpEvidence },
+    {
+      id: "discovery",
+      label: label("discovery"),
+      applicable: true,
+      passed: semantic.discovery_asked,
+      evidence: semantic.discovery_evidence,
+    },
+    {
+      id: "commitment",
+      label: label("commitment"),
+      applicable: true,
+      passed: semantic.commitment_asked,
+      evidence: semantic.commitment_evidence,
+    },
   ];
 }
 
@@ -420,10 +337,14 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
     return { ...base, migration_pending: true, skipped: "metrics_lead_events missing — paste migration 113 first." };
   }
 
-  // Sales calls only (never onboarding), started already, one per appointment.
+  // Scope (owner, 2026-08-26): strategy sessions (dm) + onboarding calls —
+  // onboarding only when taken by one of OUR reps (Nicole's are dropped at
+  // step 3, where the assigned user is known). Outbound / LM-outbound
+  // personal-calendar calls are NOT graded.
   const byAppointment = new Map<string, BookingEventRow>();
   for (const e of bookingsRes.rows) {
-    if (callTypeOf(e) === "onboarding") continue;
+    const ct = callTypeOf(e);
+    if (ct !== "dm" && ct !== "onboarding") continue;
     const start = e.metadata?.start_time;
     if (!start || new Date(start).getTime() > nowMs) continue;
     const apptId =
@@ -472,6 +393,19 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
     for (const r of rows) apptById.set(r.appointment_id, r);
   }
 
+  // 3b) Onboarding calls only count when a rep of ours takes them — drop the
+  // rest (Nicole's client-onboarding calls, unassigned) without writing rows.
+  for (const [apptId, event] of [...byAppointment.entries()]) {
+    if (callTypeOf(event) !== "onboarding") continue;
+    const assigned = apptById.get(apptId)?.assigned_user_id ?? null;
+    const rep = event.rep_key ?? repKeyFromGhlUserId(assigned);
+    if (!rep) {
+      byAppointment.delete(apptId);
+      base.candidates -= 1;
+    }
+  }
+  if (byAppointment.size === 0) return base;
+
   // 4) Grade, oldest start first, capped per run.
   const queue = [...byAppointment.entries()]
     .sort((a, b) => String(a[1].metadata?.start_time).localeCompare(String(b[1].metadata?.start_time)))
@@ -501,7 +435,7 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
     const appt = apptById.get(apptId) ?? null;
     const startIso = appt?.start_time || event.metadata?.start_time || null;
     const bookedAtIso = event.occurred_at;
-    const repKey = event.rep_key ?? null;
+    const repKey = event.rep_key ?? repKeyFromGhlUserId(appt?.assigned_user_id) ?? null;
     const rowBase = {
       client_key: event.client_key,
       appointment_key: apptId,
@@ -555,17 +489,6 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
       continue;
     }
 
-    // Deterministic timing pre-pass.
-    const readyPingIdx = new Set<number>();
-    const followUpIdx = new Set<number>();
-    messages.forEach((m, i) => {
-      if (m.direction !== "outbound" || !m.sentAt) return;
-      const t = new Date(m.sentAt).getTime();
-      if (t >= startMs - READY_PING_WINDOW_MS && t <= startMs + READY_PING_GRACE_MS) readyPingIdx.add(i);
-      if (t >= bookedMs + FOLLOW_UP_AFTER_MS && t <= startMs) followUpIdx.add(i);
-    });
-    const followUpWindowOpened = startMs - bookedMs >= FOLLOW_UP_AFTER_MS;
-
     // The one semantic Claude call.
     const semantic = await askClaudeForVerdict(
       buildPrompt({
@@ -574,8 +497,6 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
         bookedAtIso,
         startIso,
         messages,
-        readyPingIdx,
-        followUpIdx,
       }),
     );
     if (!semantic) {
@@ -583,12 +504,7 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
       continue; // no row — a later run retries this appointment
     }
 
-    const checks = buildChecks({
-      semantic,
-      hasReadyPingCandidate: readyPingIdx.size > 0,
-      hasFollowUpCandidate: followUpIdx.size > 0,
-      followUpWindowOpened,
-    });
+    const checks = buildChecks(semantic);
     const applicable = checks.filter((c) => c.applicable).length;
     const passed = checks.filter((c) => c.applicable && c.passed).length;
     inserts.push({
