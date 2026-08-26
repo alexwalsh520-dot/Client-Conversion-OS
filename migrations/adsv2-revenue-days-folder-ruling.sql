@@ -1,0 +1,12 @@
+-- 2026-08-26 · Repo record of live migration adsv2_revenue_days_folder_ruling
+--
+-- The tab's coverage calculator (public.adsv2_revenue_days) now applies the
+-- signed folder ruling (2026-08-22): three folders only, ad / organic / misc
+-- chat. A sale the owner confirmed as non-ad (blank_reason =
+-- 'human_confirmed_non_ad') files as MISC CHAT regardless of the written call
+-- type, and never as other-origin. This is the same rule the certified door
+-- number uses, so the tab's Attribution coverage card and the door can no
+-- longer disagree (they split on Apolinar Pagani's $1,200 in the August audit).
+-- Changes: is_misc gains the blank_reason arm; is_other_origin excludes it.
+-- Full function body as applied lives in the Supabase migration history under
+-- adsv2_revenue_days_folder_ruling.

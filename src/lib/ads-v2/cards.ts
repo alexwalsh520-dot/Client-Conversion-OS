@@ -252,7 +252,7 @@ export const CARD_DEFS: readonly CardDef[] = [
     label: "Misc chats revenue",
     meta: "Cash from Miscellaneous Chat sales",
     sentence:
-      "Cash collected from sales the team logged as Miscellaneous Chat that no ad or organic keyword claims. The tracker has no creator column, so this covers the whole team on every account view.",
+      "Cash collected from sales the team logged as Miscellaneous Chat that no ad or organic keyword claims, plus sales the owner confirmed as not from an ad. Same folder rule as the certified coverage number, so the two can never disagree. The tracker has no creator column, so this covers the whole team on every account view.",
     source: "The sales tracker's call type column, written by the sales team.",
     format: "usd",
     value: (_t, r) => (r ? r.miscChatCents / 100 : null),
@@ -264,7 +264,7 @@ export const CARD_DEFS: readonly CardDef[] = [
     label: "Attribution coverage",
     meta: "Share of revenue with a known origin",
     sentence:
-      "Of all the money the whole team collected on the tracker in these days, the share where we know where the sale came from: an ad keyword, an organic keyword, or a call type the team wrote down (Miscellaneous Chat, Follow up, Outbound Call, Closer Cold Call). A day with no collected cash counts as 100%: nothing came in, so nothing is missing an origin. Any dip below 100% is a real miss, cash collected with no recorded origin.",
+      "Of all the money the whole team collected on the tracker in these days, the share where we know where the sale came from: an ad keyword, an organic keyword, an owner ruling, or a call type the team wrote down (Miscellaneous Chat, Follow up, Outbound Call, Closer Cold Call). Same folder rule as the certified coverage number. A day with no collected cash counts as 100%: nothing came in, so nothing is missing an origin. Any dip below 100% is a real miss, cash collected with no recorded origin.",
     source: "Origin-recorded revenue (ads + organic + misc chats + other written origins) divided by all tracker revenue.",
     format: "pct",
     value: (_t, r) =>
