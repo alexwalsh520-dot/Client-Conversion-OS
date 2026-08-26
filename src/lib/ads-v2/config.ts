@@ -58,6 +58,55 @@ export function clientForSalesCalendar(calendarId: string): CreatorKey | null {
   return null;
 }
 
+// ── Phone-set lane ─────────────────────────────────────────────────────────
+// Closers' personal calendars, where outbound-dialed leads get booked. These
+// are real sales bookings that never touch the strategy calendars, so without
+// them the Booked column is blind to the whole phone-set lane. Ids verified
+// against live ghl_appointments data on 2026-08-26; the (TS)/(JD) suffix in
+// the calendar name carries the creator.
+//
+// EXCLUDED on purpose: the two legacy unsuffixed calendars
+// "Andrew Personal Calendar" (WpdH3Nho7Y7vdaFfDqCf) and "Erin's Personal Link"
+// (ly0aHndCycj2XUNBtVZF). They carry no creator suffix and their bookings mix
+// creators and internal tests, so nothing can be proven about them here.
+// Their sales still surface through the tracker weld.
+export const PHONE_SET_CALENDAR_IDS: Partial<Record<CreatorKey, readonly string[]>> = {
+  tyson: [
+    "ZIOktvjSN0aW8qHUhhZB", // Andrew Personal Calendar (TS)
+    "ACPOAA2nf2bc3TIlU3BA", // Austin Personal Calendar (TS)
+    "Oh174I9DCc7vhfYajMeC", // Chris Personal Calendar (TS)
+    "Hr8mGnlTAj9w862dUHDl", // Erin Personal Calendar (TS)
+    "JpCD5ZbajtyrabJGmuMJ", // Jacob (Broz) Personal Calendar (TS)
+  ],
+  jake: [
+    "wKA1JgAyDzvKl4DjZHzF", // Andrew Personal Calendar (JD)
+    "6dw9AY1CHPNALpaID0qJ", // Erin Personal Calendar (JD)
+  ],
+};
+
+/** The lane a booking came through. Stored on every booking fact. */
+export type BookingLane = "dm_sales" | "phone_set";
+
+/** Every calendar id the booking facts ingest (sales + phone-set lanes). */
+export const ALL_BOOKING_CALENDAR_IDS: readonly string[] = [
+  ...ALL_SALES_CALENDAR_IDS,
+  ...ADSV2_SERVED_CLIENTS.flatMap((k) => PHONE_SET_CALENDAR_IDS[k] ?? []),
+];
+
+/** Which served client + lane a booking calendar belongs to, or null. */
+export function bookingCalendarInfo(
+  calendarId: string,
+): { client: CreatorKey; lane: BookingLane } | null {
+  const salesClient = clientForSalesCalendar(calendarId);
+  if (salesClient) return { client: salesClient, lane: "dm_sales" };
+  for (const key of ADSV2_SERVED_CLIENTS) {
+    if ((PHONE_SET_CALENDAR_IDS[key] ?? []).includes(calendarId)) {
+      return { client: key, lane: "phone_set" };
+    }
+  }
+  return null;
+}
+
 // How far back the facts pass rebuilds each sync. Comfortably covers the
 // longest display window (30 days) plus buffer; older facts are never touched.
 export const FACTS_LOOKBACK_DAYS = 45;

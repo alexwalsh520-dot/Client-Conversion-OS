@@ -25,8 +25,8 @@ import {
 } from "./attribution";
 import {
   ADSV2_SERVED_CLIENTS,
-  ALL_SALES_CALENDAR_IDS,
-  clientForSalesCalendar,
+  ALL_BOOKING_CALENDAR_IDS,
+  bookingCalendarInfo,
   FACTS_LOOKBACK_DAYS,
   FACTS_UPCOMING_DAYS,
   SPEND_HISTORY_DAYS,
@@ -252,7 +252,7 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
   const resolutionByAppointment = new Map(resolutionRows.map((r) => [r.appointment_key, r]));
 
   const nowIso = now.toISOString();
-  const apptRows = ALL_SALES_CALENDAR_IDS.length
+  const apptRows = ALL_BOOKING_CALENDAR_IDS.length
     ? await fetchAllRows<{
         appointment_id: string;
         contact_id: string | null;
@@ -270,7 +270,7 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
           .select(
             "appointment_id, contact_id, contact_name, keyword_normalized, calendar_id, calendar_name, start_time, created_at, status, raw_payload",
           )
-          .in("calendar_id", [...ALL_SALES_CALENDAR_IDS])
+          .in("calendar_id", [...ALL_BOOKING_CALENDAR_IDS])
           .gte("start_time", `${shiftDay(factFrom, -1)}T00:00:00Z`)
           .lte("start_time", `${shiftDay(bookTo, 1)}T00:00:00Z`)
           .order("start_time", { ascending: true })
@@ -282,8 +282,9 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
   const bookingKeywordBySubscriber = new Map<string, string>();
   const bookingFacts: Record<string, unknown>[] = [];
   for (const r of apptRows) {
-    const client = r.calendar_id ? clientForSalesCalendar(r.calendar_id) : null;
-    if (!client) continue;
+    const calInfo = r.calendar_id ? bookingCalendarInfo(r.calendar_id) : null;
+    if (!calInfo) continue;
+    const client = calInfo.client;
     // The day the booking was MADE (Eastern), because Booked answers "how many
     // calls did the team book that day", not "how many calls were on the
     // calendar that day". The scheduled call day still drives is_upcoming and
@@ -382,6 +383,7 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
       // A booking with no keyword (or an unattributable one) is awaiting review
       // and never shown in the paid view; cancelled ones too.
       awaiting_review: !finalKeyword || finalCls === "none" || cancelled,
+      lane: calInfo.lane,
       calendar_id: r.calendar_id,
       calendar_name: r.calendar_name,
       booked_et_day: day,
@@ -391,7 +393,7 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
       start_time: r.start_time,
       created_time: r.created_at,
       setter_name: subscriber ? setterBySubscriber.get(subscriber) ?? null : null,
-      evidence: { source: "ghl_appointments", calendar_id: r.calendar_id, classified: finalCls, subscriber },
+      evidence: { source: "ghl_appointments", calendar_id: r.calendar_id, lane: calInfo.lane, classified: finalCls, subscriber },
       evidence_key: finalStamp.evidenceKey,
       evidence_detail: finalStamp.evidenceDetail,
       blank_reason: finalStamp.blankReason,
