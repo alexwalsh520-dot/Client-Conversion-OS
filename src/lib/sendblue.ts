@@ -197,7 +197,8 @@ export async function getMessages(
     ? phoneNumber
     : `+1${phoneNumber.replace(/\D/g, "")}`;
 
-  const limit = Math.max(1, Math.min(100, Math.floor(opts?.limit ?? 25))) // SendBlue hard-caps limit at 100;
+  // SendBlue hard-caps limit at 100.
+  const limit = Math.max(1, Math.min(100, Math.floor(opts?.limit ?? 25)));
 
   try {
     const data = await sendBlueFetch<SendBlueResponse>(
@@ -240,5 +241,90 @@ export async function getMessages(
     console.error("[sendblue] getMessages failed:", message);
     // Fail open — return unknown state so callers can handle gracefully
     return { responded: false, messages: [] };
+  }
+}
+
+export interface ThreadMessageRecord {
+  content: string;
+  direction: "inbound" | "outbound";
+  sentAt: string | null;
+  fromNumber: string | null;
+  groupId: string | null;
+  handle: string | null;
+}
+
+function normalizeRecord(message: SendBlueMessage): ThreadMessageRecord {
+  return {
+    content: message.content || "",
+    direction: message.is_outbound ? "outbound" : "inbound",
+    sentAt: message.date_sent || message.date || null,
+    fromNumber: message.from_number || null,
+    groupId: (message as { group_id?: string }).group_id || null,
+    handle: (message as { message_handle?: string }).message_handle || null,
+  };
+}
+
+/**
+ * Full conversation for a phone number, INCLUDING group chats.
+ *
+ * The `number=` filter only returns the messages that carry that number —
+ * in a SendBlue GROUP chat that is just the prospect's inbound side; the
+ * closer/automation outbound messages live on the group. So: fetch by
+ * number, collect the group ids, fetch each group's thread, merge + dedupe.
+ * Without this, any grading of the closer's own messages sees an empty side.
+ */
+export async function getThreadMessages(
+  phoneNumber: string,
+  opts?: { limit?: number }
+): Promise<{ messages: ThreadMessageRecord[] }> {
+  if (!isSendBlueConfigured() || !phoneNumber) return { messages: [] };
+
+  const normalizedNumber = phoneNumber.startsWith("+")
+    ? phoneNumber
+    : `+1${phoneNumber.replace(/\D/g, "")}`;
+  const limit = Math.max(1, Math.min(100, Math.floor(opts?.limit ?? 100)));
+
+  try {
+    const byNumber = await sendBlueFetch<SendBlueResponse>(
+      SENDBLUE_READ_BASE_URL,
+      `/messages?number=${encodeURIComponent(normalizedNumber)}&limit=${limit}&order_by=date_sent&order_direction=desc`
+    );
+    const records = (Array.isArray(byNumber.data) ? byNumber.data : []).map(normalizeRecord);
+
+    const groupIds = [...new Set(records.map((r) => r.groupId).filter((g): g is string => Boolean(g)))];
+    for (const groupId of groupIds) {
+      try {
+        const byGroup = await sendBlueFetch<SendBlueResponse>(
+          SENDBLUE_READ_BASE_URL,
+          `/messages?group_id=${encodeURIComponent(groupId)}&limit=${limit}&order_by=date_sent&order_direction=desc`
+        );
+        for (const m of Array.isArray(byGroup.data) ? byGroup.data : []) {
+          records.push(normalizeRecord(m));
+        }
+      } catch (err) {
+        console.error(
+          `[sendblue] group fetch failed (${groupId}):`,
+          err instanceof Error ? err.message : err
+        );
+      }
+    }
+
+    // Dedupe (handle first, else content+timestamp) and sort ascending.
+    const seen = new Set<string>();
+    const merged: ThreadMessageRecord[] = [];
+    for (const r of records) {
+      const key = r.handle || `${r.sentAt}|${r.direction}|${r.content}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(r);
+    }
+    merged.sort((a, b) => new Date(a.sentAt || 0).getTime() - new Date(b.sentAt || 0).getTime());
+    return { messages: merged };
+  } catch (err) {
+    console.error(
+      "[sendblue] getThreadMessages failed:",
+      err instanceof Error ? err.message : err
+    );
+    return { messages: [] };
   }
 }

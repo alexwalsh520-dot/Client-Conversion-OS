@@ -41,7 +41,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getServiceSupabase } from "@/lib/supabase";
 import { etDay, shiftDay, todayEt, ET_ZONE } from "@/lib/ads-v2/time";
-import { getMessages, isSendBlueConfigured } from "@/lib/sendblue";
+import { getThreadMessages, isSendBlueConfigured } from "@/lib/sendblue";
 import { REPS_BY_KEY, repKeyFromGhlUserId } from "./team";
 import { chunk, isMissingRelation, safeFetchAllRows } from "./db";
 import type { CallType } from "./types";
@@ -460,8 +460,9 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
       continue;
     }
 
-    // The SendBlue thread, windowed booking → start + 1h.
-    const { messages: rawMessages } = await getMessages(phone, { limit: SENDBLUE_FETCH_LIMIT });
+    // The SendBlue thread — group chats expanded so the closer-side outbound
+    // messages are present (number= alone returns only the prospect's side).
+    const { messages: rawMessages } = await getThreadMessages(phone, { limit: SENDBLUE_FETCH_LIMIT });
     const startMs = new Date(startIso).getTime();
     const bookedMs = new Date(bookedAtIso).getTime();
     const windowFrom = Math.min(bookedMs, startMs);
