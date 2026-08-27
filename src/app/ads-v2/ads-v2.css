@@ -381,7 +381,7 @@ html.light .adsv2 {
   border-bottom: 1px solid var(--border-2);
   z-index: 2;
 }
-.adsv2 table.ads thead th:first-child {
+.adsv2 table.ads thead th.name-th {
   text-align: left;
   position: sticky;
   left: 0;
@@ -433,7 +433,7 @@ html.light .adsv2 {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.adsv2 table.ads tbody td:first-child {
+.adsv2 table.ads tbody td.name-td {
   text-align: left;
   position: sticky;
   left: 0;
@@ -449,13 +449,13 @@ html.light .adsv2 {
   border-bottom: 1px solid var(--border-2);
   font-weight: 500;
 }
-.adsv2 table.ads tbody tr.campaign-row td:first-child {
+.adsv2 table.ads tbody tr.campaign-row td.name-td {
   background: var(--panel);
 }
 .adsv2 table.ads tbody tr.campaign-row:hover td {
   background: var(--panel);
 }
-.adsv2 table.ads tbody tr.campaign-row:hover td:first-child {
+.adsv2 table.ads tbody tr.campaign-row:hover td.name-td {
   background: var(--panel);
 }
 .adsv2 table.ads tbody tr.total-row td {
@@ -464,7 +464,7 @@ html.light .adsv2 {
   border-top: 1px solid var(--border-2);
   color: var(--text-2);
 }
-.adsv2 table.ads tbody tr.total-row td:first-child {
+.adsv2 table.ads tbody tr.total-row td.name-td {
   background: var(--bg-1);
   color: var(--text-2);
   text-transform: uppercase;
@@ -2125,11 +2125,28 @@ body.metric-dragging {
 .adsv2 table.ads thead th.toggle-th {
   text-align: center;
   padding: 11px 6px;
+  position: sticky;
+  left: 0;
+  background: var(--panel);
+  z-index: 3;
 }
 .adsv2 table.ads tbody td.toggle-td {
   text-align: center;
   padding: 8px 6px;
   overflow: visible;
+  position: sticky;
+  left: 0;
+  background: var(--panel);
+  z-index: 1;
+}
+.adsv2 table.ads tbody tr.total-row td.toggle-td {
+  background: var(--bg-1);
+}
+/* With the toggle column present, the name column's sticky anchor shifts right
+   by the toggle column's width so the two frozen columns sit side by side. */
+.adsv2 table.ads.has-toggle thead th.name-th,
+.adsv2 table.ads.has-toggle tbody td.name-td {
+  left: 46px;
 }
 .adsv2 .meta-switch {
   position: relative;

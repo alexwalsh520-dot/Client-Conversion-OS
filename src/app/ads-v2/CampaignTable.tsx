@@ -475,7 +475,7 @@ export default function CampaignTable({
         </div>
       )}
       <div className="tbl-scroll" ref={scrollRef}>
-        <table className="ads" style={{ width: tableWidth }}>
+        <table className={`ads${readOnly ? "" : " has-toggle"}`} style={{ width: tableWidth }}>
           <colgroup>
             {colKeys.map((k) => (
               <col key={k} style={{ width: k === "toggle" ? TOGGLE_COL_WIDTH : widthFor(k) }} />
@@ -488,7 +488,7 @@ export default function CampaignTable({
                   On
                 </th>
               )}
-              <th>
+              <th className="name-th">
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                   <input
                     type="checkbox"
@@ -559,7 +559,7 @@ export default function CampaignTable({
             {/* TOTAL: formulas over the union of displayed ads. */}
             <tr className="total-row">
               {!readOnly && <td className="toggle-td" />}
-              <td>Total</td>
+              <td className="name-td">Total</td>
               {METRIC_COLUMNS.map((col) => {
                 const cell = formatCell(col.key, totalNode);
                 return (
@@ -659,7 +659,7 @@ function NodeRows({
             )}
           </td>
         )}
-        <td>
+        <td className="name-td">
           <span className={cellClass}>
             {depth === 0 && (
               <input
