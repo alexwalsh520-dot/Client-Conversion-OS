@@ -85,6 +85,14 @@ const FIELDS = [
   "medical_supervision_detail",
 ] as const;
 
+/**
+ * Whitelabel brand slugs the intake form is allowed to identify itself as.
+ * The front-end passes ?brand= in the URL and forwards it in the payload;
+ * we only persist it if it matches one of these values, so a malicious
+ * caller can't stuff arbitrary strings into the column.
+ */
+const ALLOWED_BRANDS = new Set<string>(["forge", "rrf"]);
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const origin = req.headers.get("origin");
   const headers = corsHeaders(origin);
@@ -116,6 +124,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // "Unlinked Intake Forms" list treats a NULL timestamp as legacy/pre-Apr-1
   // and hides such rows by default.
   row.timestamp = new Date().toISOString();
+
+  // Whitelabel brand identifier — nullable. Only persist recognized values so
+  // a malicious payload can't stuff junk into the column; unknown or missing
+  // brand -> stored as null and the neutral/legacy flow continues to run.
+  const brandRaw = typeof body.brand === "string" ? body.brand.trim().toLowerCase() : null;
+  const brand = brandRaw && ALLOWED_BRANDS.has(brandRaw) ? brandRaw : null;
+  row.brand = brand;
 
   // age is an integer column, handle separately
   if (body.age != null && body.age !== "") {
@@ -193,17 +208,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // should feel like a one-time acknowledgement, not spam. Awaited so
   // Vercel doesn't freeze the function before the HTTP call goes out.
   if (isFirstSubmission) {
+    // Always add the neutral base tag so the existing GHL confirmation
+    // workflow keeps firing for everyone. If we have a recognized brand,
+    // also add a per-brand tag so brand-specific workflows can hook in
+    // later without changing this code path.
+    const tags = ["ccos-intake-submitted"];
+    if (brand) tags.push(`ccos-intake-${brand}`);
     try {
       const result = await upsertCoachingContact({
         email,
         firstName,
         lastName: String(row.last_name ?? ""),
         phone: (row.phone as string | undefined) ?? null,
-        tags: ["ccos-intake-submitted"],
+        tags,
         customFields: {
           fitness_goal: (row.fitness_goal as string | undefined) ?? "",
           current_weight: (row.current_weight as string | undefined) ?? "",
           goal_weight: (row.goal_weight as string | undefined) ?? "",
+          ccos_brand: brand ?? "",
         },
       });
       if (!result.ok && !result.skipped) {
