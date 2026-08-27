@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { COLUMNS, type ColumnDef } from "@/lib/ads-v2/definitions";
 import { EMPTY_BASE, addBase, type AdsV2Level, type AdsV2Node, type AdsV2Payload, type CallDetail } from "@/lib/ads-v2/types";
 import { formatCell, sortValue, fmtMD } from "./format";
+import DmInboxPanel, { type DmTarget } from "./DmInboxPanel";
 
 type SortDir = "asc" | "desc" | null;
 
@@ -108,7 +109,14 @@ function labelWidthsForLevel(campaigns: AdsV2Node[], level: AdsV2Level, precise:
     return ads > 0 ? m(`${ads} ads`) * (9.5 / 13) + 32 : 0;
   };
   const pillW = (n: AdsV2Node) => {
-    const text = n.status === "active" ? "ACTIVE" : n.status === "finished" ? "FINISHED" : "EMPTY";
+    const text =
+      n.status === "active"
+        ? "ACTIVE"
+        : n.status === "finished"
+          ? n.lastSpendDay
+            ? `FINISHED ${fmtMDY(n.lastSpendDay)}`
+            : "FINISHED"
+          : "EMPTY";
     return m(text) * (9 / 13) * 1.06 + 30;
   };
   const row = (n: AdsV2Node, prefix: number, indent: number) =>
@@ -155,6 +163,9 @@ const ToggleCtx = createContext<ToggleCtxValue>({
   overrides: {},
   flip: () => {},
 });
+
+// Click-to-read on the Messages cell (authed tab only; null on share links).
+const DmCtx = createContext<((node: AdsV2Node) => void) | null>(null);
 
 /** A node's status as currently displayed: the Meta read-back override when a
  *  toggle happened this session, otherwise the snapshot's status. */
@@ -239,6 +250,23 @@ export default function CampaignTable({
   const toggleCtxValue = useMemo<ToggleCtxValue>(
     () => ({ readOnly, pending: togglePending, overrides: toggleOverrides, flip: flipToggle }),
     [readOnly, togglePending, toggleOverrides, flipToggle],
+  );
+
+  // DM inbox: click a Messages number on a keyword row to read the threads.
+  const [dmTarget, setDmTarget] = useState<DmTarget | null>(null);
+  const openDms = useCallback(
+    (node: AdsV2Node) => {
+      if (readOnly || !node.keyword) return;
+      setDmTarget({
+        clientKey: node.clientKey,
+        keyword: node.keyword,
+        adName: node.shortName || node.name,
+        cellCount: node.messages,
+        dateFrom: payload.dateFrom,
+        dateTo: payload.dateTo,
+      });
+    },
+    [readOnly, payload.dateFrom, payload.dateTo],
   );
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [hover, setHover] = useState<HoverState | null>(null);
@@ -542,6 +570,7 @@ export default function CampaignTable({
           </thead>
           <tbody>
             <ToggleCtx.Provider value={toggleCtxValue}>
+            <DmCtx.Provider value={readOnly ? null : openDms}>
             {sortedTop.map((node) => (
               <NodeRows
                 key={node.id}
@@ -569,12 +598,14 @@ export default function CampaignTable({
                 );
               })}
             </tr>
+            </DmCtx.Provider>
             </ToggleCtx.Provider>
           </tbody>
         </table>
       </div>
 
       {hover && <HoverLayer hover={hover} />}
+      <DmInboxPanel target={dmTarget} onClose={() => setDmTarget(null)} />
     </div>
   );
 }
@@ -609,6 +640,7 @@ function NodeRows({
   const isFlat = flatCampaign !== null;
   const dotClass = node.clientKey === "jake" ? "jake" : "tyson";
   const toggle = useContext(ToggleCtx);
+  const dmOpen = useContext(DmCtx);
   const shownStatus = displayStatus(node, toggle.overrides);
   const isOn = shownStatus === "active";
   const busy = toggle.pending.has(node.id);
@@ -704,10 +736,13 @@ function NodeRows({
           const isCall = col.key === "booked" || col.key === "taken" || col.key === "showRate";
           const hasCallData =
             isCall && node.callDetails && (node.callDetails.booked.length > 0 || node.callDetails.taken.length > 0);
+          const dmClickable = col.key === "messages" && !!dmOpen && !!node.keyword && node.messages > 0;
           return (
             <td
               key={col.key}
-              className={`num ${cell.cls}${cell.isCalc ? " calc" : ""}`}
+              className={`num ${cell.cls}${cell.isCalc ? " calc" : ""}${dmClickable ? " dm-click" : ""}`}
+              onClick={dmClickable ? () => dmOpen!(node) : undefined}
+              title={dmClickable ? "Read these DM conversations" : undefined}
               onMouseEnter={
                 hasCallData
                   ? (e) => onHover(e, { kind: "call", callKind: col.key as HoverState["callKind"], node })

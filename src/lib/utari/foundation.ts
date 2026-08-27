@@ -12,7 +12,7 @@ import type { AdsTrackerAccount } from "@/lib/ads-tracker/server";
 type Row = Record<string, unknown>;
 type Sb = ReturnType<typeof getServiceSupabase>;
 
-export const DM_CLIENT: Record<string, string> = { tyson: "tyson_sonnek", antwan: "antwan_rarcus" };
+export const DM_CLIENT: Record<string, string> = { tyson: "tyson_sonnek", antwan: "antwan_rarcus", jake: "jake_divljak" };
 const NOT_TRACKED = "not_tracked" as const;
 
 function num(x: unknown): number {
