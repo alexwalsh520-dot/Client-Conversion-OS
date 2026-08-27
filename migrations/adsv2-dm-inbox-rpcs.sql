@@ -1,0 +1,16 @@
+-- 2026-08-27 · Repo record of live migration adsv2_dm_inbox_rpcs.
+--
+-- WHY: PostgREST silently caps EVERY table read at 1000 rows regardless of
+-- .limit(). Any code pulling DM messages for many threads in one query was
+-- silently clipped (threads looked missing or short). This bit the DM inbox
+-- panel and had been quietly under-filling the door's get_dms_for_ad too.
+--
+-- FIX: two functions that aggregate server-side and return ONE jsonb value
+-- (no row cap): adsv2_dm_stats(client, ig_ids) for per-thread counts and the
+-- latest message, and adsv2_dm_threads(client, ig_ids, cap) for full threads
+-- capped to the latest N messages each with an honest uncapped 'total'.
+-- EXECUTE revoked from public/anon/authenticated: DM content is service-role
+-- only (semantic-layer law: nothing readable through browser keys).
+--
+-- HARD LESSON to reuse everywhere: never single-shot a large read through
+-- supabase-js. Page with .range(), or aggregate into jsonb in an RPC.

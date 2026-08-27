@@ -79,12 +79,14 @@ export async function dmThreadsForKeyword(
   if (!resolvable.length) return { threads: [] as Row[], coverage: { keyword_subscribers, threads_resolved: 0 } };
   const igIds = resolvable.map((s) => igByMc[s]);
 
-  // 3. verbatim messages for those Instagram ids.
-  const { data: msgs } = await sb.from("dm_conversation_messages").select("subscriber_id,direction,body,sent_at").eq("client", dmClient).in("subscriber_id", igIds).order("sent_at").limit(20000);
+  // 3. verbatim messages for those Instagram ids, via the adsv2_dm_threads
+  // RPC: a direct table read is silently capped at 1000 rows by PostgREST
+  // (which under-filled threads on big keywords); the RPC aggregates
+  // server-side into one jsonb value, so every thread arrives complete.
+  const { data: thr } = await sb.rpc("adsv2_dm_threads", { p_client: dmClient, p_ig_ids: igIds, p_cap: msgCap });
   const byIg: Record<string, Array<{ who: string; text: unknown; at: unknown }>> = {};
-  for (const m of (msgs as Row[]) || []) {
-    const ig = String(m.subscriber_id);
-    (byIg[ig] = byIg[ig] || []).push({ who: String(m.direction || "").toLowerCase().startsWith("in") ? "lead" : "creator", text: m.body, at: m.sent_at });
+  for (const [ig, t] of Object.entries((thr || {}) as Record<string, { total: number; msgs: Array<{ d: string; b: string; a: string }> | null }>)) {
+    byIg[ig] = (t.msgs || []).map((m) => ({ who: String(m.d || "").toLowerCase().startsWith("in") ? "lead" : "creator", text: m.b, at: m.a }));
   }
   const threads = resolvable
     .map((mc) => {

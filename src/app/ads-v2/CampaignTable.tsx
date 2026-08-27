@@ -5,7 +5,27 @@ import { createPortal } from "react-dom";
 import { COLUMNS, type ColumnDef } from "@/lib/ads-v2/definitions";
 import { EMPTY_BASE, addBase, type AdsV2Level, type AdsV2Node, type AdsV2Payload, type CallDetail } from "@/lib/ads-v2/types";
 import { formatCell, sortValue, fmtMD } from "./format";
-import DmInboxPanel, { type DmTarget } from "./DmInboxPanel";
+import DmInboxPanel, { type DmTarget, type DmTargetGroup } from "./DmInboxPanel";
+
+/** Every keyword under a node that actually has DMs, with its ad's name,
+ *  in tree order. One entry for an ad row; the children's keywords for a
+ *  campaign or ad set row (the panel groups by these). */
+function dmGroupsFor(node: AdsV2Node): DmTargetGroup[] {
+  if (node.level === "ad") {
+    return node.keyword && node.messages > 0
+      ? [{ keyword: node.keyword, adName: node.shortName || node.name }]
+      : [];
+  }
+  const out: DmTargetGroup[] = [];
+  const seen = new Set<string>();
+  for (const child of node.children)
+    for (const g of dmGroupsFor(child))
+      if (!seen.has(g.keyword)) {
+        seen.add(g.keyword);
+        out.push(g);
+      }
+  return out;
+}
 
 type SortDir = "asc" | "desc" | null;
 
@@ -256,14 +276,16 @@ export default function CampaignTable({
   const [dmTarget, setDmTarget] = useState<DmTarget | null>(null);
   const openDms = useCallback(
     (node: AdsV2Node) => {
-      if (readOnly || !node.keyword) return;
+      if (readOnly) return;
+      const groups = dmGroupsFor(node);
+      if (!groups.length) return;
       setDmTarget({
         clientKey: node.clientKey,
-        keyword: node.keyword,
-        adName: node.shortName || node.name,
+        title: node.shortName || node.name,
         cellCount: node.messages,
         dateFrom: payload.dateFrom,
         dateTo: payload.dateTo,
+        groups,
       });
     },
     [readOnly, payload.dateFrom, payload.dateTo],
@@ -736,7 +758,7 @@ function NodeRows({
           const isCall = col.key === "booked" || col.key === "taken" || col.key === "showRate";
           const hasCallData =
             isCall && node.callDetails && (node.callDetails.booked.length > 0 || node.callDetails.taken.length > 0);
-          const dmClickable = col.key === "messages" && !!dmOpen && !!node.keyword && node.messages > 0;
+          const dmClickable = col.key === "messages" && !!dmOpen && node.messages > 0;
           return (
             <td
               key={col.key}
