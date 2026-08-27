@@ -56,6 +56,7 @@ interface LeafRow {
   collected_usd_cents: number;
   contracted_usd_cents: number;
   has_spend: boolean;
+  last_spend_day: string | null;
 }
 
 interface BudgetRow {
@@ -380,6 +381,7 @@ function buildTree(
       ...base,
       status: l.has_spend ? (adActive ? "active" : "finished") : "empty",
       hasSpend: l.has_spend,
+      lastSpendDay: l.last_spend_day || null,
       previewImageUrl: l.preview_url || null,
       videoUrl: l.video_url || null,
       hasVideo: Boolean(l.is_video),
@@ -407,6 +409,9 @@ function buildTree(
         adsetBase = addBase(adsetBase, baseOf(ad));
         if (ad.status === "active") adsetActive = true;
         if (ad.hasSpend) adsetHasSpend = true;
+        if (ad.lastSpendDay && (!adset.lastSpendDay || ad.lastSpendDay > adset.lastSpendDay)) {
+          adset.lastSpendDay = ad.lastSpendDay;
+        }
         if (ad.callDetails) {
           adsetBooked.push(...ad.callDetails.booked);
           adsetTaken.push(...ad.callDetails.taken);
@@ -419,6 +424,9 @@ function buildTree(
       campBase = addBase(campBase, adsetBase);
       if (adsetActive) campActive = true;
       if (adsetHasSpend) campHasSpend = true;
+      if (adset.lastSpendDay && (!camp.lastSpendDay || adset.lastSpendDay > camp.lastSpendDay)) {
+        camp.lastSpendDay = adset.lastSpendDay;
+      }
       campBooked.push(...adsetBooked);
       campTaken.push(...adsetTaken);
     }
@@ -486,6 +494,7 @@ function makeNode(input: {
     clientName: input.clientName,
     status: "empty",
     hasSpend: false,
+    lastSpendDay: null,
     budget: input.budget,
     previewImageUrl: null,
     videoUrl: null,

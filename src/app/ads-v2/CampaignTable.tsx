@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { COLUMNS, type ColumnDef } from "@/lib/ads-v2/definitions";
 import { EMPTY_BASE, addBase, type AdsV2Level, type AdsV2Node, type AdsV2Payload, type CallDetail } from "@/lib/ads-v2/types";
@@ -138,18 +138,108 @@ function labelWidthsForLevel(campaigns: AdsV2Node[], level: AdsV2Level, precise:
   return out;
 }
 
+// ── On/off toggle plumbing ─────────────────────────────────────────────────
+// The toggle writes to Meta through /api/ads-v2/toggle, which POSTs the status
+// change and then READS THE ENTITY BACK; only the read-back updates the UI.
+// Nothing here is optimistic: a row shows its last known truth until Meta
+// confirms the new one. Hidden entirely on share links (readOnly).
+interface ToggleCtxValue {
+  readOnly: boolean;
+  pending: Set<string>;
+  overrides: Record<string, "ACTIVE" | "PAUSED">;
+  flip: (node: AdsV2Node, desired: "ACTIVE" | "PAUSED") => void;
+}
+const ToggleCtx = createContext<ToggleCtxValue>({
+  readOnly: true,
+  pending: new Set(),
+  overrides: {},
+  flip: () => {},
+});
+
+/** A node's status as currently displayed: the Meta read-back override when a
+ *  toggle happened this session, otherwise the snapshot's status. */
+function displayStatus(node: AdsV2Node, overrides: Record<string, "ACTIVE" | "PAUSED">): AdsV2Node["status"] {
+  const o = overrides[node.id];
+  if (!o) return node.status;
+  return o === "ACTIVE" ? "active" : node.hasSpend ? "finished" : "empty";
+}
+
+/** MM/DD/YY for the Finished pill. */
+function fmtMDY(day: string): string {
+  const [y, m, d] = day.split("-");
+  return `${m}/${d}/${y.slice(2)}`;
+}
+
+/** Only real Meta entities can be toggled; synthetic grouping ids cannot. */
+function isToggleable(node: AdsV2Node): boolean {
+  return /^\d{6,25}$/.test(node.id);
+}
+
 export default function CampaignTable({
   payload,
   level,
   onLevelChange,
+  readOnly = false,
 }: {
   payload: AdsV2Payload;
   level: AdsV2Level;
   onLevelChange: (l: AdsV2Level) => void;
+  readOnly?: boolean;
 }) {
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  // Toggle state: read-back overrides, in-flight ids, and the last error.
+  const [toggleOverrides, setToggleOverrides] = useState<Record<string, "ACTIVE" | "PAUSED">>({});
+  const [togglePending, setTogglePending] = useState<Set<string>>(new Set());
+  const [toggleError, setToggleError] = useState<string | null>(null);
+
+  const flipToggle = useCallback(
+    (node: AdsV2Node, desired: "ACTIVE" | "PAUSED") => {
+      if (readOnly || !isToggleable(node)) return;
+      setTogglePending((prev) => new Set(prev).add(node.id));
+      setToggleError(null);
+      void (async () => {
+        try {
+          const res = await fetch("/api/ads-v2/toggle", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              clientKey: node.clientKey,
+              level: node.level,
+              entityId: node.id,
+              desired,
+            }),
+          });
+          const data = (await res.json()) as { ok?: boolean; status?: string | null; error?: string };
+          if (data.ok && (data.status === "ACTIVE" || data.status === "PAUSED")) {
+            // The Meta read-back is the only thing allowed to move the switch.
+            const confirmed = data.status;
+            setToggleOverrides((prev) => ({ ...prev, [node.id]: confirmed }));
+          } else {
+            setToggleError(
+              `Could not turn ${desired === "ACTIVE" ? "on" : "off"} "${node.shortName || node.name}": ${data.error || "Meta did not confirm the change"}`,
+            );
+          }
+        } catch {
+          setToggleError(`Could not reach Meta for "${node.shortName || node.name}". Nothing was changed.`);
+        } finally {
+          setTogglePending((prev) => {
+            const next = new Set(prev);
+            next.delete(node.id);
+            return next;
+          });
+        }
+      })();
+    },
+    [readOnly],
+  );
+
+  const toggleCtxValue = useMemo<ToggleCtxValue>(
+    () => ({ readOnly, pending: togglePending, overrides: toggleOverrides, flip: flipToggle }),
+    [readOnly, togglePending, toggleOverrides, flipToggle],
+  );
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [hover, setHover] = useState<HoverState | null>(null);
   const [widths, setWidths] = useState<Record<string, number>>(DEFAULT_WIDTHS);
@@ -237,7 +327,12 @@ export default function CampaignTable({
       delete next[level];
       return next;
     });
-  const tableWidth = ALL_COL_KEYS.reduce((sum, k) => sum + widthFor(k), 0);
+  const TOGGLE_COL_WIDTH = 46;
+  const colKeys = readOnly ? ALL_COL_KEYS : ["toggle", ...ALL_COL_KEYS];
+  const tableWidth = colKeys.reduce(
+    (sum, k) => sum + (k === "toggle" ? TOGGLE_COL_WIDTH : widthFor(k)),
+    0,
+  );
 
   // Top-level rows depend on the chosen level AND the current selection. The
   // tree is always campaign -> ad set -> ad; the level picks the starting grain.
@@ -371,15 +466,28 @@ export default function CampaignTable({
           )}
         </div>
       </div>
+      {toggleError && (
+        <div className="toggle-error" role="alert">
+          <span>{toggleError}</span>
+          <button className="toggle-error-close" onClick={() => setToggleError(null)} aria-label="Dismiss">
+            ×
+          </button>
+        </div>
+      )}
       <div className="tbl-scroll" ref={scrollRef}>
         <table className="ads" style={{ width: tableWidth }}>
           <colgroup>
-            {ALL_COL_KEYS.map((k) => (
-              <col key={k} style={{ width: widthFor(k) }} />
+            {colKeys.map((k) => (
+              <col key={k} style={{ width: k === "toggle" ? TOGGLE_COL_WIDTH : widthFor(k) }} />
             ))}
           </colgroup>
           <thead>
             <tr>
+              {!readOnly && (
+                <th className="toggle-th" title="Turn this campaign, ad set, or ad on or off in Meta. The switch only moves after Meta confirms the change.">
+                  On
+                </th>
+              )}
               <th>
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                   <input
@@ -433,6 +541,7 @@ export default function CampaignTable({
             </tr>
           </thead>
           <tbody>
+            <ToggleCtx.Provider value={toggleCtxValue}>
             {sortedTop.map((node) => (
               <NodeRows
                 key={node.id}
@@ -449,6 +558,7 @@ export default function CampaignTable({
             ))}
             {/* TOTAL: formulas over the union of displayed ads. */}
             <tr className="total-row">
+              {!readOnly && <td className="toggle-td" />}
               <td>Total</td>
               {METRIC_COLUMNS.map((col) => {
                 const cell = formatCell(col.key, totalNode);
@@ -459,6 +569,7 @@ export default function CampaignTable({
                 );
               })}
             </tr>
+            </ToggleCtx.Provider>
           </tbody>
         </table>
       </div>
@@ -497,6 +608,11 @@ function NodeRows({
   const rowClass = node.level === "campaign" ? "campaign-row" : "flat-row";
   const isFlat = flatCampaign !== null;
   const dotClass = node.clientKey === "jake" ? "jake" : "tyson";
+  const toggle = useContext(ToggleCtx);
+  const shownStatus = displayStatus(node, toggle.overrides);
+  const isOn = shownStatus === "active";
+  const busy = toggle.pending.has(node.id);
+  const canToggle = !toggle.readOnly && isToggleable(node);
 
   const nameEl =
     node.level === "ad" && (node.previewImageUrl || node.hasVideo || AD_ID_RE.test(node.id)) ? (
@@ -514,6 +630,35 @@ function NodeRows({
   return (
     <>
       <tr className={rowClass}>
+        {!toggle.readOnly && (
+          <td className="toggle-td">
+            {canToggle ? (
+              <button
+                type="button"
+                className={`meta-switch${isOn ? " on" : ""}${busy ? " busy" : ""}`}
+                disabled={busy}
+                title={
+                  busy
+                    ? "Waiting for Meta to confirm..."
+                    : isOn
+                      ? "Turn off in Meta"
+                      : "Turn on in Meta"
+                }
+                aria-label={isOn ? "Turn off" : "Turn on"}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggle.flip(node, isOn ? "PAUSED" : "ACTIVE");
+                }}
+              >
+                <span className="meta-switch-knob" />
+              </button>
+            ) : (
+              <span className="toggle-none" title="No Meta id for this row, so it cannot be toggled from here.">
+                –
+              </span>
+            )}
+          </td>
+        )}
         <td>
           <span className={cellClass}>
             {depth === 0 && (
@@ -543,8 +688,14 @@ function NodeRows({
             )}
             {nameEl}
             {hasChildren && <span className="ad-count-chip">{childCount(node)} ads</span>}
-            <span className={`status-pill ${node.status}`}>
-              {node.status === "active" ? "Active" : node.status === "finished" ? "Finished" : "empty"}
+            <span className={`status-pill ${shownStatus}`}>
+              {shownStatus === "active"
+                ? "Active"
+                : shownStatus === "finished"
+                  ? node.lastSpendDay
+                    ? `Finished ${fmtMDY(node.lastSpendDay)}`
+                    : "Finished"
+                  : "empty"}
             </span>
           </span>
         </td>

@@ -176,7 +176,7 @@ export default function AdsV2Client({ publicToken, lockedAccount }: AdsV2ClientP
         </div>
       ) : payload && payload.campaigns.length > 0 ? (
         <>
-          <CampaignTable payload={payload} level={level} onLevelChange={setLevel} />
+          <CampaignTable payload={payload} level={level} onLevelChange={setLevel} readOnly={isPublic} />
           <MetricsBoard
             publicToken={publicToken}
             account={account}

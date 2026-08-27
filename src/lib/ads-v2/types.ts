@@ -69,6 +69,9 @@ export interface AdsV2Node extends BaseMetrics {
   clientName: string;
   status: "active" | "finished" | "empty";
   hasSpend: boolean;
+  /** The last ET day this node (or any child) had spend. Feeds the Finished
+   *  pill's date; null when the node never spent inside the lookback. */
+  lastSpendDay: string | null;
   budget: BudgetInfo | null;
   previewImageUrl: string | null;
   // The durable video file URL for a video ad (our storage), and whether this

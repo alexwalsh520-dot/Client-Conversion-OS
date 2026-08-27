@@ -1,0 +1,13 @@
+-- 2026-08-27 · Repo record of live migrations adsv2_window_leaves_last_spend_day
+-- and adsv2_toggle_log (build #27).
+--
+-- 1. adsv2_window_leaves gained last_spend_day (max spend day per leaf over the
+--    180d lookback; drop+recreate because the return type changed). Feeds the
+--    Finished pill's MM/DD/YY date; rolled up as max over children for ad set
+--    and campaign rows.
+-- 2. warehouse.adsv2_toggle_log + public view: every Ads V2 on/off toggle
+--    attempt with actor, before-status, and the Meta Graph READ-BACK as the
+--    authoritative result (audit-launches law: never trust the write).
+--    Toggle route: POST /api/ads-v2/toggle - auth-gated, hard whitelists,
+--    15s timeouts, no optimistic UI anywhere; the switch moves only after
+--    Meta's read-back confirms.
