@@ -29,6 +29,8 @@ const SKILLS = [
     displayPath: "~/.codex/skills/ccos-ad-launcher/SKILL.md", file: join(HOME, ".codex/skills/ccos-ad-launcher/SKILL.md"), selfImproving: false },
   { id: "ad-copywriter", emoji: "✍️", accent: "#d98a5b", tagline: "Write ads that rip, the CCOS way",
     displayPath: "~/.claude/skills/ad-copywriter/SKILL.md", file: join(HOME, ".claude/skills/ad-copywriter/SKILL.md"), selfImproving: false },
+  { id: "jeremy-haynes-ad-writing", emoji: "📐", accent: "#8a6fd9", tagline: "The SOP for ads you'd bet real money on (CPO, two cliffs, angle diversity)",
+    displayPath: "~/.claude/skills/jeremy-haynes-ad-writing/SKILL.md", file: join(HOME, ".claude/skills/jeremy-haynes-ad-writing/SKILL.md"), selfImproving: false },
   { id: "womens-ad-voice", emoji: "💬", accent: "#d97aa0", tagline: "Women's ads are different — the voice + competitor teardowns",
     displayPath: "~/.claude/skills/womens-ad-voice/SKILL.md", file: join(HOME, ".claude/skills/womens-ad-voice/SKILL.md"), selfImproving: true },
 ];
