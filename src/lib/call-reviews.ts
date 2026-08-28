@@ -173,6 +173,32 @@ interface PendingCall {
   attendees: unknown; transcript: string;
 }
 
+/** The one shared answer to "is this a prospect sales call worth reviewing?"
+ *  Used by the review dispatcher and the Deal Analysis page so the two can
+ *  never drift. Internal 1:1s, creator-client coaching calls, onboarding, and
+ *  too-short/too-thin calls are all out. */
+export function looksLikeSalesCall(c: {
+  title?: string | null; duration_sec?: number | null;
+  attendees?: unknown; transcript?: string | null;
+}): boolean {
+  const t = String(c.title || "").toLowerCase();
+  if (INTERNAL_TITLE_PATTERNS.some((p) => t.includes(p))) return false;
+  if (typeof c.duration_sec === "number" && c.duration_sec < MIN_DURATION_SEC) return false;
+  if (!c.transcript || c.transcript.length < 1500) return false; // too thin to coach on
+  // Internal calls (1:1s, team calls): every attendee is on the team roster.
+  // Same rule as fathom-team-calls — one unknown attendee means prospect.
+  const roster = getRoster();
+  const emails = Array.isArray(c.attendees)
+    ? (c.attendees as { email?: string }[])
+        .map((a) => String(a?.email || "").trim().toLowerCase()).filter(Boolean)
+    : [];
+  const externals = emails.filter((e) => !roster.has(e) && !e.endsWith("@clientconversion.io"));
+  if (emails.length > 0 && externals.length === 0) return false; // internal call
+  // Creator-client coaching calls: every non-team attendee is a known client.
+  if (externals.length > 0 && externals.every(isClientIdentity)) return false;
+  return true;
+}
+
 function buildCallMessage(call: PendingCall, scripts: Scripts): string {
   const guardrails = scripts.guardrails || DEFAULT_GUARDRAILS;
   const attendees = Array.isArray(call.attendees)
@@ -343,25 +369,9 @@ async function dispatchCalls(sb: Sb): Promise<string[]> {
     .order("recorded_at", { ascending: false })
     .limit(300);
 
-  const roster = getRoster();
-  const candidates = ((calls || []) as PendingCall[]).filter((c) => {
-    if (done.has(c.fathom_id) || blocked.has(c.fathom_id)) return false;
-    const t = String(c.title || "").toLowerCase();
-    if (INTERNAL_TITLE_PATTERNS.some((p) => t.includes(p))) return false;
-    if (typeof c.duration_sec === "number" && c.duration_sec < MIN_DURATION_SEC) return false;
-    if (!c.transcript || c.transcript.length < 1500) return false; // too thin to coach on
-    // Internal calls (1:1s, team calls): every attendee is on the team roster.
-    // Same rule as fathom-team-calls — one unknown attendee means prospect.
-    const emails = Array.isArray(c.attendees)
-      ? (c.attendees as { email?: string }[])
-          .map((a) => String(a?.email || "").trim().toLowerCase()).filter(Boolean)
-      : [];
-    const externals = emails.filter((e) => !roster.has(e) && !e.endsWith("@clientconversion.io"));
-    if (emails.length > 0 && externals.length === 0) return false; // internal call
-    // Creator-client coaching calls: every non-team attendee is a known client.
-    if (externals.length > 0 && externals.every(isClientIdentity)) return false;
-    return true;
-  });
+  const candidates = ((calls || []) as PendingCall[]).filter(
+    (c) => !done.has(c.fathom_id) && !blocked.has(c.fathom_id) && looksLikeSalesCall(c)
+  );
 
   if (candidates.length === 0) return ["queue empty"];
   const scripts = await loadScripts(sb);

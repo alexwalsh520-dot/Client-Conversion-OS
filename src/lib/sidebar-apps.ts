@@ -70,7 +70,7 @@ export const NAV_ITEMS: AppItem[] = [
   { href: "/accountant", label: "Accountant", icon: Calculator },
   { href: "/sop", label: "SOPs", icon: BookOpen },
   // Private single-owner tabs — gated to ownerEmail in canViewApp (overrides admin).
-  { href: "/micromanager", label: "Micromanager", icon: ClipboardCheck, ownerEmails: ["alexwalsh520@gmail.com", "matthew@clientconversion.io"] },
+  { href: "/micromanager", label: "Deal Analysis", icon: ClipboardCheck, ownerEmails: ["alexwalsh520@gmail.com", "matthew@clientconversion.io"] },
   { href: "/todos", label: "ToDos", icon: ListTodo, ownerEmail: "alexwalsh520@gmail.com" },
   { href: "/bottlenecks", label: "Bottlenecks", icon: Crosshair, ownerEmail: "alexwalsh520@gmail.com" },
   { href: "/supplements", label: "Supplements", icon: Pill, ownerEmail: "matthew@clientconversion.io" },
