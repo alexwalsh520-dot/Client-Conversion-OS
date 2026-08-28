@@ -46,7 +46,7 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 
-  --sidebar-width: 240px;
+  --sidebar-width: 256px;
   --sidebar-collapsed-width: 64px;
 
   /* ═══════════════════════════════════════════════════════════════════
@@ -322,12 +322,12 @@ body {
 }
 
 .sidebar-section-label {
-  font-size: 9px;
+  font-size: 11.5px;
   font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 1.6px;
+  text-transform: none;
+  letter-spacing: 0;
   color: var(--text-muted);
-  padding: 16px 12px 6px;
+  padding: 18px 12px 7px;
   white-space: nowrap;
   overflow: hidden;
 }
@@ -388,10 +388,10 @@ body {
 .sidebar-link {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
+  gap: 11px;
+  padding: 8px 11px;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 500;
   color: var(--text-muted);
   text-decoration: none;
@@ -404,7 +404,6 @@ body {
 .sidebar-link:hover {
   color: var(--text-primary);
   background: var(--hover-bg);
-  padding-left: 16px;
 }
 
 .sidebar-link-nested {
@@ -412,7 +411,7 @@ body {
 }
 
 .sidebar-link-nested:hover {
-  padding-left: 24px;
+  padding-left: 20px;
 }
 
 .sidebar-link:hover .sidebar-link-icon {
@@ -426,16 +425,17 @@ body {
 .sidebar-link-active {
   color: var(--text-primary);
   background: var(--accent-soft);
+  font-weight: 600;
 }
 
 .sidebar-link-active .sidebar-link-icon {
-  color: var(--accent);
+  color: var(--text-primary);
 }
 
 .sidebar-link-icon {
   flex-shrink: 0;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
