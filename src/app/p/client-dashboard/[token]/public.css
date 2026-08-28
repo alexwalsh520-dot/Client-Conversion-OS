@@ -30,6 +30,15 @@
   --danger-soft: rgba(217, 142, 142, 0.1);
 }
 
+/* Pin the document itself dark too — the app flips body light from the
+   visitor's OS preference, which would flash white on overscroll. */
+html:has(.pub-cd-page),
+html:has(.pub-cd-page) body,
+html:has(.pub-unavailable),
+html:has(.pub-unavailable) body {
+  background: #0c0c0c;
+}
+
 .app-layout:has(.pub-cd-page) .sidebar,
 .app-layout:has(.pub-unavailable) .sidebar {
   display: none !important;
