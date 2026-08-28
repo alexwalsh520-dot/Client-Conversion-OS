@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { isCreatorKey } from "@/lib/creators";
 import { ADSV2_SERVED_CLIENTS } from "@/lib/ads-v2/config";
-import { dmInboxGrouped, dmThread, dmThreadsBulk } from "@/lib/ads-v2/dm-inbox";
+import { dmInboxGrouped, dmThread, dmThreadsBulk, dmWordsFeed } from "@/lib/ads-v2/dm-inbox";
 
 // DM inbox behind the Messages cells. All modes are authed dashboard only;
 // the public share pages never call this.
@@ -50,6 +50,10 @@ export async function GET(req: NextRequest) {
 
     if (sp.get("mode") === "threads") {
       return NextResponse.json(await dmThreadsBulk(client, keywords, from, to));
+    }
+    if (sp.get("mode") === "feed") {
+      const scope = sp.get("scope") === "all" ? "all" : "window";
+      return NextResponse.json(await dmWordsFeed(client, keywords, from, to, scope));
     }
     return NextResponse.json(await dmInboxGrouped(client, keywords, from, to));
   } catch (err) {

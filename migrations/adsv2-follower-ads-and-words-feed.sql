@@ -1,0 +1,15 @@
+-- 2026-08-28 · Repo record of live migrations adsv2_follower_ads_keyword_backfill
+-- and adsv2_lane_rows_follower_source_fix.
+--
+-- FOLLOWER ADS LAW: a follower campaign carries "Follower" in its campaign
+-- name. The ads sync gives each of its ads the synthetic keyword
+-- follower.<ad_id> (dot-namespaced: never collides with a real one-word DM
+-- keyword, never welds to keyword DMs/bookings/sales); keyword_raw keeps the
+-- human ad name. Backfilled the 9 polluted ads (AUS + US follower campaigns
+-- had junk keywords "1".."5" parsed from ad names, and same-numbered ads
+-- from the two campaigns merged into one fake keyword row).
+--
+-- LANES: the follower bucket read new_follower from ads_keyword_events, but
+-- the ManyChat webhook writes follower events (no keyword) only to
+-- warehouse.manychat_tag_events - so the lane read zero forever. Repointed
+-- with client-id mapping (jake/jake_divljak/tyson_sonnek -> client_key).

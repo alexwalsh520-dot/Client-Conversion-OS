@@ -2554,3 +2554,26 @@ td.num.dm-click:hover {
 .dm-bubble.jumped {
   outline: 1px solid color-mix(in srgb, var(--gold, #c9a96e) 60%, transparent);
 }
+
+/* ── DM words feed: scope toggle ───────────────────────────────────────── */
+.dm-scope-row {
+  display: flex;
+  gap: 6px;
+  padding: 10px 16px 4px;
+}
+.dm-scope-btn {
+  background: none;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.09));
+  border-radius: 999px;
+  color: var(--text-3, #8a8a93);
+  font: inherit;
+  font-size: 10.5px;
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.dm-scope-btn.on {
+  background: color-mix(in srgb, var(--gold, #c9a96e) 14%, transparent);
+  border-color: color-mix(in srgb, var(--gold, #c9a96e) 40%, transparent);
+  color: var(--gold, #c9a96e);
+}

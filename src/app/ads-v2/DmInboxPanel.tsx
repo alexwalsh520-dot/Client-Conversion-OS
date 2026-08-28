@@ -15,7 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { DmConversation, DmInboxGrouped, DmMessage, DmThread } from "@/lib/ads-v2/dm-inbox";
+import type { DmConversation, DmFeedItem, DmInboxGrouped, DmMessage, DmThread, DmWordsFeed } from "@/lib/ads-v2/dm-inbox";
 
 export interface DmTargetGroup {
   keyword: string;
@@ -74,6 +74,12 @@ export default function DmInboxPanel({ target, onClose }: { target: DmTarget | n
   // request right after the list; makes thread opens and arrow keys instant.
   const [threadCache, setThreadCache] = useState<Record<string, DmMessage[]> | null>(null);
   const [view, setView] = useState<"inbox" | "words">("inbox");
+  // Words feed comes from the server per scope: 'window' = only people whose
+  // keyword DM started in the range (default, matches the inbox), 'all' = any
+  // activity in the range from anyone these keywords ever pulled in.
+  const [feedScope, setFeedScope] = useState<"window" | "all">("window");
+  const [feedCache, setFeedCache] = useState<Partial<Record<"window" | "all", DmWordsFeed>>>({});
+  const [feedError, setFeedError] = useState<string | null>(null);
   const [active, setActive] = useState<DmConversation | null>(null);
   // Fallback single-thread fetch, only used if the bulk load has not landed.
   const [soloThread, setSoloThread] = useState<DmThread | null>(null);
@@ -92,6 +98,9 @@ export default function DmInboxPanel({ target, onClose }: { target: DmTarget | n
     setSoloThread(null);
     setThreadError(null);
     setView("inbox");
+    setFeedScope("window");
+    setFeedCache({});
+    setFeedError(null);
     setJumpAt(null);
     if (!target) return;
     let alive = true;
@@ -190,26 +199,55 @@ export default function DmInboxPanel({ target, onClose }: { target: DmTarget | n
     return () => window.removeEventListener("keydown", onKey);
   }, [target, active, onClose, step]);
 
-  // The words-only feed: every LEAD message across all cached threads whose
-  // ET day is inside the selected window, newest first.
-  const wordsFeed = useMemo(() => {
-    if (!target || !threadCache) return null;
-    const convById = new Map<string, DmConversation>();
-    for (const c of flatConvs) convById.set(c.subscriberId, c);
-    const out: Array<{ conv: DmConversation; text: string; at: string }> = [];
-    for (const [mc, msgs] of Object.entries(threadCache)) {
-      const conv = convById.get(mc);
-      if (!conv) continue;
-      for (const m of msgs) {
-        if (m.who !== "lead" || !m.text.trim()) continue;
-        const day = etDayOf(m.at);
-        if (day < target.dateFrom || day > target.dateTo) continue;
-        out.push({ conv, text: m.text, at: m.at });
-      }
-    }
-    out.sort((a, b) => b.at.localeCompare(a.at));
-    return out;
-  }, [target, threadCache, flatConvs]);
+  // Load the words feed for the current scope when the view needs it.
+  useEffect(() => {
+    if (!target || view !== "words" || feedCache[feedScope]) return;
+    let alive = true;
+    setFeedError(null);
+    const q = new URLSearchParams({
+      client: target.clientKey,
+      keywords: keywordsParam,
+      from: target.dateFrom,
+      to: target.dateTo,
+      mode: "feed",
+      scope: feedScope,
+    });
+    fetch(`/api/ads-v2/dm-inbox?${q}`, { cache: "no-store" })
+      .then(async (res) => {
+        const data = await res.json();
+        if (!alive) return;
+        if (!res.ok) setFeedError(String(data.error || `Request failed (${res.status})`));
+        else setFeedCache((prev) => ({ ...prev, [feedScope]: data as DmWordsFeed }));
+      })
+      .catch(() => alive && setFeedError("Could not load the feed"));
+    return () => {
+      alive = false;
+    };
+  }, [target, view, feedScope, feedCache, keywordsParam]);
+
+  // Open a conversation from a feed line. People outside the inbox cohort
+  // (the 'all activity' scope) get a minimal conversation shell; the thread
+  // itself loads from the cache or a solo fetch.
+  const openFeedItem = useCallback(
+    (item: DmFeedItem) => {
+      const known = flatConvs.find((c) => c.subscriberId === item.subscriberId);
+      openConv(
+        known || {
+          subscriberId: item.subscriberId,
+          name: item.name,
+          handle: item.handle,
+          dmEtDay: etDayOf(item.at),
+          hasThread: true,
+          messageCount: 0,
+          lastMessageAt: item.at,
+          lastFrom: "lead",
+          snippet: null,
+        },
+        item.at,
+      );
+    },
+    [flatConvs, openConv],
+  );
 
   // Scroll-to-message when a thread was opened from the words feed.
   const threadScrollRef = useRef<HTMLDivElement | null>(null);
@@ -330,18 +368,40 @@ export default function DmInboxPanel({ target, onClose }: { target: DmTarget | n
           </div>
         ) : view === "words" ? (
           <div className="dm-list">
-            {!wordsFeed ? (
+            <div className="dm-scope-row">
+              <button
+                className={`dm-scope-btn${feedScope === "window" ? " on" : ""}`}
+                onClick={() => setFeedScope("window")}
+                title="Only people whose keyword DM started inside the selected date range (matches the inbox)"
+              >
+                Started in range
+              </button>
+              <button
+                className={`dm-scope-btn${feedScope === "all" ? " on" : ""}`}
+                onClick={() => setFeedScope("all")}
+                title="Anyone these ads ever pulled in who typed inside the selected date range"
+              >
+                All activity in range
+              </button>
+            </div>
+            {feedError ? (
+              <div className="dm-note">{feedError}</div>
+            ) : !feedCache[feedScope] ? (
               <div className="dm-note">Loading every message...</div>
-            ) : !wordsFeed.length ? (
+            ) : !feedCache[feedScope]!.items.length ? (
               <div className="dm-note">No lead messages inside this date range.</div>
             ) : (
               <>
                 <div className="dm-count-line">
-                  {wordsFeed.length} messages from leads in the window · newest first · click one to open its
+                  {feedCache[feedScope]!.items.length} messages from leads · newest first · click one to open its
                   conversation
+                  {feedCache[feedScope]!.buyersTrimmed > 0
+                    ? ` · ${feedCache[feedScope]!.buyersTrimmed} client messages trimmed`
+                    : ""}
+                  {feedCache[feedScope]!.truncated ? " · capped" : ""}
                 </div>
-                {wordsFeed.map((w, i) => (
-                  <button key={i} className="dm-word-row" onClick={() => openConv(w.conv, w.at)}>
+                {feedCache[feedScope]!.items.map((w, i) => (
+                  <button key={i} className="dm-word-row" onClick={() => openFeedItem(w)}>
                     <span className="dm-word-text">{w.text}</span>
                     <span className="dm-word-date">{shortDay(w.at)}</span>
                   </button>

@@ -7,7 +7,7 @@ import {
   type MetaAdEntity,
 } from "@/lib/mozi-meta";
 import { getServiceSupabase } from "@/lib/supabase";
-import { displayKeyword, keywordFromAdName } from "@/lib/ads-tracker/normalize";
+import { displayKeyword, followerAdKeyword, isFollowerCampaign, keywordFromAdName } from "@/lib/ads-tracker/normalize";
 import { parseTargeting } from "@/lib/ads-tracker/targeting";
 import { storeCreativeImagesBatch } from "@/lib/ads-tracker/creative-image";
 import { CREATORS, firstEnv, normalizeAdAccountId } from "@/lib/creators";
@@ -144,6 +144,13 @@ function hourFromAdvertiserBreakdown(value: string | undefined) {
 }
 
 function insightKeyword(row: Awaited<ReturnType<typeof getAdLevelInsights>>[number]) {
+  // Follower ads carry a synthetic per-ad keyword (never the last word of the
+  // ad name, which is meaningless for a follow CTA and polluted the keyword
+  // space with "2"/"3"/"4"/"5"). keyword_raw keeps the human ad name.
+  if (isFollowerCampaign(row.campaign_name)) {
+    const kw = followerAdKeyword(row.ad_id);
+    if (kw) return { keyword: kw, keywordRaw: row.ad_name || "FOLLOWER AD" };
+  }
   const keyword = keywordFromAdName(row.ad_name);
   return {
     keyword,

@@ -91,23 +91,25 @@ async function factsFor(
   db: Db,
   clientKey: string,
   keywords: string[],
-  from: string,
-  to: string,
+  from: string | null,
+  to: string | null,
 ): Promise<Map<string, Map<string, { name: string | null; day: string }>>> {
   // PostgREST caps every request at 1000 rows regardless of .limit(), so a
-  // big campaign scope must be PAGED, never single-shot.
+  // big campaign scope must be PAGED, never single-shot. Null dates = the
+  // keyword's whole history (the words feed's "all activity" scope).
   const PAGE = 1000;
   const all: Row[] = [];
   for (let page = 0; page < 20; page++) {
-    const { data, error } = await db
+    let q = db
       .from("adsv2_dm_facts")
       .select("subscriber_id,subscriber_name,et_day,keyword_normalized")
       .eq("client_key", clientKey)
       .in("keyword_normalized", keywords)
-      .gte("et_day", from)
-      .lte("et_day", to)
       .eq("is_organic", false)
-      .eq("awaiting_review", false)
+      .eq("awaiting_review", false);
+    if (from) q = q.gte("et_day", from);
+    if (to) q = q.lte("et_day", to);
+    const { data, error } = await q
       .order("et_day", { ascending: false })
       .order("id", { ascending: false })
       .range(page * PAGE, page * PAGE + PAGE - 1);
@@ -271,6 +273,118 @@ export async function dmThreadsBulk(
     if (t.total > t.msgs.length) capped.push(mc);
   }
   return { threads, capped };
+}
+
+export interface DmFeedItem {
+  subscriberId: string;
+  name: string | null;
+  handle: string | null;
+  text: string;
+  at: string;
+}
+
+export interface DmWordsFeed {
+  scope: "window" | "all";
+  items: DmFeedItem[];
+  /** Messages dropped because the person had already become a client. */
+  buyersTrimmed: number;
+  truncated: boolean;
+}
+
+const FEED_CAP = 3000;
+
+/** The ET calendar day of a timestamp, DST-proof. */
+function etDayOf(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+}
+
+/**
+ * The words-only feed: every message LEADS typed inside the window, newest
+ * first. scope 'window' = only people whose keyword DM started inside the
+ * window (matches the inbox cohort); scope 'all' = anyone these keywords
+ * ever pulled in who typed inside the window. Messages sent on or after the
+ * day a person became a client are trimmed, so the feed stays lead talk.
+ */
+export async function dmWordsFeed(
+  clientKey: string,
+  keywords: string[],
+  from: string,
+  to: string,
+  scope: "window" | "all",
+): Promise<DmWordsFeed> {
+  const db = getServiceSupabase();
+  const byKw = await factsFor(db, clientKey, keywords, scope === "window" ? from : null, scope === "window" ? to : null);
+  const nameByMc = new Map<string, string | null>();
+  for (const m of byKw.values())
+    for (const [id, fact] of m.entries()) if (!nameByMc.has(id)) nameByMc.set(id, fact.name);
+  const mcIds = [...nameByMc.keys()];
+  if (!mcIds.length) return { scope, items: [], buyersTrimmed: 0, truncated: false };
+
+  const dmClient = DM_STORE_CLIENT[clientKey] || clientKey;
+  const igByMc = await bridge(db, dmClient, mcIds);
+  const igIds = [...new Set(Object.values(igByMc).map((v) => v.ig))];
+  const { data, error } = await db.rpc("adsv2_dm_threads", {
+    p_client: dmClient,
+    p_ig_ids: igIds,
+    p_cap: THREAD_CAP,
+  });
+  if (error) throw new Error(error.message);
+  const byIg = (data || {}) as Record<string, RpcThread>;
+
+  // First-win day per subscriber: messages from that day on are client talk.
+  const winDayByMc = new Map<string, string>();
+  {
+    const PAGE = 1000;
+    for (let page = 0; page < 5; page++) {
+      const { data: wins } = await db
+        .from("adsv2_sale_facts")
+        .select("subscriber_id,sale_et_day")
+        .eq("client_key", clientKey)
+        .eq("is_win", true)
+        .not("subscriber_id", "is", null)
+        .order("sale_et_day", { ascending: true })
+        .range(page * PAGE, page * PAGE + PAGE - 1);
+      const rows = (wins as Row[]) || [];
+      for (const w of rows) {
+        const id = String(w.subscriber_id);
+        if (!winDayByMc.has(id)) winDayByMc.set(id, String(w.sale_et_day));
+      }
+      if (rows.length < PAGE) break;
+    }
+  }
+
+  const items: DmFeedItem[] = [];
+  let buyersTrimmed = 0;
+  for (const mc of mcIds) {
+    const link = igByMc[mc];
+    if (!link) continue;
+    const t = byIg[link.ig];
+    if (!t?.msgs) continue;
+    const winDay = winDayByMc.get(mc);
+    for (const m of t.msgs) {
+      if (!String(m.d || "").toLowerCase().startsWith("in")) continue; // leads only
+      const text = String(m.b ?? "").trim();
+      if (!text) continue;
+      const day = etDayOf(m.a);
+      if (day < from || day > to) continue;
+      if (winDay && day >= winDay) {
+        buyersTrimmed++;
+        continue;
+      }
+      items.push({
+        subscriberId: mc,
+        name: link.name || nameByMc.get(mc) || null,
+        handle: link.handle,
+        text: text.slice(0, MSG_TEXT_CAP),
+        at: m.a,
+      });
+    }
+  }
+  items.sort((a, b) => b.at.localeCompare(a.at));
+  const truncated = items.length > FEED_CAP;
+  return { scope, items: items.slice(0, FEED_CAP), buyersTrimmed, truncated };
 }
 
 export async function dmThread(clientKey: string, subscriberId: string): Promise<DmThread | null> {

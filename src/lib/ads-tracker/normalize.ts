@@ -25,6 +25,23 @@ export function keywordFromAdName(value: unknown): string | null {
   return normalizeKeyword(words.at(-1));
 }
 
+/**
+ * Follower ads have NO DM keyword: their CTA is "follow", so the last word of
+ * the ad name is meaningless as a keyword ("Follow me ad 3" is not keyword
+ * "3"). LAW: a follower campaign carries "Follower" in its campaign name.
+ * Each follower ad gets a synthetic per-ad keyword namespaced with a dot so
+ * it (a) keeps its own row per ad, (b) can never collide with a real one-word
+ * DM keyword, and (c) can never weld to keyword DMs, bookings, or sales.
+ */
+export function isFollowerCampaign(campaignName: unknown): boolean {
+  return typeof campaignName === "string" && /follower/i.test(campaignName);
+}
+
+export function followerAdKeyword(adId: unknown): string | null {
+  const id = typeof adId === "string" ? adId.trim() : "";
+  return id ? `follower.${id}` : null;
+}
+
 export function normalizePersonName(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const normalized = value
