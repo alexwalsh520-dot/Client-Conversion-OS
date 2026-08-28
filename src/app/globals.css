@@ -2,10 +2,10 @@
 
 :root {
   /* ── Deep black / charcoal base ────────────────────── */
-  --bg-primary: #0c0c0c;
-  --bg-secondary: #121212;
-  --bg-card: rgba(18, 18, 18, 0.75);
-  --bg-card-hover: rgba(26, 26, 26, 0.85);
+  --bg-primary: #0a0b0d;
+  --bg-secondary: #101216;
+  --bg-card: rgba(20, 22, 27, 0.80);
+  --bg-card-hover: rgba(28, 31, 38, 0.90);
   --bg-glass: rgba(255, 255, 255, 0.025);
   --bg-glass-hover: rgba(255, 255, 255, 0.055);
 
@@ -14,27 +14,27 @@
   --hover-bg-subtle: rgba(255, 255, 255, 0.02);
   --scroll-thumb: rgba(255, 255, 255, 0.06);
   --scroll-thumb-hover: rgba(255, 255, 255, 0.14);
-  --selection-bg: rgba(201, 169, 110, 0.25);
+  --selection-bg: rgba(110, 154, 230, 0.26);
   --color-scheme: dark;
 
-  --border-primary: rgba(255, 255, 255, 0.06);
-  --border-hover: rgba(255, 255, 255, 0.14);
+  --border-primary: rgba(255, 255, 255, 0.08);
+  --border-hover: rgba(255, 255, 255, 0.16);
   --border-glass: rgba(255, 255, 255, 0.05);
 
-  --text-primary: #ffffff;
-  --text-secondary: #e2e2e2;
-  --text-muted: #52525b;
+  --text-primary: #f4f5f7;
+  --text-secondary: #c3c7ce;
+  --text-muted: #737a86;
 
   /* ── Accent palette: warm gold + sage ──────────────── */
-  --accent: #c9a96e;
-  --accent-soft: rgba(201, 169, 110, 0.10);
-  --accent-glow: rgba(201, 169, 110, 0.06);
+  --accent: #6e9ae6;
+  --accent-soft: rgba(110, 154, 230, 0.13);
+  --accent-glow: rgba(110, 154, 230, 0.07);
 
-  --success: #7ec9a0;
+  --success: #56c08a;
   --success-soft: rgba(126, 201, 160, 0.10);
-  --warning: #e8c36a;
+  --warning: #d9a441;
   --warning-soft: rgba(232, 195, 106, 0.10);
-  --danger: #d98e8e;
+  --danger: #d97070;
   --danger-soft: rgba(217, 142, 142, 0.10);
 
   /* ── Client colors ─────────────────────────────────── */
@@ -46,8 +46,8 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 
-  --sidebar-width: 256px;
-  --sidebar-collapsed-width: 64px;
+  --sidebar-width: 212px;
+  --sidebar-collapsed-width: 56px;
 
   /* ═══════════════════════════════════════════════════════════════════
      MOZI METRICS — CSS variables used by mozi components
@@ -102,7 +102,7 @@
    ═══════════════════════════════════════════════════════════════════ */
 html.light {
   /* ── Clean off-white base ─────────────────────────── */
-  --bg-primary: #f6f6f4;
+  --bg-primary: #f7f8fa;
   --bg-secondary: #ffffff;
   --bg-card: rgba(255, 255, 255, 0.85);
   --bg-card-hover: rgba(255, 255, 255, 0.97);
@@ -113,7 +113,7 @@ html.light {
   --hover-bg-subtle: rgba(0, 0, 0, 0.03);
   --scroll-thumb: rgba(0, 0, 0, 0.14);
   --scroll-thumb-hover: rgba(0, 0, 0, 0.26);
-  --selection-bg: rgba(184, 149, 79, 0.22);
+  --selection-bg: rgba(43, 108, 214, 0.20);
   --color-scheme: light;
 
   --border-primary: rgba(0, 0, 0, 0.09);
@@ -125,13 +125,13 @@ html.light {
   --text-muted: #71717a;
 
   /* ── Accent: slightly deeper gold for contrast on white ── */
-  --accent: #a9823f;
-  --accent-soft: rgba(169, 130, 63, 0.12);
-  --accent-glow: rgba(169, 130, 63, 0.10);
+  --accent: #2b6cd6;
+  --accent-soft: rgba(43, 108, 214, 0.10);
+  --accent-glow: rgba(43, 108, 214, 0.08);
 
   --success: #3f9e6b;
   --success-soft: rgba(63, 158, 107, 0.12);
-  --warning: #b8862a;
+  --warning: #b07d18;
   --warning-soft: rgba(184, 134, 42, 0.12);
   --danger: #c0504a;
   --danger-soft: rgba(192, 80, 74, 0.12);
@@ -214,7 +214,7 @@ body {
 /* Scrollbar */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 10px; }
+::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 7px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
 
 /* Selection */
@@ -288,7 +288,7 @@ body {
 .sidebar-collapsed { width: var(--sidebar-collapsed-width); }
 
 .sidebar-logo {
-  padding: 20px 16px 16px;
+  padding: 16px 14px 12px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -298,7 +298,7 @@ body {
 .sidebar-logo-icon {
   width: 32px;
   height: 32px;
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--accent-soft);
   display: flex;
   align-items: center;
@@ -314,7 +314,7 @@ body {
 
 .sidebar-nav {
   flex: 1;
-  padding: 8px;
+  padding: 6px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -322,7 +322,7 @@ body {
 }
 
 .sidebar-section-label {
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 500;
   text-transform: none;
   letter-spacing: 0;
@@ -346,7 +346,7 @@ body {
   cursor: pointer;
   font-family: inherit;
   text-align: left;
-  border-radius: 8px;
+  border-radius: 6px;
   /* Override the label's tall asymmetric 16px/6px padding so the Marketing
      dropdown header is a compact, balanced section toggle (was looking boxy). */
   padding: 7px 12px;
@@ -388,9 +388,9 @@ body {
 .sidebar-link {
   display: flex;
   align-items: center;
-  gap: 11px;
-  padding: 8px 11px;
-  border-radius: 8px;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 6px;
   font-size: 13.5px;
   font-weight: 500;
   color: var(--text-muted);
@@ -456,7 +456,7 @@ body {
   justify-content: center;
   width: 100%;
   padding: 8px;
-  border-radius: 8px;
+  border-radius: 6px;
   border: none;
   background: none;
   color: var(--text-muted);
@@ -478,7 +478,7 @@ body {
   align-items: center;
   gap: 10px;
   padding: 8px 12px;
-  border-radius: 8px;
+  border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s ease;
   border: none;
@@ -512,7 +512,7 @@ body {
   gap: 8px;
   width: 100%;
   padding: 8px 12px;
-  border-radius: 8px;
+  border-radius: 6px;
   border: 1px solid var(--border-primary);
   font-size: 12px;
   font-weight: 500;
@@ -579,7 +579,7 @@ body {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid var(--border-primary);
-  border-radius: 16px;
+  border-radius: 10px;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
@@ -626,7 +626,7 @@ body {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid var(--border-primary);
-  border-radius: 16px;
+  border-radius: 10px;
   transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
@@ -639,7 +639,7 @@ body {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--border-glass);
-  border-radius: 12px;
+  border-radius: 8px;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -879,7 +879,7 @@ select.form-input option {
   align-items: center;
   gap: 4px;
   padding: 4px 12px;
-  border-radius: 20px;
+  border-radius: 12px;
   font-size: 10px;
   font-weight: 500;
   letter-spacing: 0.4px;
@@ -910,7 +910,7 @@ select.form-input option {
   align-items: center;
   gap: 4px;
   padding: 4px 14px;
-  border-radius: 20px;
+  border-radius: 12px;
   background: var(--bg-glass);
   border: 1px solid var(--border-glass);
   font-size: 9px;
@@ -933,7 +933,7 @@ select.form-input option {
   left: 50%;
   transform: translate(-50%, -50%);
   padding: 8px 20px;
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--bg-card);
   border: 1px solid var(--border-primary);
   font-size: 13px;
@@ -958,7 +958,7 @@ select.form-input option {
 .action-card-icon {
   width: 36px;
   height: 36px;
-  border-radius: 10px;
+  border-radius: 7px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1059,7 +1059,7 @@ select.form-input option {
 .form-input {
   width: 100%;
   padding: 10px 14px;
-  border-radius: 8px;
+  border-radius: 6px;
   border: 1px solid var(--border-primary);
   background: var(--bg-glass);
   color: var(--text-primary);
@@ -1101,7 +1101,7 @@ select.form-input option {
   align-items: center;
   gap: 6px;
   padding: 10px 24px;
-  border-radius: 10px;
+  border-radius: 7px;
   border: none;
   background: linear-gradient(135deg, var(--accent) 0%, #b89550 100%);
   color: #0c0c0c;
@@ -1129,7 +1129,7 @@ select.form-input option {
   align-items: center;
   gap: 6px;
   padding: 10px 24px;
-  border-radius: 10px;
+  border-radius: 7px;
   border: 1px solid var(--border-primary);
   background: var(--bg-glass);
   color: var(--text-primary);
@@ -1159,7 +1159,7 @@ select.form-input option {
 .input-field {
   background: var(--bg-glass);
   border: 1px solid var(--border-primary);
-  border-radius: 8px;
+  border-radius: 6px;
   padding: 8px 12px;
   color: var(--text-primary);
   font-size: 13px;
@@ -1245,7 +1245,7 @@ textarea.input-field {
   align-items: center;
   gap: 10px;
   padding: 10px 14px;
-  border-radius: 10px;
+  border-radius: 7px;
   font-size: 13px;
   font-weight: 500;
   color: var(--text-muted);
@@ -1268,7 +1268,7 @@ textarea.input-field {
 /* Context tabs — smooth active state */
 .context-tab {
   padding: 8px 16px;
-  border-radius: 8px;
+  border-radius: 6px;
   font-size: 13px;
   font-weight: 500;
   color: var(--text-muted);
@@ -1443,7 +1443,7 @@ textarea.input-field {
 .outreach-activity-icon {
   width: 28px;
   height: 28px;
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--bg-glass);
   display: flex;
   align-items: center;
@@ -1532,7 +1532,7 @@ textarea.input-field {
     z-index: 50;
     width: 44px;
     height: 44px;
-    border-radius: 10px;
+    border-radius: 7px;
     border: 1px solid var(--border-primary);
     background: var(--bg-secondary);
     color: var(--text-primary);
@@ -1570,7 +1570,7 @@ textarea.input-field {
     z-index: 51;
     width: 36px;
     height: 36px;
-    border-radius: 8px;
+    border-radius: 6px;
     border: none;
     background: rgba(255, 255, 255, 0.06);
     color: var(--text-muted);
@@ -1645,7 +1645,7 @@ textarea.input-field {
     gap: 6px;
     width: 100%;
     padding: 10px;
-    border-radius: 8px;
+    border-radius: 6px;
     border: 1px solid var(--border-primary);
     background: var(--bg-glass);
     color: var(--text-muted);
