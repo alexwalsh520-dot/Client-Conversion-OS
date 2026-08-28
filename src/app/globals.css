@@ -58,8 +58,8 @@
   --text: #ffffff;
   --text-2: #e2e2e2;
   --text-3: rgba(255,255,255,0.55);
-  --gold: #c9a96e;
-  --gold-bg: rgba(201,169,110,0.08);
+  --gold: var(--accent);
+  --gold-bg: color-mix(in srgb, var(--accent) 8%, transparent);
   --green: #5fdb8e;
   --green-bg: rgba(95,219,142,0.06);
   --green-b: rgba(95,219,142,0.18);
@@ -149,7 +149,7 @@ html.light {
   --text: #18181b;
   --text-2: #3f3f46;
   --text-3: rgba(0, 0, 0, 0.55);
-  --gold: #a9823f;
+  --gold: var(--accent);
   --gold-bg: rgba(169, 130, 63, 0.10);
   --green: #2f9e63;
   --green-bg: rgba(47, 158, 99, 0.08);
@@ -308,7 +308,7 @@ body {
 }
 
 .sidebar-logo-icon:hover {
-  box-shadow: 0 0 16px rgba(201, 169, 110, 0.15);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 15%, transparent);
   transform: scale(1.05);
 }
 
@@ -502,7 +502,7 @@ body {
 
 .sidebar-user:hover .sidebar-user-avatar {
   border-color: var(--accent);
-  box-shadow: 0 0 8px rgba(201, 169, 110, 0.15);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 /* Client filter in sidebar */
@@ -595,7 +595,7 @@ body {
   height: 300px;
   transform: translate(-50%, -50%);
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(201, 169, 110, 0.06) 0%, transparent 70%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 6%, transparent) 0%, transparent 70%);
   opacity: 0;
   transition: opacity 0.4s ease;
   pointer-events: none;
@@ -898,7 +898,7 @@ select.form-input option {
 .status-at-risk { background: var(--warning-soft); color: var(--warning); }
 .status-at-risk:hover { box-shadow: 0 0 12px rgba(232, 195, 106, 0.15); }
 .status-completed { background: var(--accent-soft); color: var(--accent); }
-.status-completed:hover { box-shadow: 0 0 12px rgba(201, 169, 110, 0.15); }
+.status-completed:hover { box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 15%, transparent); }
 .status-pending { background: var(--bg-glass); color: var(--text-muted); }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -1071,7 +1071,7 @@ select.form-input option {
 .form-input:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(201, 169, 110, 0.08), 0 0 20px rgba(201, 169, 110, 0.06);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 8%, transparent), 0 0 20px color-mix(in srgb, var(--accent) 6%, transparent);
 }
 
 .form-input:hover:not(:focus) {
@@ -1115,13 +1115,13 @@ select.form-input option {
 }
 
 .btn-primary:hover {
-  box-shadow: 0 4px 24px rgba(201, 169, 110, 0.25), 0 0 0 1px rgba(201, 169, 110, 0.15);
+  box-shadow: 0 4px 24px color-mix(in srgb, var(--accent) 25%, transparent), 0 0 0 1px color-mix(in srgb, var(--accent) 15%, transparent);
   transform: translateY(-2px);
 }
 
 .btn-primary:active {
   transform: translateY(0px) scale(0.98);
-  box-shadow: 0 1px 8px rgba(201, 169, 110, 0.15);
+  box-shadow: 0 1px 8px color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 .btn-secondary {
@@ -1200,13 +1200,13 @@ textarea.input-field {
 
 .glow-accent {
   box-shadow:
-    0 0 0 1px rgba(201, 169, 110, 0.12),
-    0 0 40px rgba(201, 169, 110, 0.06),
-    0 0 80px rgba(201, 169, 110, 0.03);
+    0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent),
+    0 0 40px color-mix(in srgb, var(--accent) 6%, transparent),
+    0 0 80px color-mix(in srgb, var(--accent) 3%, transparent);
 }
 
 .gradient-text {
-  background: linear-gradient(135deg, #c9a96e 0%, #dcc49a 40%, #7ec9a0 100%);
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent) 55%, var(--success) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -1322,13 +1322,13 @@ textarea.input-field {
 /* Gold divider */
 .luxe-divider {
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(201, 169, 110, 0.2), transparent);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 20%, transparent), transparent);
   margin: 32px 0;
 }
 
 /* Focus ring */
 :focus-visible {
-  outline: 2px solid rgba(201, 169, 110, 0.4);
+  outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent);
   outline-offset: 2px;
 }
 
