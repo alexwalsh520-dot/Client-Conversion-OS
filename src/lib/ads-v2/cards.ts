@@ -51,6 +51,8 @@ const dayBase = (d: MetricsDay): BaseMetrics => ({
   newClients: d.newClients,
   collectedCents: d.collectedCents,
   contractedCents: 0,
+  leadScoreSum: 0,
+  leadScoreN: 0,
 });
 
 export const CARD_DEFS: readonly CardDef[] = [
