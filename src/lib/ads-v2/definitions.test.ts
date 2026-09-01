@@ -23,6 +23,7 @@ const RENDERED_COLUMN_KEYS = [
   "cpc",
   "messages",
   "costPerMessage",
+  "leadScore",
   "booked",
   "costPerBooked",
   "taken",

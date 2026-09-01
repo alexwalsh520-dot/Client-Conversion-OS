@@ -55,6 +55,8 @@ interface LeafRow {
   new_clients: number;
   collected_usd_cents: number;
   contracted_usd_cents: number;
+  lead_score_sum: number | null;
+  lead_score_n: number | null;
   has_spend: boolean;
   last_spend_day: string | null;
 }
@@ -304,6 +306,8 @@ function leafBase(l: LeafRow): BaseMetrics {
     newClients: l.new_clients,
     collectedCents: l.collected_usd_cents,
     contractedCents: l.contracted_usd_cents,
+    leadScoreSum: l.lead_score_sum ?? 0,
+    leadScoreN: l.lead_score_n ?? 0,
   };
 }
 
@@ -456,6 +460,8 @@ function baseOf(n: AdsV2Node): BaseMetrics {
     newClients: n.newClients,
     collectedCents: n.collectedCents,
     contractedCents: n.contractedCents,
+    leadScoreSum: n.leadScoreSum ?? 0,
+    leadScoreN: n.leadScoreN ?? 0,
   };
 }
 
@@ -472,6 +478,8 @@ function assignBase(n: AdsV2Node, b: BaseMetrics): void {
   n.newClients = b.newClients;
   n.collectedCents = b.collectedCents;
   n.contractedCents = b.contractedCents;
+  n.leadScoreSum = b.leadScoreSum ?? 0;
+  n.leadScoreN = b.leadScoreN ?? 0;
 }
 
 function makeNode(input: {

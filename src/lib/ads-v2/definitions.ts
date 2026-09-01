@@ -119,6 +119,16 @@ export const COLUMNS: readonly ColumnDef[] = [
     calc: true,
   },
   {
+    key: "leadScore",
+    label: "Lead score",
+    sentence:
+      "PILOT. The average quality score (0 to 100) of the people this ad brought in during the window. An AI reads the first 15 messages of each new lead's conversation and scores how much they talk like our past buyers: specific goals, real replies, urgency. Accuracy so far, graded on 563 August leads: all 12 buyers came from leads scoring 70 plus, and none of the 253 leads under 40 bought or showed. Healthy ads average 55 to 60; the GOOD flood that wrecked the week of Aug 16 read 41. Not a money verdict: it grades the crowd, not the cash, and no ad is killed on this number alone.",
+    source:
+      "Nightly AI read of each new lead's opening DMs, scored per lead and averaged per ad. New leads appear within a day. A dash means no scored leads in this window.",
+    format: "int",
+    calc: true,
+  },
+  {
     key: "booked",
     label: "Calls booked",
     sentence:

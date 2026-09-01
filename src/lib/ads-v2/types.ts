@@ -49,6 +49,11 @@ export interface BaseMetrics {
   newClients: number;
   collectedCents: number;
   contractedCents: number;
+  // Lead Score pilot: sum and count of AI lead scores (0-100) for the window's
+  // scored leads, so any level's average = sum/count over its children.
+  // Optional-with-?? at read time: snapshots written before the pilot lack them.
+  leadScoreSum: number;
+  leadScoreN: number;
 }
 
 export interface BudgetInfo {
@@ -202,6 +207,8 @@ export const EMPTY_BASE: BaseMetrics = {
   newClients: 0,
   collectedCents: 0,
   contractedCents: 0,
+  leadScoreSum: 0,
+  leadScoreN: 0,
 };
 
 export function addBase(a: BaseMetrics, b: BaseMetrics): BaseMetrics {
@@ -218,5 +225,7 @@ export function addBase(a: BaseMetrics, b: BaseMetrics): BaseMetrics {
     newClients: a.newClients + b.newClients,
     collectedCents: a.collectedCents + b.collectedCents,
     contractedCents: a.contractedCents + b.contractedCents,
+    leadScoreSum: (a.leadScoreSum ?? 0) + (b.leadScoreSum ?? 0),
+    leadScoreN: (a.leadScoreN ?? 0) + (b.leadScoreN ?? 0),
   };
 }

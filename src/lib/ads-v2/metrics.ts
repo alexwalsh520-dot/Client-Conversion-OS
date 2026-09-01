@@ -18,6 +18,7 @@ export interface DerivedMetrics {
   msgToCall: number | null; // 0..1
   costPerClientCents: number | null;
   collectedRoi: number | null; // dollars collected per dollar spent
+  leadScore: number | null; // average AI lead score (0-100) of scored leads
 }
 
 function div(n: number, d: number): number | null {
@@ -45,5 +46,8 @@ export function derive(b: BaseMetrics): DerivedMetrics {
     msgToCall: div(b.booked, b.messages),
     costPerClientCents: b.newClients ? Math.round(b.spendCents / b.newClients) : null,
     collectedRoi: div(b.collectedCents, b.spendCents),
+    // Guarded like showedPeople: snapshots written before the Lead Score pilot
+    // carry no fields, and 0 scored leads means "no read", never a zero score.
+    leadScore: (b.leadScoreN ?? 0) > 0 ? (b.leadScoreSum ?? 0) / (b.leadScoreN ?? 1) : null,
   };
 }

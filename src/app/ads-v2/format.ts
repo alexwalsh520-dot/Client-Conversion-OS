@@ -61,6 +61,16 @@ function classFor(key: string, node: AdsV2Node): CellClass {
           : d.costPerMessageCents >= 650
             ? "neg"
             : "";
+    // Empirical bands from the pilot grade: healthy ads average 55-60, the
+    // GOOD flood read 41. Thin samples (under 10 scored leads) stay uncolored.
+    case "leadScore":
+      return d.leadScore == null || (node.leadScoreN ?? 0) < 10
+        ? ""
+        : d.leadScore >= 55
+          ? "pos"
+          : d.leadScore <= 45
+            ? "neg"
+            : "";
     case "costPerBooked": // v1 cpCall: <=$30 pos, >=$40 neg (only when set)
       return d.costPerBookedCents
         ? d.costPerBookedCents <= 3000
@@ -150,6 +160,9 @@ export function formatCell(key: string, node: AdsV2Node): Cell {
     case "costPerMessage":
       text = money2(d.costPerMessageCents);
       break;
+    case "leadScore":
+      text = d.leadScore == null ? DASH : String(Math.round(d.leadScore));
+      break;
     case "booked":
       text = int(node.booked);
       break;
@@ -215,6 +228,8 @@ export function sortValue(key: string, node: AdsV2Node): number {
       return node.messages;
     case "costPerMessage":
       return d.costPerMessageCents ?? -1;
+    case "leadScore":
+      return d.leadScore ?? -1;
     case "booked":
       return node.booked;
     case "costPerBooked":
