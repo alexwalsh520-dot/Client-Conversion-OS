@@ -181,7 +181,7 @@ export async function runLeadScoreTick(
   const clientKey = opts.clientKey ?? "tyson";
   const dmClient = DM_CLIENT[clientKey];
   if (!dmClient) throw new Error(`lead-score: no DM client mapping for ${clientKey}`);
-  const days = Math.min(Math.max(opts.days ?? 3, 1), 60);
+  const days = Math.min(Math.max(opts.days ?? 3, 1), 180);
   const limit = Math.min(Math.max(opts.limit ?? 40, 1), 80);
 
   const candidates = await findCandidates(db, clientKey, days, limit);
@@ -193,7 +193,7 @@ export async function runLeadScoreTick(
     failed: 0,
   };
 
-  for (const cand of candidates) {
+  const scoreOne = async (cand: Candidate) => {
     try {
       const messageIds = await resolveMessageIds(db, clientKey, cand.subscriber_id);
       const { transcript, count } = await fetchOpeningMessages(db, dmClient, messageIds);
@@ -215,7 +215,7 @@ export async function runLeadScoreTick(
           { onConflict: "client_key,subscriber_id,rubric_version" },
         );
         report.skippedNoMessages++;
-        continue;
+        return;
       }
       const response = await anthropic.messages.create({
         model: MODEL,
@@ -235,7 +235,7 @@ export async function runLeadScoreTick(
       const parsed = parseScore(text);
       if (!parsed) {
         report.failed++;
-        continue;
+        return;
       }
       const { error } = await db.from("lead_scores").upsert(
         {
@@ -258,6 +258,13 @@ export async function runLeadScoreTick(
       console.error(`lead-score: ${cand.subscriber_id} failed`, err);
       report.failed++;
     }
+  };
+
+  // Score in small parallel chunks; counters above are simple increments so
+  // concurrent updates are safe.
+  const CHUNK = 5;
+  for (let i = 0; i < candidates.length; i += CHUNK) {
+    await Promise.all(candidates.slice(i, i + CHUNK).map(scoreOne));
   }
   return report;
 }
