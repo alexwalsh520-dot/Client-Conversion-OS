@@ -166,6 +166,8 @@ function baseOf(n: AdsV2Node): BaseMetrics {
     newClients: n.newClients,
     collectedCents: n.collectedCents,
     contractedCents: n.contractedCents,
+    leadScoreSum: n.leadScoreSum ?? 0,
+    leadScoreN: n.leadScoreN ?? 0,
   };
 }
 

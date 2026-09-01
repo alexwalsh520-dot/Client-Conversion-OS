@@ -175,5 +175,7 @@ export function toBaseMetrics(b: FunnelBase) {
     newClients: b.closes,
     collectedCents: b.collected_usd_cents,
     contractedCents: b.contracted_usd_cents,
+    leadScoreSum: 0,
+    leadScoreN: 0,
   };
 }

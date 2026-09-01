@@ -36,6 +36,8 @@ function payload(opts: { spendCents: number; messages: number; collectedCents: n
     newClients: 1,
     collectedCents: opts.collectedCents,
     contractedCents: opts.collectedCents,
+    leadScoreSum: 0,
+    leadScoreN: 0,
   };
   return {
     account: "tyson",
