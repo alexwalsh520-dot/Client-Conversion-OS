@@ -6,5 +6,5 @@ export const dynamic = "force-dynamic";
 
 export default async function LiveAdsPage() {
   const data = await getLiveAdsDashboard();
-  return <LiveAdsBrowser data={data} headerSlot={<ShareLiveAdsButton account="antwan" />} />;
+  return <LiveAdsBrowser data={data} headerSlot={<ShareLiveAdsButton account="tyson" />} />;
 }

@@ -125,7 +125,7 @@ export const CREATORS: readonly Creator[] = [
   {
     key: "jake",
     name: "Jake",
-    active: true, // onboarded Jul 2026 (Jake Divljak — RecruitReady Fitness)
+    active: false, // no longer a client (Sep 2026; Jake Divljak — RecruitReady Fitness)
     icpLock:
       "US career changers training to PASS first-responder and military entry fitness tests (police academy, fire, EMS, military entry) — people changing INTO these careers.",
     // RRF V2 ad account reports in AUD on Sydney time. SPEND arrives in AUD and

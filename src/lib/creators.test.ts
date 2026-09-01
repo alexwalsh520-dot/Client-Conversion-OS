@@ -47,7 +47,7 @@ test("every creator key is unique and lowercase (assumed across the pipeline)", 
 
 test("retired creators stay attributable but are excluded from the active roster", () => {
   const activeKeys: string[] = ACTIVE_CREATORS.map((c) => c.key);
-  for (const retired of ["keith", "lucy", "antwan"]) {
+  for (const retired of ["keith", "lucy", "antwan", "jake"]) {
     assert.equal(activeKeys.includes(retired), false, `${retired} should be retired`);
     // History must still label/attribute correctly.
     assert.equal(isCreatorKey(retired), true);

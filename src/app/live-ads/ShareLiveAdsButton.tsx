@@ -10,7 +10,7 @@ import { useState } from "react";
 import { Share2, Check } from "lucide-react";
 
 export default function ShareLiveAdsButton({
-  account = "antwan",
+  account = "tyson",
 }: {
   account?: string;
 }) {
