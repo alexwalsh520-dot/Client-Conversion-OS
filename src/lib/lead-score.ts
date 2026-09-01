@@ -110,16 +110,38 @@ async function findCandidates(
     .map((s) => firstBySub.get(s)!);
 }
 
+/**
+ * Keyword events carry ManyChat subscriber ids; dm_conversation_messages is
+ * keyed by Instagram-scoped ids. The two id spaces are disjoint, so we bridge
+ * through warehouse.people (manychat_subscriber_ids[] -> instagram_user_ids[]).
+ */
+async function resolveMessageIds(
+  db: SupabaseClient,
+  clientKey: string,
+  subscriberId: string,
+): Promise<string[]> {
+  const { data: people, error } = await db
+    .schema("warehouse")
+    .from("people")
+    .select("instagram_user_ids")
+    .eq("client_key", clientKey)
+    .contains("manychat_subscriber_ids", [subscriberId])
+    .limit(3);
+  if (error) throw new Error(`warehouse.people read failed: ${error.message}`);
+  const igIds = (people ?? []).flatMap((p) => p.instagram_user_ids ?? []);
+  return [subscriberId, ...igIds];
+}
+
 async function fetchOpeningMessages(
   db: SupabaseClient,
   dmClient: string,
-  subscriberId: string,
+  messageIds: string[],
 ): Promise<{ transcript: string; count: number }> {
   const { data: msgs, error } = await db
     .from("dm_conversation_messages")
     .select("direction, body, sent_at")
     .eq("client", dmClient)
-    .eq("subscriber_id", subscriberId)
+    .in("subscriber_id", messageIds)
     .order("sent_at", { ascending: true })
     .limit(MESSAGES_PER_LEAD);
   if (error) throw new Error(`dm messages read failed: ${error.message}`);
@@ -173,8 +195,25 @@ export async function runLeadScoreTick(
 
   for (const cand of candidates) {
     try {
-      const { transcript, count } = await fetchOpeningMessages(db, dmClient, cand.subscriber_id);
+      const messageIds = await resolveMessageIds(db, clientKey, cand.subscriber_id);
+      const { transcript, count } = await fetchOpeningMessages(db, dmClient, messageIds);
       if (count < 2) {
+        // Mark it so tomorrow's run does not refetch the same unreadable lead.
+        await db.from("lead_scores").upsert(
+          {
+            client_key: clientKey,
+            subscriber_id: cand.subscriber_id,
+            keyword_normalized: cand.keyword_normalized,
+            first_keyword_at: cand.first_keyword_at,
+            score: 0,
+            band: "unscored",
+            reasons: ["no readable conversation"],
+            messages_read: count,
+            model: MODEL,
+            rubric_version: RUBRIC_VERSION,
+          },
+          { onConflict: "client_key,subscriber_id,rubric_version" },
+        );
         report.skippedNoMessages++;
         continue;
       }
