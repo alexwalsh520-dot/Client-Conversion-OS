@@ -67,15 +67,22 @@ async function findCandidates(
   limit: number,
 ): Promise<Candidate[]> {
   const since = new Date(Date.now() - days * 86400_000).toISOString();
-  const { data: events, error } = await db
-    .from("ads_keyword_events")
-    .select("subscriber_id, keyword_normalized, event_at")
-    .eq("client_key", clientKey)
-    .eq("event_type", "dm_keyword")
-    .gte("event_at", since)
-    .not("subscriber_id", "is", null)
-    .order("event_at", { ascending: true });
-  if (error) throw new Error(`ads_keyword_events read failed: ${error.message}`);
+  // PostgREST caps a single read at 1,000 rows, so page through the window.
+  const events: { subscriber_id: string; keyword_normalized: string | null; event_at: string }[] = [];
+  for (let page = 0; page < 20; page++) {
+    const { data: rows, error } = await db
+      .from("ads_keyword_events")
+      .select("subscriber_id, keyword_normalized, event_at")
+      .eq("client_key", clientKey)
+      .eq("event_type", "dm_keyword")
+      .gte("event_at", since)
+      .not("subscriber_id", "is", null)
+      .order("event_at", { ascending: true })
+      .range(page * 1000, page * 1000 + 999);
+    if (error) throw new Error(`ads_keyword_events read failed: ${error.message}`);
+    events.push(...(rows ?? []));
+    if ((rows ?? []).length < 1000) break;
+  }
 
   // First keyword event per subscriber.
   const firstBySub = new Map<string, Candidate>();
