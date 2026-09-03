@@ -284,7 +284,7 @@ function GroupTable({ title, rows }: { title: string; rows: ResponseTimeGroup[] 
               <th>Name</th>
               <th>Avg</th>
               <th>Median</th>
-              <th>Fastest</th>
+              <th>Miss Rate</th>
               <th>Slowest</th>
             </tr>
           </thead>
@@ -302,7 +302,9 @@ function GroupTable({ title, rows }: { title: string; rows: ResponseTimeGroup[] 
                 <td style={{ color: responseColor(row.medianSeconds), fontWeight: 650 }}>
                   {formatDuration(row.medianSeconds)}
                 </td>
-                <td>{formatDuration(row.fastestSeconds)}</td>
+                <td style={{ color: row.missedCount > 0 ? "var(--warning)" : "var(--text-secondary)", fontWeight: 650 }}>
+                  {missRate(row.missedCount, row.sampleCount)}
+                </td>
                 <td>{formatDuration(row.slowestSeconds)}</td>
               </tr>
             ))}

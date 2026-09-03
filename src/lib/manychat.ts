@@ -134,6 +134,20 @@ interface MetaInsightRow {
   spend_cents: number | null;
 }
 
+// The business runs on Eastern days (11am–11pm ET everywhere else in the hub),
+// so lead counts must bucket by ET date — a lead at 9pm ET Aug 31 is an August
+// lead even though it's already Sep 1 in UTC.
+function etDateStr(iso: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(iso));
+  const values = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 function toIsoStart(date: string) {
   return `${date}T00:00:00Z`;
 }
@@ -320,24 +334,31 @@ export async function getMetrics(
   }
 
   try {
+    // Pad the UTC query a day each side, then keep only events whose ET date
+    // falls in range — so day boundaries match the rest of the hub (ET), not UTC.
     const { data: newLeadEvents, error: newLeadError } = await sb
       .from("manychat_tag_events")
       .select("subscriber_id, subscriber_name, setter_name, event_at, keyword_raw, keyword_normalized, raw_payload")
       .eq("client", client)
       .eq("tag_name", "new_lead")
-      .gte("event_at", `${dateFrom}T00:00:00Z`)
-      .lte("event_at", `${dateTo}T23:59:59Z`);
+      .gte("event_at", `${addDays(dateFrom, -1)}T00:00:00Z`)
+      .lte("event_at", `${addDays(dateTo, 1)}T23:59:59Z`);
 
     if (newLeadError) {
       console.error("manychat_tag_events cohort query error:", newLeadError);
       return { dashboard, leadSources: leadSourcesList(leadSources), funnel, setters: setterMetrics, tagsDetected: false };
     }
 
-    if (!newLeadEvents || newLeadEvents.length === 0) {
+    const eventsInEtRange = ((newLeadEvents || []) as ManychatTagEventRow[]).filter((event) => {
+      const etDate = etDateStr(event.event_at);
+      return etDate >= dateFrom && etDate <= dateTo;
+    });
+
+    if (eventsInEtRange.length === 0) {
       return { dashboard, leadSources: leadSourcesList(leadSources), funnel, setters: setterMetrics, tagsDetected: true };
     }
 
-    const cohort = buildCohort(newLeadEvents as ManychatTagEventRow[]);
+    const cohort = buildCohort(eventsInEtRange);
     const cohortIds = [...cohort.keys()];
     const cohortMinDate = [...cohort.values()]
       .map((lead) => lead.newLeadAt)

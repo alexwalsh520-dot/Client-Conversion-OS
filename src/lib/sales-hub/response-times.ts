@@ -394,12 +394,15 @@ function findAssignmentForMessage(
   return findAssignment(assignments, clientKey, manychatSubscriberId, at);
 }
 
-// True median (middle value) — robust to outliers, so one 3-hour reply can't
-// skew it the way the average gets skewed.
+// "Median" per the owner's definition (2026-09-04): the AVERAGE with the single
+// slowest response removed — one 3-hour outlier reply can't skew the number,
+// but everything else still counts. Not a statistical median on purpose.
+// With one sample there's nothing to trim, so it's just that value.
 function medianOf(values: number[]): number {
+  if (values.length <= 1) return values[0] ?? 0;
   const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+  const trimmed = sorted.slice(0, -1);
+  return trimmed.reduce((sum, value) => sum + value, 0) / trimmed.length;
 }
 
 function summarizeSamples(id: string, label: string, samples: ResponseSample[]): ResponseTimeGroup {
