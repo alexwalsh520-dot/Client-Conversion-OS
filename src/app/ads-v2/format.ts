@@ -178,6 +178,9 @@ export function formatCell(key: string, node: AdsV2Node): Cell {
     case "showRate":
       text = pct(d.showRate);
       break;
+    case "upcoming":
+      text = int(node.upcoming);
+      break;
     case "newClients":
       text = int(node.newClients);
       break;

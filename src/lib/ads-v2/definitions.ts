@@ -175,6 +175,16 @@ export const COLUMNS: readonly ColumnDef[] = [
     calc: true,
   },
   {
+    key: "upcoming",
+    label: "Upcoming calls",
+    sentence:
+      "How many people who booked in this window have a call that has not happened yet. The show rate sets these aside, so this column shows exactly what it is waiting on.",
+    source:
+      "GoHighLevel bookings made in this window whose appointment is still in the future and has no taken record yet. The same upcoming people the show-rate popup lists.",
+    format: "int",
+    logged: true,
+  },
+  {
     key: "newClients",
     label: "New clients",
     sentence: "How many of those calls became a paying client.",

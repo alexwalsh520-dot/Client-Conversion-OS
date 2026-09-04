@@ -175,6 +175,7 @@ interface LaneRowSql {
   bucket: string;
   dms: number | null;
   booked: number | null;
+  upcoming: number | null;
   taken: number | null;
   wins: number | null;
   collected_usd_cents: number | null;
@@ -253,6 +254,7 @@ export async function buildDaySeries(
       bucket: r.bucket as import("./types").LaneRow["bucket"],
       dms: r.dms,
       booked: r.booked,
+      upcoming: r.upcoming ?? null,
       taken: r.taken,
       wins: r.wins,
       collectedCents: r.collected_usd_cents,

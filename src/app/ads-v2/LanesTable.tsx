@@ -52,7 +52,7 @@ function usd(cents: number | null): string {
 
 export default function LanesTable({ lanes }: { lanes: LaneRow[] }) {
   const rows = [...lanes]
-    .filter((r) => !(r.clientKey === "team" && !r.taken && !r.wins && !r.collectedCents && !r.booked))
+    .filter((r) => !(r.clientKey === "team" && !r.taken && !r.wins && !r.collectedCents && !r.booked && !r.upcoming))
     .sort(
       (a, b) =>
         a.clientKey.localeCompare(b.clientKey) ||
@@ -76,6 +76,7 @@ export default function LanesTable({ lanes }: { lanes: LaneRow[] }) {
               <th className="lane-label-col">Lane</th>
               <th>DMs</th>
               <th>Calls booked</th>
+              <th>Upcoming calls</th>
               <th>Calls taken</th>
               <th>New clients</th>
               <th>Collected revenue</th>
@@ -94,6 +95,7 @@ export default function LanesTable({ lanes }: { lanes: LaneRow[] }) {
                 </td>
                 <td className="logged-cell">{num(r.dms)}</td>
                 <td className="logged-cell">{num(r.booked)}</td>
+                <td className="logged-cell">{num(r.upcoming)}</td>
                 <td className="logged-cell">{num(r.taken)}</td>
                 <td className="logged-cell">{num(r.wins)}</td>
                 <td className="logged-cell">{usd(r.collectedCents)}</td>

@@ -172,6 +172,7 @@ export interface LaneRow {
   bucket: "organic" | "misc_chat" | "follower" | "not_attributed";
   dms: number | null;
   booked: number | null;
+  upcoming: number | null;
   taken: number | null;
   wins: number | null;
   collectedCents: number | null;

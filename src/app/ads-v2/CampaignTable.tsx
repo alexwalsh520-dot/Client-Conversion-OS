@@ -65,6 +65,7 @@ const DEFAULT_WIDTHS: Record<string, number> = {
   taken: 130,
   costPerTaken: 150,
   showRate: 110,
+  upcoming: 120,
   newClients: 120,
   closeRate: 120,
   msgToCall: 120,

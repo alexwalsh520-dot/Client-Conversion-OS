@@ -29,6 +29,7 @@ const RENDERED_COLUMN_KEYS = [
   "taken",
   "costPerTaken",
   "showRate",
+  "upcoming",
   "newClients",
   "closeRate",
   "msgToCall",
