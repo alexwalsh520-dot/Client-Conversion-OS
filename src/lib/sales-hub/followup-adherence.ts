@@ -326,13 +326,6 @@ export async function getFollowupAdherence(params: {
     let depth = 0;
     let lastFollowup: DuePoint | null = null;
 
-    const resolveAssignment = (m: MessageRow): LeadAssignment | null => {
-      if (assignment) return assignment;
-      const found = findAssignmentForMessage(assignments, linkMap, m.client, m.subscriber_id, m.sent_at || "");
-      if (found?.newLeadAt) assignment = found;
-      return assignment;
-    };
-
     const stoppedBefore = (a: LeadAssignment, ms: number) => {
       const done = doneAtBySubscriber.get(a.subscriberId);
       if (done !== undefined && done <= ms) return true;
@@ -378,7 +371,11 @@ export async function getFollowupAdherence(params: {
 
       if (m.direction !== "outbound" || isAutomatedOutbound(m)) continue;
 
-      const lead = resolveAssignment(m);
+      if (!assignment) {
+        const found = findAssignmentForMessage(assignments, linkMap, m.client, m.subscriber_id, m.sent_at || "");
+        if (found?.newLeadAt) assignment = found;
+      }
+      const lead = assignment;
       if (!lead) continue; // not a known lead — skip conversation-less noise
 
       if (anchorAt === null) {
