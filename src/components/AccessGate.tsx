@@ -142,6 +142,12 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
     // /api/public/client-metrics/<token> hard-scopes every read to that
     // client's rows. No CCOS login.
     pathname.startsWith("/p/client-metrics/") ||
+    // /p/client-dashboard/<token> is a public, no-login client share link for
+    // the full business dashboard (marketing + sales numbers + the upcoming-
+    // call calendar). The token resolves server-side to ONE client and
+    // /api/public/client-dashboard/<token> hard-scopes every read to that
+    // client's data. No CCOS login.
+    pathname.startsWith("/p/client-dashboard/") ||
     // /p/rep-console/<token> is the public, no-login rep console (leaderboard +
     // the rep's call sheet). The token resolves server-side to ONE client (and
     // optionally one rep) and /api/public/rep-console/<token> hard-scopes every
