@@ -326,30 +326,29 @@ export async function getFollowupAdherence(params: {
     let depth = 0;
     let lastFollowup: DuePoint | null = null;
 
-    const resolveAssignment = (m: MessageRow) => {
+    const resolveAssignment = (m: MessageRow): LeadAssignment | null => {
       if (assignment) return assignment;
       const found = findAssignmentForMessage(assignments, linkMap, m.client, m.subscriber_id, m.sent_at || "");
       if (found?.newLeadAt) assignment = found;
       return assignment;
     };
 
-    const stoppedBefore = (ms: number) => {
-      if (!assignment) return false;
-      const done = doneAtBySubscriber.get(assignment.subscriberId);
+    const stoppedBefore = (a: LeadAssignment, ms: number) => {
+      const done = doneAtBySubscriber.get(a.subscriberId);
       if (done !== undefined && done <= ms) return true;
-      const booked = bookedAtBySubscriber.get(assignment.subscriberId);
+      const booked = bookedAtBySubscriber.get(a.subscriberId);
       return booked !== undefined && booked <= ms;
     };
 
-    const recordMissedIfLapsed = (beforeMs: number) => {
+    const recordMissedIfLapsed = (a: LeadAssignment | null, beforeMs: number) => {
       // The pending window closed with no follow-up before `beforeMs` happened.
-      if (!anchorAt || !assignment) return;
+      if (!anchorAt || !a) return;
       const stage = depth + 1;
       if (stage > MAX_FOLLOWUPS) return;
       const { openAt, closeAt } = windowFor(anchorAt, stage);
       const closeMs = new Date(closeAt).getTime();
       if (beforeMs <= closeMs) return; // window hadn't lapsed yet — no miss
-      if (stoppedBefore(new Date(openAt).getTime())) return; // lead was done first
+      if (stoppedBefore(a, new Date(openAt).getTime())) return; // lead was done first
       if (!inMetricsRange(openAt)) return;
       duePoints.push({
         stage,
@@ -357,9 +356,9 @@ export async function getFollowupAdherence(params: {
         openAt,
         sentAt: null,
         replied: false,
-        setterKey: assignment.setterKey || "unassigned",
-        setterLabel: assignment.setterLabel || "Unassigned",
-        subscriberId: assignment.subscriberId,
+        setterKey: a.setterKey || "unassigned",
+        setterLabel: a.setterLabel || "Unassigned",
+        subscriberId: a.subscriberId,
       });
     };
 
@@ -370,7 +369,7 @@ export async function getFollowupAdherence(params: {
         // The lead spoke: whatever follow-up they answered gets reply credit,
         // an un-followed lapsed window is a miss, and the chain resets.
         if (lastFollowup && !lastFollowup.replied) lastFollowup.replied = true;
-        recordMissedIfLapsed(new Date(m.sent_at).getTime());
+        recordMissedIfLapsed(assignment, new Date(m.sent_at).getTime());
         anchorAt = null;
         depth = 0;
         lastFollowup = null;
@@ -379,7 +378,8 @@ export async function getFollowupAdherence(params: {
 
       if (m.direction !== "outbound" || isAutomatedOutbound(m)) continue;
 
-      if (!resolveAssignment(m)) continue; // not a known lead — skip conversation-less noise
+      const lead = resolveAssignment(m);
+      if (!lead) continue; // not a known lead — skip conversation-less noise
 
       if (anchorAt === null) {
         anchorAt = m.sent_at;
@@ -395,7 +395,7 @@ export async function getFollowupAdherence(params: {
       }
 
       const stage = depth + 1;
-      if (stage <= MAX_FOLLOWUPS && assignment && !stoppedBefore(new Date(m.sent_at).getTime())) {
+      if (stage <= MAX_FOLLOWUPS && !stoppedBefore(lead, new Date(m.sent_at).getTime())) {
         const { openAt } = windowFor(anchorAt, stage);
         let status: "in" | "off";
         if (stage === 1) {
@@ -410,40 +410,41 @@ export async function getFollowupAdherence(params: {
           openAt,
           sentAt: m.sent_at,
           replied: false,
-          setterKey: assignment.setterKey || "unassigned",
-          setterLabel: assignment.setterLabel || "Unassigned",
-          subscriberId: assignment.subscriberId,
+          setterKey: lead.setterKey || "unassigned",
+          setterLabel: lead.setterLabel || "Unassigned",
+          subscriberId: lead.subscriberId,
         };
         if (inMetricsRange(openAt)) duePoints.push(point);
         lastFollowup = point;
-        const sentList = sentBySubscriber.get(assignment.subscriberId) || [];
+        const sentList = sentBySubscriber.get(lead.subscriberId) || [];
         sentList.push({ stage, sentAtMs: new Date(m.sent_at).getTime() });
-        sentBySubscriber.set(assignment.subscriberId, sentList);
+        sentBySubscriber.set(lead.subscriberId, sentList);
       }
       depth = Math.min(stage, MAX_FOLLOWUPS);
       anchorAt = m.sent_at;
     }
 
     // Conversation ended on our unanswered message: is a follow-up owed now?
-    if (anchorAt && assignment && depth < MAX_FOLLOWUPS) {
+    const lead = assignment;
+    if (anchorAt && lead && depth < MAX_FOLLOWUPS) {
       const stage = depth + 1;
       const { openAt, closeAt } = windowFor(anchorAt, stage);
       const openMs = new Date(openAt).getTime();
       const closeMs = new Date(closeAt).getTime();
       const anchorMs = new Date(anchorAt).getTime();
-      const stopped = stoppedBefore(nowMs);
+      const stopped = stoppedBefore(lead, nowMs);
 
       if (!stopped && nowMs > closeMs) {
-        recordMissedIfLapsed(nowMs);
+        recordMissedIfLapsed(lead, nowMs);
       }
       if (!stopped && nowMs >= openMs && anchorMs >= staleCutoffMs) {
         needsFollowup.push({
-          client: assignment.client.id,
-          clientLabel: assignment.client.label,
-          setterLabel: assignment.setterLabel || "Unassigned",
-          leadName: assignment.leadName,
-          subscriberId: assignment.subscriberId,
-          manychatUrl: manychatChatUrl(assignment.client.id, assignment.subscriberId),
+          client: lead.client.id,
+          clientLabel: lead.client.label,
+          setterLabel: lead.setterLabel || "Unassigned",
+          leadName: lead.leadName,
+          subscriberId: lead.subscriberId,
+          manychatUrl: manychatChatUrl(lead.client.id, lead.subscriberId),
           stage,
           lastFollowupAt: anchorAt,
           dueAt: openAt,
