@@ -6,6 +6,7 @@ import {
   Users,
   Phone,
   Clock3,
+  Repeat,
   ChevronDown,
   Loader2,
   Sparkles,
@@ -17,6 +18,7 @@ import UnifiedDashboard from "./components/UnifiedDashboard";
 import CloserPerformance from "./components/CloserPerformance";
 import SetterPerformance from "./components/SetterPerformance";
 import ResponseTimes from "./components/ResponseTimes";
+import FollowupAdherence from "./components/FollowupAdherence";
 import AskAI from "./components/AskAI";
 import AlexTesting from "./components/AlexTesting";
 
@@ -29,6 +31,7 @@ const SECTIONS = [
   { id: "closers", label: "Closers", icon: Phone },
   { id: "setters", label: "Setters", icon: Users },
   { id: "response-times", label: "Response Times", icon: Clock3 },
+  { id: "followups", label: "Follow-ups", icon: Repeat },
 ] as const;
 
 /* ------------------------------------------------------------------ */
@@ -512,6 +515,16 @@ export default function SalesHubPage() {
         defaultOpen
       >
         <ResponseTimes filters={filters} />
+      </CollapsibleSection>
+
+      {/* Section 5: Follow-up Adherence */}
+      <CollapsibleSection
+        id="followups"
+        title="Follow-up Adherence"
+        icon={<Repeat size={18} />}
+        defaultOpen
+      >
+        <FollowupAdherence filters={filters} />
       </CollapsibleSection>
 
       {/* Section 5: Ask AI (allowlisted users only — component hides itself otherwise) */}

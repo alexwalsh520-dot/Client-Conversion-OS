@@ -4,15 +4,15 @@ import { getActiveClients, getSetterLabelMap } from "@/lib/registry";
 /** "all" or a client registry key (e.g. "tyson"). */
 export type SalesHubClient = string;
 
-type ClientId = string;
+export type ClientId = string;
 
-interface ClientDef {
+export interface ClientDef {
   id: ClientId;
   key: string;
   label: string;
 }
 
-interface AssignmentEventRow {
+export interface AssignmentEventRow {
   client: string;
   subscriber_id: string;
   subscriber_name: string | null;
@@ -22,7 +22,7 @@ interface AssignmentEventRow {
   raw_payload?: unknown;
 }
 
-interface MessageRow {
+export interface MessageRow {
   client: string;
   subscriber_id: string;
   conversation_id: string;
@@ -35,14 +35,14 @@ interface MessageRow {
   raw_payload?: unknown;
 }
 
-interface LeadLinkRow {
+export interface LeadLinkRow {
   client: string;
   manychat_subscriber_id: string | null;
   instagram_user_id: string | null;
   instagram_handle: string | null;
 }
 
-interface LeadAssignment {
+export interface LeadAssignment {
   client: ClientDef;
   subscriberId: string;
   setterKey: string | null;
@@ -215,7 +215,7 @@ const CLIENT_MANYCHAT_PAGE_ID: Record<ClientId, string | null> = {
   antwan: null,
 };
 
-function manychatChatUrl(client: ClientId, subscriberId: string | null): string | null {
+export function manychatChatUrl(client: ClientId, subscriberId: string | null): string | null {
   const pageId = CLIENT_MANYCHAT_PAGE_ID[client];
   if (!pageId || !subscriberId) return null;
   return `https://app.manychat.com/fb${pageId}/chat/${subscriberId}`;
@@ -269,7 +269,7 @@ function getEtParts(date: Date) {
   };
 }
 
-function toEtDateStr(iso: string) {
+export function toEtDateStr(iso: string) {
   return getEtParts(new Date(iso)).dateStr;
 }
 
@@ -310,7 +310,7 @@ function rawPayloadRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function isAutomatedOutbound(message: MessageRow) {
+export function isAutomatedOutbound(message: MessageRow) {
   const raw = rawPayloadRecord(message.raw_payload);
   const source = typeof raw.source === "string" ? raw.source.toLowerCase() : "";
   const messageType = message.message_type?.toLowerCase() || "";
@@ -318,7 +318,7 @@ function isAutomatedOutbound(message: MessageRow) {
   return source.includes("ai-followup") || messageType.includes("followup");
 }
 
-function buildAssignments(events: AssignmentEventRow[], clientDefs: ClientDef[]) {
+export function buildAssignments(events: AssignmentEventRow[], clientDefs: ClientDef[]) {
   const clientByKey = new Map(clientDefs.map((client) => [client.key, client]));
   const bySubscriber = new Map<string, LeadAssignment[]>();
 
@@ -369,7 +369,7 @@ function findAssignment(
   return match;
 }
 
-function buildLeadLinkMap(rows: LeadLinkRow[]) {
+export function buildLeadLinkMap(rows: LeadLinkRow[]) {
   const map = new Map<string, string>();
   for (const row of rows) {
     if (!row.client || !row.instagram_user_id || !row.manychat_subscriber_id) continue;
@@ -378,7 +378,7 @@ function buildLeadLinkMap(rows: LeadLinkRow[]) {
   return map;
 }
 
-function findAssignmentForMessage(
+export function findAssignmentForMessage(
   assignments: Map<string, LeadAssignment[]>,
   leadLinkByInstagramId: Map<string, string>,
   clientKey: string,
@@ -440,7 +440,7 @@ function summarizeSamples(id: string, label: string, samples: ResponseSample[]):
 // more than 1000 ManyChat assignment events across the lookback window, so a single
 // ascending query silently returns only the OLDEST 1000 — dropping every recent lead
 // and producing zero matched samples. Page through all rows so nothing is truncated.
-async function loadAllRows<T>(
+export async function loadAllRows<T>(
   fetchPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
   pageSize = 1000,
   maxRows = 50000,
