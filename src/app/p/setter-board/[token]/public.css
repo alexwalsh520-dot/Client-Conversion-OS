@@ -1,0 +1,239 @@
+/* Public setter leaderboard — standalone dark page, no CCOS app chrome. */
+
+.app-layout:has(.pub-board-page) .sidebar,
+.app-layout:has(.pub-unavailable) .sidebar {
+  display: none !important;
+}
+
+.app-layout:has(.pub-board-page) .main-content,
+.app-layout:has(.pub-unavailable) .main-content {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+}
+
+.pub-unavailable {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: #050505;
+  padding: 24px;
+}
+
+.pub-unavailable-card {
+  max-width: 420px;
+  text-align: center;
+  background: #0f0f12;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  padding: 40px 32px;
+  color: #e8e8ea;
+}
+
+.pub-unavailable-card h1 {
+  margin: 0 0 12px;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.pub-unavailable-card p {
+  margin: 0;
+  font-size: 14px;
+  color: #9a9aa2;
+}
+
+.pub-board-page {
+  min-height: 100vh;
+  background: #050505;
+  color: #e8e8ea;
+  padding: 28px clamp(16px, 4vw, 48px) 64px;
+  font-size: 14px;
+}
+
+.pb-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.pb-head h1 {
+  margin: 0 0 6px;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.pb-sub {
+  margin: 0;
+  font-size: 12px;
+  color: #9a9aa2;
+}
+
+.pb-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: #0f0f12;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+}
+
+.pb-tab {
+  border: none;
+  background: transparent;
+  color: #9a9aa2;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.pb-tab.on {
+  background: #23232a;
+  color: #fff;
+}
+
+.pb-note {
+  padding: 40px;
+  text-align: center;
+  color: #9a9aa2;
+}
+
+.pb-error {
+  color: #f28b82;
+}
+
+.pb-boards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.pb-card {
+  background: #0f0f12;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  padding: 16px 18px;
+}
+
+.pb-card-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 700;
+  color: #cfcfd6;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pb-card-sub {
+  font-size: 10px;
+  letter-spacing: 0.4px;
+  text-transform: none;
+  font-weight: 500;
+  color: #77777f;
+}
+
+.pb-ranks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pb-ranks li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+
+.pb-ranks li.first {
+  background: rgba(255, 200, 60, 0.08);
+}
+
+.pb-medal {
+  width: 26px;
+  text-align: center;
+  flex-shrink: 0;
+  color: #9a9aa2;
+  font-size: 13px;
+}
+
+.pb-rname {
+  font-weight: 650;
+  flex: 1;
+}
+
+.pb-rval {
+  color: #b9b9c2;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pb-tablewrap {
+  overflow-x: auto;
+  background: #0f0f12;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+}
+
+.pb-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 860px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pb-table th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #77777f;
+  font-weight: 700;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  white-space: nowrap;
+}
+
+.pb-table td {
+  padding: 11px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 13px;
+  color: #cfcfd6;
+  white-space: nowrap;
+}
+
+.pb-table tr:last-child td {
+  border-bottom: none;
+}
+
+.pb-name {
+  font-weight: 700;
+  color: #fff;
+}
+
+.pb-cash {
+  color: #7ed3aa;
+  font-weight: 700;
+}
+
+.pb-total td {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.02);
+  font-weight: 700;
+}
