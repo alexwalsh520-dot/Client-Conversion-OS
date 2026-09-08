@@ -43,8 +43,8 @@ interface DMReviewProps {
 /* ── Constants ────────────────────────────────────────────────────── */
 
 const SETTER_MAP: Record<string, string[]> = {
-  tyson: ["Amara", "Kelechi", "Debbie", "Gideon", "Erin"],
-  all: ["Amara", "Kelechi", "Debbie", "Gideon", "Erin"],
+  tyson: ["Amara", "Kelechi", "Debbie", "Gideon"],
+  all: ["Amara", "Kelechi", "Debbie", "Gideon"],
 };
 
 const SETTER_CLIENT: Record<string, string> = {
@@ -52,7 +52,6 @@ const SETTER_CLIENT: Record<string, string> = {
   Kelechi: "tyson",
   Gideon: "tyson",
   Debbie: "tyson",
-  Erin: "tyson",
 };
 
 function formatDate(iso: string): string {

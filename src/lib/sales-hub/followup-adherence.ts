@@ -1,5 +1,6 @@
 import { getServiceSupabase } from "@/lib/supabase";
 import { getActiveClients } from "@/lib/registry";
+import { isExcludedSetter } from "@/lib/sales-hub/excluded-setters";
 import { addBusinessMinutes, businessMinutesBetween } from "@/lib/sales-hub/business-hours";
 import { fetchSheetData } from "@/lib/google-sheets";
 import {
@@ -44,6 +45,13 @@ const FU1_CLOSE_WORK_MINUTES = 60;
 const NEXT_OPEN_HOURS = 22;
 const NEXT_CLOSE_HOURS = 26;
 // A lead whose chain anchor is older than this is no longer actionable.
+// Excluded setters (e.g. flows still firing under a departed name) fold
+// into the Unassigned bucket instead of getting their own row.
+function sanitizeSetterKey(key: string | null | undefined): string {
+  if (!key || isExcludedSetter(key)) return "unassigned";
+  return key;
+}
+
 const NEEDS_STALE_DAYS = 10;
 const STOP_TAG_SUBSTRINGS = ["booked", "sold", "closed", "waiting"];
 
@@ -349,7 +357,7 @@ export async function getFollowupAdherence(params: {
         openAt,
         sentAt: null,
         replied: false,
-        setterKey: a.setterKey || "unassigned",
+        setterKey: sanitizeSetterKey(a.setterKey),
         setterLabel: a.setterLabel || "Unassigned",
         subscriberId: a.subscriberId,
       });
@@ -407,7 +415,7 @@ export async function getFollowupAdherence(params: {
           openAt,
           sentAt: m.sent_at,
           replied: false,
-          setterKey: lead.setterKey || "unassigned",
+          setterKey: sanitizeSetterKey(lead.setterKey),
           setterLabel: lead.setterLabel || "Unassigned",
           subscriberId: lead.subscriberId,
         };

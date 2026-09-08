@@ -1,5 +1,6 @@
 import { getServiceSupabase } from "@/lib/supabase";
 import { getActiveClients, getSetterLabelMap } from "@/lib/registry";
+import { isExcludedSetter } from "@/lib/sales-hub/excluded-setters";
 
 /** "all" or a client registry key (e.g. "tyson"). */
 export type SalesHubClient = string;
@@ -631,7 +632,9 @@ export async function getResponseTimeMetrics(params: {
     ),
   );
 
-  const setterKeys = [...new Set(samples.map((sample) => sample.setterKey || "unassigned"))];
+  const setterKeys = [...new Set(samples.map((sample) => sample.setterKey || "unassigned"))].filter(
+    (key) => !isExcludedSetter(key),
+  );
   const setters = setterKeys
     .map((setterKey) =>
       summarizeSamples(
