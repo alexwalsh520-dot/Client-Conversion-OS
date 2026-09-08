@@ -1,7 +1,7 @@
 /**
  * Lead Score pilot (Tyson only).
  *
- * Nightly, for each new keyword lead, an AI reads the FIRST stretch of the
+ * Hourly, for each new keyword lead, an AI reads the FIRST stretch of the
  * DM conversation and scores how much the person talks like our historical
  * buyers did (specific goal, real replies, personal detail, urgency) versus
  * our historical ghosts (one-word answers, freebie-only, no engagement).
@@ -205,7 +205,15 @@ export async function runLeadScoreTick(
       const messageIds = await resolveMessageIds(db, clientKey, cand.subscriber_id);
       const { transcript, count } = await fetchOpeningMessages(db, dmClient, messageIds);
       if (count < 2) {
-        // Mark it so tomorrow's run does not refetch the same unreadable lead.
+        // Hourly cadence: a lead minutes old often has no readable messages
+        // yet. Leave young leads unstamped so the next tick retries them;
+        // only a lead still unreadable after 48h gets the permanent
+        // "unscored" row that stops refetching.
+        const ageMs = Date.now() - new Date(cand.first_keyword_at).getTime();
+        if (ageMs < 48 * 3600_000) {
+          report.skippedNoMessages++;
+          return;
+        }
         await db.from("lead_scores").upsert(
           {
             client_key: clientKey,

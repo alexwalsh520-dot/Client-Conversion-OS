@@ -161,7 +161,7 @@
     },
     {
       "path": "/api/cron/lead-score",
-      "schedule": "10 8 * * *"
+      "schedule": "8 * * * *"
     }
   ]
 }

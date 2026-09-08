@@ -1,4 +1,4 @@
-// Lead Score pilot: nightly, score yesterday's new Tyson keyword leads from
+// Lead Score pilot: hourly, score new Tyson keyword leads from
 // the opening of their DM conversation. Silent: writes public.lead_scores
 // only; no UI reads it during the pilot. ?days= and ?limit= support backfill.
 import { NextRequest, NextResponse } from "next/server";
