@@ -6,6 +6,7 @@ import {
   Users,
   Phone,
   Clock3,
+  ClipboardCheck,
   Repeat,
   ChevronDown,
   Loader2,
@@ -16,6 +17,7 @@ import FilterBar, { getEffectiveDates } from "./components/FilterBar";
 import { clientsFromRows, rowMatchesClientKey } from "./components/clientsFromRows";
 import UnifiedDashboard from "./components/UnifiedDashboard";
 import CloserPerformance from "./components/CloserPerformance";
+import PrecallAdherence from "./components/PrecallAdherence";
 import SetterPerformance from "./components/SetterPerformance";
 import ResponseTimes from "./components/ResponseTimes";
 import FollowupAdherence from "./components/FollowupAdherence";
@@ -29,6 +31,7 @@ import AlexTesting from "./components/AlexTesting";
 const SECTIONS = [
   { id: "dashboard", label: "Dashboard", icon: BarChart3 },
   { id: "closers", label: "Closers", icon: Phone },
+  { id: "precall", label: "Pre-Call", icon: ClipboardCheck },
   { id: "setters", label: "Setters", icon: Users },
   { id: "response-times", label: "Response Times", icon: Clock3 },
   { id: "followups", label: "Follow-ups", icon: Repeat },
@@ -497,7 +500,17 @@ export default function SalesHubPage() {
         />
       </CollapsibleSection>
 
-      {/* Section 3: Setter Performance */}
+      {/* Section 3: Closer Pre-Call Adherence */}
+      <CollapsibleSection
+        id="precall"
+        title="Closer Pre-Call Adherence"
+        icon={<ClipboardCheck size={18} />}
+        defaultOpen
+      >
+        <PrecallAdherence filters={filters} />
+      </CollapsibleSection>
+
+      {/* Section 4: Setter Performance */}
       <CollapsibleSection
         id="setters"
         title="Setter Performance"
@@ -507,7 +520,7 @@ export default function SalesHubPage() {
         <SetterPerformance filters={filters} />
       </CollapsibleSection>
 
-      {/* Section 4: Response Times */}
+      {/* Section 5: Response Times */}
       <CollapsibleSection
         id="response-times"
         title="Response Times"
@@ -517,7 +530,7 @@ export default function SalesHubPage() {
         <ResponseTimes filters={filters} />
       </CollapsibleSection>
 
-      {/* Section 5: Follow-up Adherence */}
+      {/* Section 6: Follow-up Adherence */}
       <CollapsibleSection
         id="followups"
         title="Follow-up Adherence"
@@ -527,7 +540,7 @@ export default function SalesHubPage() {
         <FollowupAdherence filters={filters} />
       </CollapsibleSection>
 
-      {/* Section 5: Ask AI (allowlisted users only — component hides itself otherwise) */}
+      {/* Section 7: Ask AI (allowlisted users only — component hides itself otherwise) */}
       <AskAI />
 
     </div>
