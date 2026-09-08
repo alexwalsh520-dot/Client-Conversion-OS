@@ -38,6 +38,12 @@ export default function AdsV2Client({ publicToken, lockedAccount }: AdsV2ClientP
   const cache = useRef<Map<string, AdsV2Payload>>(new Map());
   // Guard against a slow response for a stale selection overwriting a newer one.
   const activeKey = useRef<string>("");
+  // Counts background revalidations of the ACTIVE window that came back
+  // "preparing" (the server was mid-rebuild after a sync bumped data_version).
+  // Non-zero keeps the poll effect below re-reading until the rebuilt snapshot
+  // lands; without it the table pins to the old snapshot while the Metrics
+  // slice moves to the new version, and the board blanks on the version gate.
+  const [rebuildPending, setRebuildPending] = useState(0);
 
   const fetchWindow = useCallback(
     async (acc: AdsV2Account, st: AdsV2Status, r: DayRange, opts?: { background?: boolean }) => {
@@ -54,11 +60,26 @@ export default function AdsV2Client({ publicToken, lockedAccount }: AdsV2ClientP
         // Never cache a "preparing" placeholder as if it were the real numbers;
         // that would pin the window to the placeholder on the instant-switch path.
         if (!data.preparing) cache.current.set(key, data);
-        // Only paint if this is still the selection the user is looking at.
-        if (!opts?.background && activeKey.current === key) {
-          setPayload(data);
-          setLoading(false);
-          setError(null);
+        // Paint whenever this is still the selection the user is looking at.
+        // A background revalidate paints too when it brings REAL data: leaving
+        // it cache-only kept the table on the older snapshot version while the
+        // Metrics slice fetched the newer one, and the version-pairing gate
+        // then blanked the whole Metrics board and the Beyond-the-ads lanes.
+        if (activeKey.current === key) {
+          if (!data.preparing) {
+            setPayload(data);
+            setLoading(false);
+            setError(null);
+            setRebuildPending(0);
+          } else if (opts?.background) {
+            // Mid-rebuild placeholder: keep showing the cached table, but keep
+            // polling until the fresh snapshot lands.
+            setRebuildPending((n) => n + 1);
+          } else {
+            setPayload(data);
+            setLoading(false);
+            setError(null);
+          }
         }
         return data;
       } catch (err) {
@@ -76,6 +97,7 @@ export default function AdsV2Client({ publicToken, lockedAccount }: AdsV2ClientP
   useEffect(() => {
     const key = keyOf(account, status, range);
     activeKey.current = key;
+    setRebuildPending(0);
     const cached = cache.current.get(key);
     if (cached) {
       setPayload(cached);
@@ -111,15 +133,16 @@ export default function AdsV2Client({ publicToken, lockedAccount }: AdsV2ClientP
     return () => clearTimeout(timer);
   }, [loading, account, status, range, fetchWindow, isPublic]);
 
-  // If the window is still preparing (no snapshot yet), poll until it lands.
+  // If the window is still preparing (no snapshot yet), or a background
+  // revalidate caught the server mid-rebuild, poll until the snapshot lands.
   // The background build was scheduled by the request; we just re-read.
   useEffect(() => {
-    if (!payload?.preparing) return;
+    if (!payload?.preparing && rebuildPending === 0) return;
     const timer = setTimeout(() => {
-      fetchWindow(account, status, range);
+      fetchWindow(account, status, range, rebuildPending > 0 ? { background: true } : undefined);
     }, 2500);
     return () => clearTimeout(timer);
-  }, [payload, account, status, range, fetchWindow]);
+  }, [payload, rebuildPending, account, status, range, fetchWindow]);
 
   const applyDate = (p: PresetId, r: DayRange) => {
     setPreset(p);

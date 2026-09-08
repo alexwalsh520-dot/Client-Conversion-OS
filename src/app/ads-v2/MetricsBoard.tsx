@@ -148,13 +148,15 @@ export default function MetricsBoard({
   }, [publicToken, account, status, dateFrom, dateTo, key]);
 
   // Lazily fetch the slice AFTER the table paints (a short defer), and re-poll
-  // once if it is still preparing.
+  // once if it is still preparing. tableVersion is a dependency on purpose:
+  // when the table lands on a fresh snapshot version, the slice refetches so
+  // the pair re-converges instead of blanking on the version gate below.
   useEffect(() => {
     const cached = cache.current.get(key);
     if (cached) setMetrics(cached);
     const t = setTimeout(load, cached ? 0 : 250);
     return () => clearTimeout(t);
-  }, [key, load]);
+  }, [key, load, tableVersion]);
 
   useEffect(() => {
     if (!metrics?.preparing) return;

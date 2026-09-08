@@ -548,11 +548,12 @@ async function loadHoverDetails(
     awaiting_review: boolean;
     linked_subscriber_id: string | null;
     evidence: { subscriber?: string | null } | null;
+    appointment_key: string | null;
   }>((from, to) =>
     db
       .from("adsv2_booking_facts")
       .select(
-        "client_key, keyword_normalized, contact_id, person_name, start_time, created_time, booked_et_day, dm_et_day, is_upcoming, taken, status, is_organic, awaiting_review, linked_subscriber_id, evidence",
+        "client_key, keyword_normalized, contact_id, person_name, start_time, created_time, booked_et_day, dm_et_day, is_upcoming, taken, status, is_organic, awaiting_review, linked_subscriber_id, evidence, appointment_key",
       )
       .in("client_key", clients)
       .gte("booked_et_day", shiftDay(query.dateFrom, -60))
@@ -568,10 +569,11 @@ async function loadHoverDetails(
     prospect_name: string | null;
     subscriber_id: string | null;
     sale_et_day: string;
+    evidence_detail: { carried_from_booking?: string | null } | null;
   }>((from, to) =>
     db
       .from("adsv2_sale_facts")
-      .select("client_key, keyword_normalized, prospect_name, subscriber_id, sale_et_day")
+      .select("client_key, keyword_normalized, prospect_name, subscriber_id, sale_et_day, evidence_detail")
       .in("client_key", clients)
       .gte("sale_et_day", query.dateFrom)
       .lte("sale_et_day", query.dateTo)
@@ -586,7 +588,9 @@ async function loadHoverDetails(
   // date in the fetched span, review status irrelevant). Used ONLY to fill the
   // taken popup's DMed/Booked columns; never to count anything.
   const bookingsBySubscriber = new Map<string, typeof bookings>();
+  const bookingsByAppointment = new Map<string, (typeof bookings)[number]>();
   for (const b of bookings) {
+    if (b.appointment_key) bookingsByAppointment.set(b.appointment_key, b);
     const sub = b.linked_subscriber_id || b.evidence?.subscriber || null;
     if (!sub) continue;
     const list = bookingsBySubscriber.get(sub) || [];
@@ -616,6 +620,15 @@ async function loadHoverDetails(
       } else if (bBefore ? b.booked_et_day > linked.booked_et_day : b.booked_et_day < linked.booked_et_day) {
         linked = b;
       }
+    }
+    // Second hard key: a sale whose keyword was CARRIED from a booking names
+    // that booking's appointment key in its evidence. Follow it, so the popup
+    // shows the DMed/Booked days of the very booking the attribution used.
+    // Still no name matching anywhere.
+    if (!linked) {
+      const carried = s.evidence_detail?.carried_from_booking;
+      const viaCarry = carried ? bookingsByAppointment.get(carried) : undefined;
+      if (viaCarry && viaCarry.client_key === s.client_key) linked = viaCarry;
     }
     const list = takenDetailByLeaf.get(key) || [];
     list.push({
