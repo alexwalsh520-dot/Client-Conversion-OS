@@ -351,9 +351,17 @@ async function fetchSubscriptionTabValues(
   const rows: (string | undefined)[][] = json.values || [];
   const headerIndex = rows.findIndex((row) => {
     const normalized = row.map(normalizeHeader);
-    return normalized.includes("date") &&
+    // The side-table's header set drifts by month (September 2026 has no
+    // Offer column: Date/Name/Closer/New MRR/Source), so require Date+Name
+    // plus any one of the other known columns.
+    return (
+      normalized.includes("date") &&
       normalized.includes("name") &&
-      normalized.includes("offer");
+      (normalized.includes("offer") ||
+        normalized.includes("closer") ||
+        normalized.includes("newmrr") ||
+        normalized.includes("source"))
+    );
   });
 
   if (headerIndex >= 0) {
