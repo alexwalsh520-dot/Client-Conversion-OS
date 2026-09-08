@@ -506,7 +506,10 @@ function parseSubscriptionHeaderRow(
   const source = normalizeCell(headerValue(row, sourceIdx));
   const offer = normalizeCell(headerValue(row, offerIdx));
 
-  if (!name || !offer) return null;
+  // Offer is OPTIONAL: the subscription side-table often has no Offer column
+  // (e.g. September 2026: Date/Name/Closer/New MRR/Source). Requiring it
+  // silently dropped every subscription sale that month.
+  if (!name) return null;
   if (!amount && !source) return null;
 
   return {
@@ -548,7 +551,10 @@ function parseSubscriptionRow(
   const source = normalizeCell(row[5]);
   const offer = normalizeCell(row[6]);
 
-  if (!name || !offer) return null;
+  // Offer is OPTIONAL: the subscription side-table often has no Offer column
+  // (e.g. September 2026: Date/Name/Closer/New MRR/Source). Requiring it
+  // silently dropped every subscription sale that month.
+  if (!name) return null;
   if (!amount && !source) return null;
 
   return {
