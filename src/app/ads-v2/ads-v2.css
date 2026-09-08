@@ -5,7 +5,12 @@
 
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
 
-.adsv2 {
+/* The token set lives on .adsv2 AND on .dm-overlay: the DM inbox renders in a
+   portal on document.body, OUTSIDE the .adsv2 subtree, so without its own copy
+   of the tokens every var() fell back to the dark value and the panel stayed
+   dark in light mode. */
+.adsv2,
+.dm-overlay {
   --bg: #0a0a0a;
   --bg-1: #0d0d0d;
   --panel: #111111;
@@ -27,7 +32,9 @@
   --gold-dim: #8a7348;
   --blue: #7aa7d4;
   --mono: "JetBrains Mono", ui-monospace, monospace;
+}
 
+.adsv2 {
   font-family: "Inter", system-ui, sans-serif;
   font-size: 13px;
   letter-spacing: -0.005em;
@@ -37,7 +44,8 @@
   padding: 24px 28px 80px;
 }
 
-html.light .adsv2 {
+html.light .adsv2,
+html.light .dm-overlay {
   --bg: #f6f6f4;
   --bg-1: #fbfbfa;
   --panel: #ffffff;
