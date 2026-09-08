@@ -2,6 +2,7 @@ import { getActiveClients, getSetterLabelMap } from "@/lib/registry";
 import { fetchSheetData, type SheetRow } from "@/lib/google-sheets";
 import { getMetrics } from "@/lib/manychat";
 import { creatorKeyFromText } from "@/lib/creators";
+import { isExcludedSetter } from "@/lib/sales-hub/excluded-setters";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Setter Board — the numbers behind the public setter leaderboard page
@@ -107,7 +108,7 @@ export async function getSetterBoard(dateFrom: string, dateTo: string): Promise<
         const metrics = await getMetrics(client.manychatKey, dateFrom, dateTo);
         for (const [key, m] of Object.entries(metrics.setters || {})) {
           const name = resolveSetter(key);
-          if (!name) continue;
+          if (!name || isExcludedSetter(name)) continue;
           rowFor(name).newLeads += m.newLeads || 0;
         }
       } catch {
@@ -130,7 +131,7 @@ export async function getSetterBoard(dateFrom: string, dateTo: string): Promise<
     const clientKey = creatorKeyFromText(r.offer);
     if (clientKey && !activeKeys.has(clientKey)) continue; // retired client rows stay out
     const name = resolveSetter(r.setter);
-    if (!name) continue;
+    if (!name || isExcludedSetter(name)) continue;
     const row = rowFor(name);
 
     if (r.programLength === "Subscription") {

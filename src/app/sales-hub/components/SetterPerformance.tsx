@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { fmtDollars, fmtNumber, fmtPercent } from "@/lib/formatters";
 import { getEffectiveDates } from "./FilterBar";
+import { isExcludedSetter } from "@/lib/sales-hub/excluded-setters";
 import HourlyStripTable, { type StripRow } from "./HourlyStripTable";
 import type { Filters, ManychatMetrics } from "../types";
 import { clientsFromRows, rowMatchesClientKey } from "./clientsFromRows";
@@ -125,7 +126,7 @@ function leadCountRow(group: LeadHourGroup): StripRow {
 // the ManyChat metrics AND the sheet's Setter column, so new setters appear
 // automatically.
 const CLIENT_SETTERS: Record<string, string[]> = {
-  tyson: ["Amara", "Kelechi", "Debbie", "Gideon", "Erin"],
+  tyson: ["Amara", "Kelechi", "Debbie", "Gideon"],
 };
 
 const SETTER_SHEET_KEYS: Record<string, string[]> = {
@@ -133,7 +134,6 @@ const SETTER_SHEET_KEYS: Record<string, string[]> = {
   Kelechi: ["KELCHI", "KELECHI"],
   Gideon: ["GIDEON"],
   Debbie: ["DEBBIE", "DEBBY", "CHIDIEBERE"],
-  Erin: ["ERIN"],
 };
 
 function clientColor(client: string): string {
@@ -288,7 +288,7 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
     const addName = (raw: string) => {
       const trimmed = raw.trim();
       const lc = trimmed.toLowerCase();
-      if (!lc || names.has(lc)) return;
+      if (!lc || names.has(lc) || isExcludedSetter(lc)) return;
       names.set(lc, trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase());
     };
     for (const client of clients) {

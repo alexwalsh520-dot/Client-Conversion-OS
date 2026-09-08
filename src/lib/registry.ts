@@ -98,7 +98,7 @@ const FALLBACK_TEAM: TeamMember[] = [
   { name: "Kelechi", aliases: ["kelechi", "kelchi", "kelz"], jobRole: "setter" },
   { name: "Debbie", aliases: ["debbie", "debby", "chidiebere", "nwosu"], jobRole: "setter" },
   { name: "Gideon", aliases: ["gideon"], jobRole: "setter" },
-  { name: "Erin", aliases: ["erin"], jobRole: "setter" },
+  { name: "Erin", aliases: ["erin"], jobRole: "setter", isActive: false },
 ].map((m, i) => ({
   id: `fallback-${i}`,
   email: null,

@@ -15,6 +15,7 @@
 
 import { fetchSheetData } from "./google-sheets";
 import { getServiceSupabase } from "./supabase";
+import { isExcludedSetter } from "./sales-hub/excluded-setters";
 
 // Long-form ManyChat client key (e.g. "tyson_sonnek", "jake_divljak") — any
 // registry client works; unknown clients simply have no events and read zero.
@@ -49,9 +50,19 @@ export interface ManychatMetrics {
 }
 
 const CLIENT_SETTERS: Record<Client, string[]> = {
-  tyson_sonnek: ["amara", "kelechi", "debbie", "gideon", "erin"],
+  tyson_sonnek: ["amara", "kelechi", "debbie", "gideon"],
   antwan_rarcus: [],
 };
+
+// Excluded setters keep counting toward team totals but never get a
+// per-setter row (their flows may still fire with their name).
+function withoutExcludedSetters<T>(metrics: Record<string, T>): Record<string, T> {
+  const out: Record<string, T> = {};
+  for (const [key, value] of Object.entries(metrics)) {
+    if (!isExcludedSetter(key)) out[key] = value;
+  }
+  return out;
+}
 
 const LEAD_SOURCE_DEFS = [
   { id: "direct_cta_ad", label: "Direct CTA ad" },
@@ -346,7 +357,7 @@ export async function getMetrics(
 
     if (newLeadError) {
       console.error("manychat_tag_events cohort query error:", newLeadError);
-      return { dashboard, leadSources: leadSourcesList(leadSources), funnel, setters: setterMetrics, tagsDetected: false };
+      return { dashboard, leadSources: leadSourcesList(leadSources), funnel, setters: withoutExcludedSetters(setterMetrics), tagsDetected: false };
     }
 
     const eventsInEtRange = ((newLeadEvents || []) as ManychatTagEventRow[]).filter((event) => {
@@ -355,7 +366,7 @@ export async function getMetrics(
     });
 
     if (eventsInEtRange.length === 0) {
-      return { dashboard, leadSources: leadSourcesList(leadSources), funnel, setters: setterMetrics, tagsDetected: true };
+      return { dashboard, leadSources: leadSourcesList(leadSources), funnel, setters: withoutExcludedSetters(setterMetrics), tagsDetected: true };
     }
 
     const cohort = buildCohort(eventsInEtRange);
@@ -422,7 +433,7 @@ export async function getMetrics(
 
     if (eventError) {
       console.error("manychat_tag_events progression query error:", eventError);
-      return { dashboard, leadSources: leadSourcesList(leadSources), funnel, setters: setterMetrics, tagsDetected: false };
+      return { dashboard, leadSources: leadSourcesList(leadSources), funnel, setters: withoutExcludedSetters(setterMetrics), tagsDetected: false };
     }
 
     const eventsBySubscriber = new Map<string, ManychatTagEventRow[]>();
@@ -475,7 +486,7 @@ export async function getMetrics(
 
     if (stageError) {
       console.error("dm_conversation_stage_state query error:", stageError);
-      return { dashboard, leadSources: leadSourcesList(leadSources), funnel, setters: setterMetrics, tagsDetected: false };
+      return { dashboard, leadSources: leadSourcesList(leadSources), funnel, setters: withoutExcludedSetters(setterMetrics), tagsDetected: false };
     }
 
     const stageStateMap = new Map<string, StageStateRow>();
@@ -498,7 +509,7 @@ export async function getMetrics(
 
     if (linkError) {
       console.error("manychat_contact_links query error:", linkError);
-      return { dashboard, leadSources: leadSourcesList(leadSources), funnel, setters: setterMetrics, tagsDetected: false };
+      return { dashboard, leadSources: leadSourcesList(leadSources), funnel, setters: withoutExcludedSetters(setterMetrics), tagsDetected: false };
     }
 
     const linkMap = new Map<string, ContactLinkRow>();
@@ -561,7 +572,7 @@ export async function getMetrics(
 
       if (appointmentError) {
         console.error("ghl_appointments query error:", appointmentError);
-        return { dashboard, leadSources: leadSourcesList(leadSources), funnel, setters: setterMetrics, tagsDetected: false };
+        return { dashboard, leadSources: leadSourcesList(leadSources), funnel, setters: withoutExcludedSetters(setterMetrics), tagsDetected: false };
       }
 
       const appointmentsByContact = new Map<string, AppointmentRow[]>();
@@ -643,10 +654,10 @@ export async function getMetrics(
       if (stage.id === "booked") stage.count = funnelStageCounts.booked;
     }
 
-    return { dashboard, leadSources: leadSourcesList(leadSources), funnel, setters: setterMetrics, tagsDetected: true };
+    return { dashboard, leadSources: leadSourcesList(leadSources), funnel, setters: withoutExcludedSetters(setterMetrics), tagsDetected: true };
   } catch (err) {
     console.error("manychat_tag_events error:", err);
-    return { dashboard, leadSources: leadSourcesList(leadSources), funnel, setters: setterMetrics, tagsDetected: false };
+    return { dashboard, leadSources: leadSourcesList(leadSources), funnel, setters: withoutExcludedSetters(setterMetrics), tagsDetected: false };
   }
 }
 

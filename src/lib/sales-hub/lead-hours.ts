@@ -1,6 +1,7 @@
 import { getServiceSupabase } from "@/lib/supabase";
 import type { SalesHubClient } from "@/lib/sales-hub/response-times";
 import { getActiveClients, getSetterLabelMap } from "@/lib/registry";
+import { isExcludedSetter } from "@/lib/sales-hub/excluded-setters";
 
 /**
  * New-lead volume by ET hour of day (midnight→midnight), from ManyChat
@@ -136,6 +137,7 @@ export async function getLeadHours(params: {
     if (offer) offer.counts[hour] += 1;
 
     const setterKey = row.setter_name?.trim().toLowerCase() || "unassigned";
+    if (isExcludedSetter(setterKey)) continue; // team/offer already counted above
     let setter = setterByKey.get(setterKey);
     if (!setter) {
       setter = {
