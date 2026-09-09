@@ -33,6 +33,8 @@ const SKILLS = [
     displayPath: "~/.claude/skills/jeremy-haynes-ad-writing/SKILL.md", file: join(HOME, ".claude/skills/jeremy-haynes-ad-writing/SKILL.md"), selfImproving: false },
   { id: "brian-mark-follower-ads", emoji: "🧲", accent: "#5bb8d9", tagline: "The Brian Mark follower ad template (5 steps, prospect language)",
     displayPath: "~/.claude/skills/brian-mark-follower-ads/SKILL.md", file: join(HOME, ".claude/skills/brian-mark-follower-ads/SKILL.md"), selfImproving: false },
+  { id: "broll-video-ads", emoji: "🎬", accent: "#d95b5b", tagline: "Reel + copy in, finished story video ad out - the locked LOADED layout",
+    displayPath: "~/.claude/skills/broll-video-ads/SKILL.md", file: join(HOME, ".claude/skills/broll-video-ads/SKILL.md"), selfImproving: true },
   { id: "womens-ad-voice", emoji: "💬", accent: "#d97aa0", tagline: "Women's ads are different — the voice + competitor teardowns",
     displayPath: "~/.claude/skills/womens-ad-voice/SKILL.md", file: join(HOME, ".claude/skills/womens-ad-voice/SKILL.md"), selfImproving: true },
 ];
