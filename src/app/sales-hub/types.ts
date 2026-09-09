@@ -1,6 +1,9 @@
+import type { PresetId } from "@/lib/ads-v2/time";
+
 /** "all" or a client registry key (e.g. "tyson") — options come from /api/clients. */
 export type Client = string;
-export type DatePreset = "mtd" | "last7" | "last30" | "custom";
+/** Same preset set as the Ads V2 tab's date dropdown (all Eastern-time). */
+export type DatePreset = PresetId;
 
 export interface Filters {
   client: Client;
