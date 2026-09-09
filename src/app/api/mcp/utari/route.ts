@@ -83,9 +83,11 @@ async function canonicalAds(client: string) {
 // before a restore replaces cards.
 async function factoryProxy(origin: string, method: "GET" | "POST" | "PATCH", opts: { query?: Record<string, string>; body?: unknown }) {
   const qs = opts.query ? "?" + new URLSearchParams(opts.query).toString() : "";
+  // /api/factory requires a viewer since the multiplayer auth guard (8/19); the
+  // door has no browser session, so it authenticates with its own bearer token.
   const res = await fetch(`${origin}/api/factory${qs}`, {
     method,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {}) },
     body: method === "GET" ? undefined : JSON.stringify(opts.body ?? {}),
   });
   const text = await res.text();

@@ -31,7 +31,14 @@ export const revalidate = 0;
 // The Factory is multi-user now (Alex + collaborators like Ahmad), so the API
 // requires a signed-in user who is an admin OR has /factory in allowed_tabs.
 // Old JWTs without role/allowedTabs pass, mirroring AccessGate's fallback.
-async function requireFactoryUser(): Promise<{ email: string; name: string } | null> {
+// The door (the /api/mcp/utari MCP) has no browser session; it authenticates
+// with its own bearer token (UTARI_MCP_TOKEN), same secret its callers use.
+async function requireFactoryUser(req?: NextRequest): Promise<{ email: string; name: string } | null> {
+  const doorToken = process.env.UTARI_MCP_TOKEN;
+  if (req && doorToken) {
+    const h = req.headers.get("authorization") || "";
+    if (h === `Bearer ${doorToken}` || h === doorToken) return { email: "claude@door.ccos", name: "claude" };
+  }
   const session = await auth();
   const user = session?.user;
   if (!user?.email) return null;
@@ -86,7 +93,7 @@ interface FactoryProject {
 
 export async function GET(req: NextRequest) {
   try {
-    const viewer = await requireFactoryUser();
+    const viewer = await requireFactoryUser(req);
     if (!viewer) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
     const sb = getServiceSupabase();
     const params = req.nextUrl.searchParams;
@@ -244,7 +251,7 @@ export async function GET(req: NextRequest) {
 // ---------------------------------------------------------------- POST (create)
 export async function POST(req: NextRequest) {
   try {
-    const viewer = await requireFactoryUser();
+    const viewer = await requireFactoryUser(req);
     if (!viewer) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
     const sb = getServiceSupabase();
     const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
@@ -416,7 +423,7 @@ export async function POST(req: NextRequest) {
 // ---------------------------------------------------------------- PATCH (update)
 export async function PATCH(req: NextRequest) {
   try {
-    const viewer = await requireFactoryUser();
+    const viewer = await requireFactoryUser(req);
     if (!viewer) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
     const sb = getServiceSupabase();
     const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
@@ -545,7 +552,7 @@ export async function PATCH(req: NextRequest) {
 // ---------------------------------------------------------------- DELETE
 export async function DELETE(req: NextRequest) {
   try {
-    const viewer = await requireFactoryUser();
+    const viewer = await requireFactoryUser(req);
     if (!viewer) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
     const sb = getServiceSupabase();
     const params = req.nextUrl.searchParams;
