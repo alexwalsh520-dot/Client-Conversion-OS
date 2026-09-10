@@ -3,13 +3,15 @@ import { fetchSheetData, type SheetRow } from "@/lib/google-sheets";
 import { getMetrics } from "@/lib/manychat";
 import { creatorKeyFromText } from "@/lib/creators";
 import { isExcludedSetter } from "@/lib/sales-hub/excluded-setters";
+import { getSetsBooked } from "@/lib/sales-hub/sets-booked";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Setter Board — the numbers behind the public setter leaderboard page
 // (/p/setter-board/<token>). One row per setter across the active clients:
 //
 //   newLeads      ManyChat new_lead events assigned to the setter (ET days)
-//   callsBooked   tracker call rows with their name in the Setter column
+//   callsBooked   sets MADE in the range — counted at the moment the lead
+//                 scheduled (GHL booking stream), NOT tracker rows by call day
 //   bookingRate   callsBooked ÷ newLeads
 //   callsTaken /  taken uses the hub's cash-override rule (cash collected
 //   showRate      means the call happened); showRate = taken ÷ (taken + noShows)
@@ -139,12 +141,23 @@ export async function getSetterBoard(dateFrom: string, dateTo: string): Promise<
       continue;
     }
 
-    row.callsBooked += 1;
     const outcome = (r.outcome || "").toUpperCase();
     if (isTaken(r)) row.callsTaken += 1;
     else if (r.callTakenStatus === "no" || outcome === "NS" || outcome === "NS/RS") row.noShows += 1;
     if (outcome === "WIN") row.wins += 1;
     row.cashCollected += r.cashCollected || 0;
+  }
+
+  // ── Booked = sets MADE in the range (the moment the lead scheduled),
+  //    not tracker rows by call day (owner definition, 2026-09-11) ──
+  try {
+    const sets = await getSetsBooked({ dateFrom, dateTo });
+    for (const s of sets.bySetter) {
+      if (s.key === "unassigned") continue; // leaderboard rows are named setters
+      rowFor(s.label).callsBooked += s.count;
+    }
+  } catch {
+    // booking stream unreachable — Booked column reads zero rather than lying
   }
 
   const rows = [...rowsByName.values()]
