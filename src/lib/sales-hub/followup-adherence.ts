@@ -52,6 +52,14 @@ function sanitizeSetterKey(key: string | null | undefined): string {
   return key;
 }
 
+function sanitizeSetterLabel(
+  key: string | null | undefined,
+  label: string | null | undefined,
+): string {
+  if (!key || isExcludedSetter(key)) return "Unassigned";
+  return label || "Unassigned";
+}
+
 const NEEDS_STALE_DAYS = 10;
 const STOP_TAG_SUBSTRINGS = ["booked", "sold", "closed", "waiting"];
 
@@ -358,7 +366,7 @@ export async function getFollowupAdherence(params: {
         sentAt: null,
         replied: false,
         setterKey: sanitizeSetterKey(a.setterKey),
-        setterLabel: a.setterLabel || "Unassigned",
+        setterLabel: sanitizeSetterLabel(a.setterKey, a.setterLabel),
         subscriberId: a.subscriberId,
       });
     };
@@ -416,7 +424,7 @@ export async function getFollowupAdherence(params: {
           sentAt: m.sent_at,
           replied: false,
           setterKey: sanitizeSetterKey(lead.setterKey),
-          setterLabel: lead.setterLabel || "Unassigned",
+          setterLabel: sanitizeSetterLabel(lead.setterKey, lead.setterLabel),
           subscriberId: lead.subscriberId,
         };
         if (inMetricsRange(openAt)) duePoints.push(point);
@@ -446,7 +454,7 @@ export async function getFollowupAdherence(params: {
         needsFollowup.push({
           client: lead.client.id,
           clientLabel: lead.client.label,
-          setterLabel: lead.setterLabel || "Unassigned",
+          setterLabel: sanitizeSetterLabel(lead.setterKey, lead.setterLabel),
           leadName: lead.leadName,
           subscriberId: lead.subscriberId,
           manychatUrl: manychatChatUrl(lead.client.id, lead.subscriberId),
