@@ -11,6 +11,7 @@ import { fmtDollars, fmtNumber, fmtPercent } from "@/lib/formatters";
 import { getEffectiveDates } from "./FilterBar";
 import { isExcludedSetter } from "@/lib/sales-hub/excluded-setters";
 import HourlyStripTable, { type StripRow } from "./HourlyStripTable";
+import SetsBooked from "./SetsBooked";
 import type { Filters, ManychatMetrics } from "../types";
 import { clientsFromRows, rowMatchesClientKey } from "./clientsFromRows";
 
@@ -366,6 +367,8 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
           ) : null
         }
       />
+
+      <SetsBooked filters={filters} />
 
       {loading ? (
         <LoadingCard />
