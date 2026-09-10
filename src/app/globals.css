@@ -271,8 +271,11 @@ body {
 }
 
 /* Ads v2 fills the same width v1 used (v1 is a full-bleed iframe). Kill the
-   centered 1100px cap + padding; .adsv2 carries its own padding. */
-.main-content:has(.adsv2) {
+   centered 1100px cap + padding; .adsv2 carries its own padding. Keyed on the
+   dedicated page-root marker (NOT bare .adsv2) so other tabs can reuse .adsv2
+   as a styling scope — e.g. the Sales Hub date dropdown — without their whole
+   page going full-bleed. */
+.main-content:has(.adsv2-page) {
   padding: 0;
   max-width: none;
   margin: 0;

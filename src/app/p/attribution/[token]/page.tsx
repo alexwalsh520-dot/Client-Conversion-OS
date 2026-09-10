@@ -40,7 +40,7 @@ export default async function PublicAttributionPage({
   if (!ok) return <NotAvailable />;
 
   return (
-    <main className="adsv2 pub-attribution-page" aria-label="Attribution">
+    <main className="adsv2 adsv2-page pub-attribution-page" aria-label="Attribution">
       <div className="av2-head">
         <div className="av2-title">
           Attribution<span className="av2-tag">review</span>

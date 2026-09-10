@@ -150,7 +150,7 @@ export default function AdsV2Client({ publicToken, lockedAccount }: AdsV2ClientP
   };
 
   return (
-    <div className="adsv2">
+    <div className="adsv2 adsv2-page">
       <div className="av2-head">
         <div>
           <div className="av2-title">
