@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { studio2MediaSrc } from "@/lib/studio2-media-src";
 import {
   AlignCenter,
   AlignHorizontalJustifyCenter,
@@ -1231,7 +1232,7 @@ function getCanvasImageSrc(src: string) {
 }
 
 function getMediaPreviewSrc(src: string) {
-  return src;
+  return studio2MediaSrc(src);
 }
 
 function isHeicMediaName(value: string) {

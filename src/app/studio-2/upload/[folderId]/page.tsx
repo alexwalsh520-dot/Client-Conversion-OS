@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { AlertCircle, CheckCircle2, Folder, ImagePlus, Upload, Video, X } from "lucide-react";
+import { studio2MediaSrc } from "@/lib/studio2-media-src";
 
 type UploadStatus = "queued" | "uploading" | "done" | "error";
 
@@ -336,7 +337,7 @@ export default function Studio2ClientUploadPage() {
                   >
                     {item.thumbnailUrl || item.kind === "image" ? (
                       <img
-                        src={item.thumbnailUrl || item.url}
+                        src={studio2MediaSrc(item.thumbnailUrl || item.url)}
                         alt=""
                         style={{ width: "100%", aspectRatio: "1 / 1", objectFit: "cover", display: "block" }}
                       />
