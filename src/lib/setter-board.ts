@@ -85,6 +85,7 @@ export async function getSetterBoard(dateFrom: string, dateTo: string): Promise<
     const trimmed = (raw || "").trim();
     if (!trimmed) return null;
     const lower = trimmed.toLowerCase();
+    if (lower === "ai" || lower === "a.i.") return "AI"; // the AI setter keeps its name
     if (labelMap[lower]) return labelMap[lower];
     // Sheet cells sometimes carry extras ("AMARA / AI") — try each token.
     for (const token of lower.split(/[^a-z]+/)) {

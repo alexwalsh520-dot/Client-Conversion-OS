@@ -107,7 +107,11 @@ export async function getSetsBooked(opts: {
     events.push(...((data || []) as BookingEventRow[]));
     if (!data || data.length < PAGE) break;
   }
+  // Strategy sessions only (owner, 2026-09-11): onboarding calls are not
+  // sets. Personal-calendar/outbound sales calls still count — the tracker
+  // logs those as Strategy Session rows.
   const inRange = events.filter((e) => {
+    if ((e.metadata?.call_type || "").toLowerCase() === "onboarding") return false;
     const day = toEtDateStr(e.occurred_at);
     return day >= dateFrom && day <= dateTo;
   });
@@ -141,6 +145,9 @@ export async function getSetsBooked(opts: {
     const trimmed = (raw || "").trim();
     if (!trimmed) return null;
     const lower = trimmed.toLowerCase();
+    // The AI DM setter logs rows as "AI" — it stays AI, never title-cased
+    // to "Ai" and never folded into a person.
+    if (lower === "ai" || lower === "a.i.") return { key: "ai", label: "AI" };
     if (labelMap[lower]) return { key: lower, label: labelMap[lower] };
     for (const token of lower.split(/[^a-z]+/)) {
       if (token && labelMap[token]) return { key: token, label: labelMap[token] };

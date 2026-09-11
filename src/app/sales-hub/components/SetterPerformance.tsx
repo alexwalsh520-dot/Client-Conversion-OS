@@ -290,7 +290,7 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
       const trimmed = raw.trim();
       const lc = trimmed.toLowerCase();
       if (!lc || names.has(lc) || isExcludedSetter(lc)) return;
-      names.set(lc, trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase());
+      names.set(lc, lc === "ai" ? "AI" : trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase());
     };
     for (const client of clients) {
       for (const n of CLIENT_SETTERS[client.key] || []) names.set(n.toLowerCase(), n);
