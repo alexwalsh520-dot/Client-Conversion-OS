@@ -176,7 +176,7 @@ function mdToHtml(md: string): string {
   const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const inline = (s: string) =>
     esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/(?<!\*)\*(?!\*)([^*]+)\*(?!\*)/g, "<em>$1</em>");
-  const lines = String(md || "").split("\n");
+  const lines = asMd(md).split("\n");
   let html = "";
   let i = 0;
   let list: string | null = null;
@@ -262,8 +262,11 @@ const NODE_RGB: Record<GFam, [number, number, number]> = {
   feed: [146, 124, 90],     // dim amber
   tag: [104, 94, 76],       // darkest bronze (connective tissue, recedes)
 };
-const headings = (md?: string) =>
-  (md || "").split("\n").filter((l) => /^##\s+/.test(l)).map((l) => l.replace(/^##\s+/, "").replace(/[*`]/g, "").replace(/\s*\(.*$/, "").trim()).filter(Boolean);
+// Markdown fields arrive from Supabase JSON and are occasionally written as a list of
+// strings instead of one string; never let that crash the page.
+const asMd = (v: unknown): string => (Array.isArray(v) ? v.map((x) => String(x ?? "")).join("\n\n") : typeof v === "string" ? v : v == null ? "" : String(v));
+const headings = (md?: unknown) =>
+  asMd(md).split("\n").filter((l) => /^##\s+/.test(l)).map((l) => l.replace(/^##\s+/, "").replace(/[*`]/g, "").replace(/\s*\(.*$/, "").trim()).filter(Boolean);
 function BrainGraph({ skills, meetings, feed, loops, onOpen }: { skills: Skill[]; meetings: Meeting[]; feed: FeedEntry[]; loops: Loop[]; onOpen: (kind: "skill" | "meeting" | "feed" | "loop", id: string | number) => void }) {
   const ref = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -577,8 +580,8 @@ export default function CmoPage() {
       setLoops(Array.isArray(d?.loops) ? (d.loops as Loop[]) : []);
       setFeed(Array.isArray(d?.feed) ? (d.feed as FeedEntry[]) : []);
       setLedger(Array.isArray(d?.ledger) ? (d.ledger as LedgerEntry[]) : []);
-      setMeetings(Array.isArray(d?.meetings) ? (d.meetings as Meeting[]) : []);
-      setDocs(Array.isArray(d?.docs) ? (d.docs as Doc[]) : []);
+      setMeetings(Array.isArray(d?.meetings) ? (d.meetings as Meeting[]).map((m) => ({ ...m, summary: asMd(m.summary), notes: asMd(m.notes) })) : []);
+      setDocs(Array.isArray(d?.docs) ? (d.docs as Doc[]).map((x) => ({ ...x, body: asMd(x.body) })) : []);
     }).catch(() => {});
     return () => { off = true; };
   }, []);
