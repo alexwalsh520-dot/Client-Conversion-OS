@@ -1,0 +1,36 @@
+body {
+  font:
+    16px/1.6 system-ui,
+    sans-serif;
+  background: #11120f;
+  color: #e8e6df;
+  margin: 0;
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+}
+main {
+  max-width: 650px;
+  padding: 48px;
+  border: 1px solid #35372e;
+  border-radius: 20px;
+}
+.eyebrow {
+  color: #cbb374;
+  letter-spacing: 0.15em;
+}
+h1 {
+  font-size: 32px;
+}
+progress {
+  width: 100%;
+  accent-color: #cbb374;
+}
+button {
+  padding: 12px 20px;
+  background: #cbb374;
+  border: 0;
+  border-radius: 8px;
+  font: inherit;
+  cursor: pointer;
+}

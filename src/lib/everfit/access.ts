@@ -1,4 +1,5 @@
 import type { AccessContext, ClientSnapshot, EverfitReport } from "./types";
+import { everfitCoach } from "./owners";
 import { coachAlias } from "@/lib/nutrition/coach-resolver";
 export function canReadCoach(access: AccessContext, coach: string): boolean {
   return access.admin || access.coaches.includes(coach);
@@ -21,7 +22,7 @@ export function scopeReport(
     ...document,
     clients: document.clients
       .filter((c) => {
-        if (!aliases.has(norm(c.everfit_owner))) return false;
+        if (!aliases.has(norm(c.everfit_owner)) && everfitCoach(c.everfit_owner) !== document.coach_name) return false;
         if (c.linked_client_id)
           return (
             live.get(c.linked_client_id)?.coach_name === document.coach_name
