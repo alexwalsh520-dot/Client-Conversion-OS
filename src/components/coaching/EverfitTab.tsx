@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { RefreshCw, Upload } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import EverfitClientQuestion from "./everfit/EverfitClientQuestion";
 import EverfitDashboard from "./everfit/EverfitDashboard";
 import type { Client } from "@/lib/types";
 import type { ReportDetail, StoredReport } from "@/lib/everfit/types";
-import { MAX_IMPORT_BYTES, parseImport } from "@/lib/everfit/validation";
+import EverfitSync from "./everfit/EverfitSync";
 import styles from "./everfit/everfit.module.css";
 
 async function jsonResponse(response: Response) {
@@ -26,12 +26,8 @@ export default function EverfitTab({
   const [coach, setCoach] = useState("");
   const [id, setId] = useState("");
   const [detail, setDetail] = useState<ReportDetail | null>(null);
-  const [preview, setPreview] = useState<ReportDetail | null>(null);
-  const [source, setSource] = useState<unknown>(null);
-  const [importCoach, setImportCoach] = useState("Shiraad");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [accessMessage, setAccessMessage] = useState("");
   const [accessEmail, setAccessEmail] = useState("");
   const [accessCoach, setAccessCoach] = useState("Shiraad");
@@ -83,57 +79,6 @@ export default function EverfitTab({
       });
     return () => controller.abort();
   }, [id, refresh]);
-  async function readFile(file: File | undefined) {
-    if (!file) return;
-    setError("");
-    setPreview(null);
-    setSource(null);
-    try {
-      if (file.size > MAX_IMPORT_BYTES)
-        throw new Error("Choose a JSON report smaller than 2 MB.");
-      const raw = JSON.parse(await file.text());
-      const document = parseImport(raw, importCoach);
-      setSource(raw);
-      setPreview({
-        report: {
-          id: "local-preview",
-          coach_name: importCoach,
-          review_date: document.review_date,
-          imported_at: "",
-          preliminary: true,
-          client_count: document.clients.length,
-          document,
-        },
-        currentClients: [],
-      });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Invalid report file.");
-    }
-  }
-  async function saveReport() {
-    if (!source || !preview) return;
-    setSaving(true);
-    setError("");
-    try {
-      const result = await jsonResponse(
-        await fetch("/api/coaching/everfit/reports", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ coachName: importCoach, report: source }),
-        }),
-      );
-      setPreview(null);
-      setSource(null);
-      setCoach("");
-      await load();
-      setId(result.id);
-      setRefresh((v) => v + 1);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save the report.");
-    } finally {
-      setSaving(false);
-    }
-  }
   return (
     <section>
       <div className={styles.toolbar}>
@@ -151,7 +96,6 @@ export default function EverfitTab({
               setId(
                 reports.find((r) => !next || r.coach_name === next)?.id ?? "",
               );
-              setPreview(null);
             }}
           >
             <option value="">All coaches</option>
@@ -164,7 +108,6 @@ export default function EverfitTab({
             value={id}
             onChange={(e) => {
               setId(e.target.value);
-              setPreview(null);
             }}
           >
             <option value="" disabled>
@@ -196,75 +139,12 @@ export default function EverfitTab({
           {error}
         </div>
       )}
-      <EverfitClientQuestion key={`chat-${coach}-${refresh}`} coachName={coach || undefined} />
-      {isAdmin && (
-        <details className={styles.details}>
-          <summary>
-            <Upload size={13} style={{ display: "inline", marginRight: 5 }} />{" "}
-            Import a reviewed report
-          </summary>
-          <div className={styles.panel}>
-            <h3>Preview, verify, then save</h3>
-            <p>
-              Upload the reviewed JSON export. CCOS will check email matches
-              against Supabase before storing a new report. No client roster
-              fields are changed.
-            </p>
-            <form onSubmit={(e) => e.preventDefault()}>
-              <label>
-                CCOS coach
-                <select
-                  value={importCoach}
-                  onChange={(e) => {
-                    setImportCoach(e.target.value);
-                    setSource(null);
-                    setPreview(null);
-                  }}
-                >
-                  {importCoaches.map((c) => (
-                    <option key={c}>{c}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Report JSON
-                <input
-                  type="file"
-                  accept="application/json,.json"
-                  onChange={(e) => {
-                    void readFile(e.target.files?.[0]);
-                    e.target.value = "";
-                  }}
-                />
-              </label>
-            </form>
-            <div className={styles.buttonRow}>
-              <button
-                className={styles.primary}
-                disabled={!preview || saving}
-                onClick={saveReport}
-              >
-                {saving ? "Saving…" : "Save reviewed report to Supabase"}
-              </button>
-              {preview && (
-                <button
-                  onClick={() => {
-                    setPreview(null);
-                    setSource(null);
-                  }}
-                >
-                  Discard local preview
-                </button>
-              )}
-            </div>
-            <p className={styles.hint}>
-              Preview data stays in this browser until you save. Re-importing
-              the same report is safe and does not create a duplicate.
-            </p>
-          </div>
-        </details>
-      )}
-      {!preview && !detail && (
+      <EverfitClientQuestion
+        key={`chat-${coach}-${refresh}`}
+        coachName={coach || undefined}
+      />
+      {isAdmin && <EverfitSync onSaved={load} />}
+      {!detail && (
         <div className={styles.panel}>
           {loading ? (
             "Loading report history…"
@@ -275,24 +155,18 @@ export default function EverfitTab({
               <h3>No reports available yet</h3>
               <p>
                 {isAdmin
-                  ? "Import the reviewed Shaun pilot to create the first report."
-                  : "Your weekly reviews will appear here after an administrator imports them."}
+                  ? "Click Sync all coaches to create your first reports."
+                  : "Your reviews will appear here after your team runs a sync."}
               </p>
               <p className={styles.hint}>
-                Syncs are manual and on demand. Ask your assistant to sync Everfit
-                for all coaches, or explicitly name a smaller scope.
+                Each sync saves a dated review. Earlier reports remain available
+                in the report history.
               </p>
             </>
           )}
         </div>
       )}
-      {(preview || detail) && (
-        <EverfitDashboard
-          key={preview ? "preview" : id}
-          detail={(preview || detail)!}
-          localPreview={!!preview}
-        />
-      )}
+      {detail && <EverfitDashboard key={id} detail={detail} />}
       {isAdmin && (
         <details className={styles.details}>
           <summary>Coach access settings</summary>

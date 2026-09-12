@@ -68,7 +68,7 @@ export async function POST(request: Request) {
     );
     const model = process.env.EVERFIT_AI_MODEL || "claude-sonnet-4-5-20250929";
     try {
-      const sharedContext = shared ? await loadChatContext(access, coachName as string | undefined) : null;
+      const sharedContext = shared ? await loadChatContext(access, coachName as string | undefined, question) : null;
       const result = await new Anthropic({
         apiKey: key,
         maxRetries: 1,

@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "CCOS Everfit Sync",
+  "version": "0.1.0",
+  "description": "On-demand Everfit reading and automatic saving to your CCOS coaching workspace.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://app.everfit.io/*",
+    "https://client-conversion-os.vercel.app/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://client-conversion-os.vercel.app/*"],
+      "js": ["bridge.js"]
+    },
+    { "matches": ["https://app.everfit.io/*"], "js": ["collector.js"] }
+  ],
+  "action": { "default_title": "Open CCOS Everfit" }
+}

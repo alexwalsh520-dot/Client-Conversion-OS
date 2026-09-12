@@ -270,7 +270,7 @@ export default function CoachingPage() {
               {syncMsg}
             </span>
           )}
-          <button
+          {activeTab !== "everfit" && <button
             onClick={handleSync}
             disabled={syncing}
             style={{
@@ -290,7 +290,7 @@ export default function CoachingPage() {
           >
             <RefreshCw size={14} style={{ animation: syncing ? "spin 1s linear infinite" : "none" }} />
             {syncing ? "Syncing..." : "Sync Now"}
-          </button>
+          </button>}
         </div>
       </div>
 
