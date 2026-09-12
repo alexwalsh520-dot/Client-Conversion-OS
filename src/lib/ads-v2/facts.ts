@@ -587,6 +587,9 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
       // The tracker's human-written origin label ("Miscellaneous Chat", ...),
       // carried verbatim so revenue category cards read facts, not raw tables.
       call_type: (r.call_type || "").trim() || null,
+      // Explicit, because a batched insert through the view sends NULL for any
+      // key some row lacks, and NULL bypasses the column default.
+      sale_kind: "call",
       // A sale inherits its setter and closer from the sales tracker, which is
       // where a human wrote them down; the DM-side setter is a fallback when
       // the sheet is blank but their ManyChat id is known.
