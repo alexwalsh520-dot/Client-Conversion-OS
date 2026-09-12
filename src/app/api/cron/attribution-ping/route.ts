@@ -160,7 +160,11 @@ async function GETimpl() {
     )
     .gte("sale_et_day", from)
     .lte("sale_et_day", today)
-    .gt("collected_usd_cents", 0);
+    .gt("collected_usd_cents", 0)
+    // Tracker call rows only. $50 Stripe subscription and renewal rows
+    // (sale_kind subscription | renewal) are machine-sourced and machine-keyed;
+    // there is no human origin to write for them, so they never belong here.
+    .eq("sale_kind", "call");
   if (error) throw new Error(`attribution-ping sale read failed: ${error.message}`);
 
   const open: OpenSale[] = [];

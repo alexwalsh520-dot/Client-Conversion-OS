@@ -659,16 +659,19 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
       .order("id", { ascending: true })
       .range(from, to),
   );
-  const subscriberByContact = new Map<string, string>();
-  for (const l of linkRows) if (l.ghl_contact_id && l.subscriber_id) subscriberByContact.set(l.ghl_contact_id, l.subscriber_id);
+  // A GHL contact can carry several ManyChat links (one contact was found
+  // linked to seven ids). Keep every link, and accept an identity only when
+  // all links across all matched contacts agree on ONE subscriber id.
+  const subscribersByContact = new Map<string, Set<string>>();
+  for (const l of linkRows) {
+    if (!l.ghl_contact_id || !l.subscriber_id) continue;
+    (subscribersByContact.get(l.ghl_contact_id) ?? subscribersByContact.set(l.ghl_contact_id, new Set()).get(l.ghl_contact_id)!).add(l.subscriber_id);
+  }
   // One person -> exactly one subscriber id, or nothing.
   const subscriberForContacts = (ids: Set<string> | undefined): string | null => {
     if (!ids) return null;
     const subs = new Set<string>();
-    for (const id of ids) {
-      const sid = subscriberByContact.get(id);
-      if (sid) subs.add(sid);
-    }
+    for (const id of ids) for (const sid of subscribersByContact.get(id) ?? []) subs.add(sid);
     return subs.size === 1 ? [...subs][0] : null;
   };
 
