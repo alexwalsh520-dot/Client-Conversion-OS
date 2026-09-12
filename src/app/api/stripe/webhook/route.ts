@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { getServiceSupabase } from "@/lib/supabase";
-import { parseClientReference } from "@/lib/stripe-downsell";
+import { DOWNSELL_PAYMENT_LINK_ID, DOWNSELL_PRICE_ID, parseClientReference } from "@/lib/stripe-downsell";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -79,6 +79,11 @@ async function writeKeywordEvent(
 async function handleCheckoutCompleted(sb: Db, event: Stripe.Event) {
   const s = event.data.object as Stripe.Checkout.Session;
   if (s.payment_status !== "paid") return { received: true, skipped: "not paid" };
+  // Only the $50 downsell link belongs in this lane. Other links on the same
+  // account (coaching, one-offs) are not $50 subscriptions.
+  if (idOf(s.payment_link as string | Stripe.PaymentLink | null) !== DOWNSELL_PAYMENT_LINK_ID) {
+    return { received: true, skipped: "not the downsell payment link" };
+  }
 
   const ref = parseClientReference(s.client_reference_id);
   const paidAt = isoFromUnix(s.created);
@@ -163,6 +168,10 @@ async function handleInvoicePaid(sb: Db, event: Stripe.Event) {
     return { received: true, skipped: `invoice ${inv.billing_reason ?? "unknown"}` };
   }
   if (inv.status !== "paid" || !inv.amount_paid) return { received: true, skipped: "invoice not paid" };
+  const onDownsellPrice = (inv.lines?.data ?? []).some(
+    (l) => (typeof l.price === "string" ? l.price : l.price?.id) === DOWNSELL_PRICE_ID,
+  );
+  if (!onDownsellPrice) return { received: true, skipped: "invoice not on the downsell price" };
   const subscriptionId = idOf(inv.subscription as string | Stripe.Subscription | null);
   const customerId = idOf(inv.customer as string | Stripe.Customer | null);
 

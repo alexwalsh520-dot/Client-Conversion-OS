@@ -8,6 +8,12 @@
 // same two ids onto the onboarding booking widget as utm_content / utm_term
 // (the exact two fields the GHL appointment webhook already reads).
 
+/** The $50 downsell price and its payment link on "The Forge - Subscriptions".
+ *  The webhook only records money on THIS price: the same Stripe account sells
+ *  other things, and a $597 invoice must never land in the $50 lane. */
+export const DOWNSELL_PRICE_ID = process.env.STRIPE_DOWNSELL_PRICE_ID || "price_1RgMovJe2jHwj40lqNP1jeJ9";
+export const DOWNSELL_PAYMENT_LINK_ID = process.env.STRIPE_DOWNSELL_PAYMENT_LINK_ID || "plink_1RgMuVJe2jHwj40lejxT5GDV";
+
 /** The GHL widget the $50 buyer books their onboarding call on. */
 export const ONBOARDING_WIDGET_URL =
   process.env.STRIPE_AFTER_CHECKOUT_TARGET ||

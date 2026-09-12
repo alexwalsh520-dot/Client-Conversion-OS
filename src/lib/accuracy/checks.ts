@@ -18,6 +18,7 @@ import { askQuestion } from "@/lib/question-door/service";
 import { isRefusal, type DoorAnswer } from "@/lib/question-door/types";
 import Stripe from "stripe";
 import { etDay } from "@/lib/ads-v2/time";
+import { DOWNSELL_PRICE_ID } from "@/lib/stripe-downsell";
 import type { AccuracyCheck, CheckContext, CheckOutcome } from "./types";
 import {
   ONE_DOOR_TOLERANCE_NOTE,
@@ -811,7 +812,7 @@ const oneFrontDoor: AccuracyCheck = {
 // 14. Stripe witness ($50 subscription lane)
 // ─────────────────────────────────────────────────────────────────────────
 
-const STRIPE_PRICE_ID = process.env.STRIPE_DOWNSELL_PRICE_ID || "price_1RgMovJe2jHwj40lqNP1jeJ9";
+const STRIPE_PRICE_ID = DOWNSELL_PRICE_ID;
 
 /** What Stripe itself says landed on the $50 price inside the ET-day window,
  *  net of refunds, plus the slice paid inside the last 15 minutes. */
@@ -819,7 +820,10 @@ async function readStripeSide(from: string, to: string, now: Date) {
   const key = process.env.STRIPE_KEY_TYSON_SUBS || process.env.STRIPE_SECRET_KEY_TYSON_SUBS;
   if (!key) throw new Error("STRIPE_KEY_TYSON_SUBS is not configured");
   const stripe = new Stripe(key);
-  const fromUnix = Math.floor(new Date(`${from}T00:00:00Z`).getTime() / 1000) - 2 * 86_400;
+  // Invoices are keyed by the day they were PAID, but Stripe's list filter is
+  // by creation. A past-due invoice can be created weeks before its retry
+  // succeeds (three such cases on the first run), so read 60 days back.
+  const fromUnix = Math.floor(new Date(`${from}T00:00:00Z`).getTime() / 1000) - 60 * 86_400;
   const recentCutoff = now.getTime() - 15 * 60_000;
 
   const refundByIntent = new Map<string, number>();
