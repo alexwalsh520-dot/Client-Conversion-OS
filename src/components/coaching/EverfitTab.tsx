@@ -6,7 +6,7 @@ import EverfitClientQuestion from "./everfit/EverfitClientQuestion";
 import EverfitDashboard from "./everfit/EverfitDashboard";
 import type { Client } from "@/lib/types";
 import type { ReportDetail, StoredReport } from "@/lib/everfit/types";
-import EverfitSync from "./everfit/EverfitSync";
+import EverfitManualReport from "./everfit/EverfitManualReport";
 import styles from "./everfit/everfit.module.css";
 
 async function jsonResponse(response: Response) {
@@ -143,7 +143,9 @@ export default function EverfitTab({
         key={`chat-${coach}-${refresh}`}
         coachName={coach || undefined}
       />
-      {isAdmin && <EverfitSync onSaved={load} />}
+      {isAdmin && <EverfitManualReport coaches={importCoaches} onSaved={(savedId) => {
+        setCoach(""); setId(savedId); setRefresh(v => v + 1);
+      }} />}
       {!detail && (
         <div className={styles.panel}>
           {loading ? (
@@ -155,7 +157,7 @@ export default function EverfitTab({
               <h3>No reports available yet</h3>
               <p>
                 {isAdmin
-                  ? "Click Sync all coaches to create your first reports."
+                  ? "Ask your assistant to review a coach in Everfit and save the completed review here."
                   : "Your reviews will appear here after your team runs a sync."}
               </p>
               <p className={styles.hint}>
