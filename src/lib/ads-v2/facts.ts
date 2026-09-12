@@ -622,6 +622,53 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
   const dayDistance = (a: string, b: string) =>
     Math.abs((new Date(`${a}T00:00:00Z`).getTime() - new Date(`${b}T00:00:00Z`).getTime()) / 86_400_000);
 
+  // Second hard key (plan step 4): the Stripe checkout email / phone equals a
+  // GoHighLevel booking contact's email / phone, and that contact carries a
+  // ManyChat link. Deterministic identity, no name guessing.
+  const contactRows = await fetchAllRows<{ contact_id: string; contact_email: string | null; contact_phone: string | null }>(
+    (from, to) =>
+      db
+        .from("ghl_appointments")
+        .select("contact_id, contact_email, contact_phone")
+        .gte("created_at", `${shiftDay(factFrom, -365)}T00:00:00Z`)
+        .not("contact_id", "is", null)
+        .order("created_at", { ascending: true })
+        .range(from, to),
+  );
+  const normEmail = (v: string | null | undefined) => (v || "").trim().toLowerCase();
+  const normPhone = (v: string | null | undefined) => {
+    const digits = (v || "").replace(/\D/g, "");
+    return digits.length >= 10 ? digits.slice(-10) : "";
+  };
+  const contactsByEmail = new Map<string, Set<string>>();
+  const contactsByPhone = new Map<string, Set<string>>();
+  for (const c of contactRows) {
+    const e = normEmail(c.contact_email);
+    if (e) (contactsByEmail.get(e) ?? contactsByEmail.set(e, new Set()).get(e)!).add(c.contact_id);
+    const p = normPhone(c.contact_phone);
+    if (p) (contactsByPhone.get(p) ?? contactsByPhone.set(p, new Set()).get(p)!).add(c.contact_id);
+  }
+  const linkRows = await fetchAllRows<{ ghl_contact_id: string; subscriber_id: string }>((from, to) =>
+    db
+      .from("manychat_contact_links")
+      .select("ghl_contact_id, subscriber_id")
+      .not("ghl_contact_id", "is", null)
+      .order("id", { ascending: true })
+      .range(from, to),
+  );
+  const subscriberByContact = new Map<string, string>();
+  for (const l of linkRows) if (l.ghl_contact_id && l.subscriber_id) subscriberByContact.set(l.ghl_contact_id, l.subscriber_id);
+  // One person -> exactly one subscriber id, or nothing.
+  const subscriberForContacts = (ids: Set<string> | undefined): string | null => {
+    if (!ids) return null;
+    const subs = new Set<string>();
+    for (const id of ids) {
+      const sid = subscriberByContact.get(id);
+      if (sid) subs.add(sid);
+    }
+    return subs.size === 1 ? [...subs][0] : null;
+  };
+
   const stripeRows = await fetchAllRows<{
     id: string;
     kind: string;
@@ -629,6 +676,7 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
     keyword: string | null;
     subscriber_id: string | null;
     email: string | null;
+    phone: string | null;
     contact_name: string | null;
     amount_cents: number | null;
     refunded_cents: number | null;
@@ -642,7 +690,7 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
     db
       .from("stripe_payments")
       .select(
-        "id, kind, client_key, keyword, subscriber_id, email, contact_name, amount_cents, refunded_cents, currency, paid_at, invoice_id, checkout_session_id, subscription_id, status",
+        "id, kind, client_key, keyword, subscriber_id, email, phone, contact_name, amount_cents, refunded_cents, currency, paid_at, invoice_id, checkout_session_id, subscription_id, status",
       )
       .gte("paid_at", `${shiftDay(factFrom, -1)}T00:00:00Z`)
       .order("paid_at", { ascending: true })
@@ -659,12 +707,25 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
 
     let subscriberId = (r.subscriber_id || "").trim() || null;
     let weld: { subscriber_id: string; tracker_row: string } | null = null;
+    let identityKey: "link" | "email" | "phone" | "tracker_weld" | null = subscriberId ? "link" : null;
+    if (!subscriberId) {
+      const byEmail = subscriberForContacts(contactsByEmail.get(normEmail(r.email)));
+      const byPhone = byEmail ? null : subscriberForContacts(contactsByPhone.get(normPhone(r.phone)));
+      if (byEmail) {
+        subscriberId = byEmail;
+        identityKey = "email";
+      } else if (byPhone) {
+        subscriberId = byPhone;
+        identityKey = "phone";
+      }
+    }
     if (!subscriberId) {
       const cands = (trackerSubsByName.get(normName(r.contact_name)) ?? []).filter((c) => dayDistance(c.day, day) <= 3);
       const ids = new Set(cands.map((c) => c.subscriberId));
       if (ids.size === 1) {
         subscriberId = cands[0].subscriberId;
         weld = { subscriber_id: subscriberId, tracker_row: cands[0].key };
+        identityKey = "tracker_weld";
       }
     }
 
@@ -690,7 +751,15 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
       });
       keyword = resolved.keyword ? normalizeKeyword(resolved.keyword) : null;
       method = resolved.method;
-      evidenceKey = keyword ? (weld ? "tracker_subscription_weld" : "subscriber_id") : null;
+      evidenceKey = keyword
+        ? identityKey === "tracker_weld"
+          ? "tracker_subscription_weld"
+          : identityKey === "email"
+            ? "stripe_contact_email"
+            : identityKey === "phone"
+              ? "stripe_contact_phone"
+              : "subscriber_id"
+        : null;
     }
 
     const client = keyword
@@ -757,7 +826,7 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
         weld,
       },
       evidence_key: evidenceKey,
-      evidence_detail: { subscriber_id: subscriberId, keyword, matched_by: method, weld },
+      evidence_detail: { subscriber_id: subscriberId, keyword, matched_by: method, identity: identityKey, weld },
       blank_reason: keyword ? null : isOrganic ? "organic_dm" : "unknown",
     });
     stripeFacts++;
