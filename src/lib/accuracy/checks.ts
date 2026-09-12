@@ -16,6 +16,8 @@ import { creatorCurrency } from "@/lib/fx/rates";
 import { rangeForPreset, shiftDay, type PresetId } from "@/lib/ads-v2/time";
 import { askQuestion } from "@/lib/question-door/service";
 import { isRefusal, type DoorAnswer } from "@/lib/question-door/types";
+import Stripe from "stripe";
+import { etDay } from "@/lib/ads-v2/time";
 import type { AccuracyCheck, CheckContext, CheckOutcome } from "./types";
 import {
   ONE_DOOR_TOLERANCE_NOTE,
@@ -42,6 +44,8 @@ import {
   classifySetterCoverage,
   classifySpendVsMeta,
   classifyStampOrReason,
+  classifyStripeWitness,
+  STRIPE_WITNESS_TOLERANCE_NOTE,
   classifyThermometers,
   classifyUnknownPurity,
   count,
@@ -306,9 +310,9 @@ const cashVsSheet: AccuracyCheck = {
     const verdict = classifyCashVsSheet(input);
     return {
       status: verdict.status,
-      leftLabel: "our sale rows",
+      leftLabel: "our call rows",
       leftValue: `${usd(input.factsCents)} over ${count(input.factsRows)} calls`,
-      rightLabel: "the sales sheet",
+      rightLabel: "the sales sheet, calls only",
       rightValue: `${usd(input.trackerCents)} over ${count(input.trackerRows)} calls`,
       diffValue: input.factsCents === input.trackerCents ? "" : usd(input.factsCents - input.trackerCents),
       whatToDo: verdict.status === "green" ? undefined : verdict.reason,
@@ -316,7 +320,7 @@ const cashVsSheet: AccuracyCheck = {
         ...input,
         window: r,
         reminder:
-          "cash on calls by call date; payments landing this month is a different question.",
+          "cash on calls by call date; payments landing this month is a different question. The $50 subscription lane is excluded on both sides since 2026-09-12 (Stripe is its source; see the Stripe witness check).",
       },
     };
   },
@@ -802,11 +806,106 @@ const oneFrontDoor: AccuracyCheck = {
   },
 };
 
-/** The thirteen checks, in the order they read on the page. */
+
+// ─────────────────────────────────────────────────────────────────────────
+// 14. Stripe witness ($50 subscription lane)
+// ─────────────────────────────────────────────────────────────────────────
+
+const STRIPE_PRICE_ID = process.env.STRIPE_DOWNSELL_PRICE_ID || "price_1RgMovJe2jHwj40lqNP1jeJ9";
+
+/** What Stripe itself says landed on the $50 price inside the ET-day window,
+ *  net of refunds, plus the slice paid inside the last 15 minutes. */
+async function readStripeSide(from: string, to: string, now: Date) {
+  const key = process.env.STRIPE_KEY_TYSON_SUBS || process.env.STRIPE_SECRET_KEY_TYSON_SUBS;
+  if (!key) throw new Error("STRIPE_KEY_TYSON_SUBS is not configured");
+  const stripe = new Stripe(key);
+  const fromUnix = Math.floor(new Date(`${from}T00:00:00Z`).getTime() / 1000) - 2 * 86_400;
+  const recentCutoff = now.getTime() - 15 * 60_000;
+
+  const refundByIntent = new Map<string, number>();
+  for await (const r of stripe.refunds.list({ created: { gte: fromUnix }, limit: 100 })) {
+    const pi = typeof r.payment_intent === "string" ? r.payment_intent : r.payment_intent?.id;
+    if (pi && r.status === "succeeded") refundByIntent.set(pi, (refundByIntent.get(pi) ?? 0) + r.amount);
+  }
+
+  let cents = 0;
+  let rows = 0;
+  let recentCents = 0;
+  let recentRows = 0;
+  for await (const inv of stripe.invoices.list({ status: "paid", created: { gte: fromUnix }, limit: 100 })) {
+    const onPrice = inv.lines.data.some((l) => (typeof l.price === "string" ? l.price : l.price?.id) === STRIPE_PRICE_ID);
+    if (!onPrice) continue;
+    const paidAtSec = inv.status_transitions?.paid_at ?? inv.created;
+    const day = etDay(paidAtSec * 1000);
+    if (day < from || day > to) continue;
+    const pi = typeof inv.payment_intent === "string" ? inv.payment_intent : inv.payment_intent?.id;
+    const net = Math.max(0, (inv.amount_paid ?? 0) - (pi ? refundByIntent.get(pi) ?? 0 : 0));
+    cents += net;
+    rows += 1;
+    if (paidAtSec * 1000 >= recentCutoff) {
+      recentCents += net;
+      recentRows += 1;
+    }
+  }
+  return { cents, rows, recentCents, recentRows };
+}
+
+const stripeWitness: AccuracyCheck = {
+  key: "stripe_witness",
+  name: "Our $50 subscription cash matches Stripe",
+  toleranceNote: STRIPE_WITNESS_TOLERANCE_NOTE,
+  budgetMs: 60_000,
+  async run(ctx: CheckContext): Promise<CheckOutcome> {
+    const r = rangeForPreset("last30", ctx.etDay);
+    const [{ data, error }, stripeSide] = await Promise.all([
+      ctx.db.rpc("warehouse_accuracy_stripe_witness", { p_from: r.from, p_to: r.to }),
+      readStripeSide(r.from, r.to, ctx.now),
+    ]);
+    if (error) throw new Error(`stripe witness failed: ${error.message}`);
+    const row = ((data || []) as Array<{
+      payments_cents: number;
+      payments_rows: number;
+      facts_cents: number;
+      facts_rows: number;
+      payments_last_written: string | null;
+      facts_last_computed: string | null;
+    }>)[0] || { payments_cents: 0, payments_rows: 0, facts_cents: 0, facts_rows: 0, payments_last_written: null, facts_last_computed: null };
+    const writtenAt = row.payments_last_written ? new Date(row.payments_last_written).getTime() : 0;
+    const rebuiltAt = row.facts_last_computed ? new Date(row.facts_last_computed).getTime() : 0;
+    const input = {
+      stripeCents: stripeSide.cents,
+      stripeRows: stripeSide.rows,
+      paymentsCents: Number(row.payments_cents),
+      paymentsRows: Number(row.payments_rows),
+      factsCents: Number(row.facts_cents),
+      factsRows: Number(row.facts_rows),
+      stripeRecentCents: stripeSide.recentCents,
+      stripeRecentRows: stripeSide.recentRows,
+      paymentAfterRebuild: writtenAt > rebuiltAt,
+    };
+    const verdict = classifyStripeWitness(input);
+    return {
+      status: verdict.status,
+      leftLabel: "Stripe says",
+      leftValue: `${usd(input.stripeCents)} over ${count(input.stripeRows)} invoices`,
+      rightLabel: "our stored payments / sale rows",
+      rightValue: `${usd(input.paymentsCents)} / ${usd(input.factsCents)}`,
+      diffValue:
+        input.stripeCents === input.paymentsCents && input.paymentsCents === input.factsCents
+          ? ""
+          : usd(Math.max(Math.abs(input.stripeCents - input.paymentsCents), Math.abs(input.paymentsCents - input.factsCents))),
+      whatToDo: verdict.status === "green" ? undefined : verdict.reason,
+      detail: { ...input, window: r, priceId: STRIPE_PRICE_ID, reminder: "counted on the ET day the money landed, net of refunds" },
+    };
+  },
+};
+
+/** The fourteen checks, in the order they read on the page. */
 export const ACCURACY_CHECKS: readonly AccuracyCheck[] = [
   booksBalance,
   spendVsMeta,
   cashVsSheet,
+  stripeWitness,
   freshness,
   stampOrReason,
   unknownPurity,

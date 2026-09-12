@@ -447,3 +447,69 @@ export function classifyOneDoor(input: {
     reason: `${count(input.comparisons)} numbers checked across ${count(input.windowsChecked)} saved windows; the door and the tab agree exactly.`,
   };
 }
+
+// ── 14. Stripe witness ($50 lane) ─────────────────────────────────────────
+
+export const STRIPE_WITNESS_TOLERANCE_NOTE =
+  "Three copies of the $50 subscription money must agree to the cent over the window, counted on the " +
+  "day the money landed: what Stripe itself says it collected (paid invoices on the $50 price, net of " +
+  "refunds), what our webhook stored, and what the Ads V2 sale rows carry. Any cent of difference is " +
+  "red, with two evidence-based exceptions. Amber when the only difference is an invoice Stripe paid " +
+  "in the last 15 minutes that the webhook has not delivered yet. Amber when the only difference is " +
+  "between the stored payments and the sale rows AND a payment landed after the sale rows were last " +
+  "rebuilt; the next sync closes it. Anything else is red.";
+
+export function classifyStripeWitness(input: {
+  stripeCents: number;
+  stripeRows: number;
+  paymentsCents: number;
+  paymentsRows: number;
+  factsCents: number;
+  factsRows: number;
+  /** Cents on Stripe invoices paid inside the last 15 minutes (webhook may be in flight). */
+  stripeRecentCents: number;
+  stripeRecentRows: number;
+  /** A stored payment was written after the sale rows were last rebuilt. */
+  paymentAfterRebuild: boolean;
+}): Verdict {
+  const stripeVsPayments = input.stripeCents === input.paymentsCents && input.stripeRows === input.paymentsRows;
+  const paymentsVsFacts = input.paymentsCents === input.factsCents && input.paymentsRows === input.factsRows;
+  if (stripeVsPayments && paymentsVsFacts) {
+    return { status: "green", reason: "Stripe, our stored payments and the sale rows agree to the cent." };
+  }
+  const bits: string[] = [];
+  let amberOnly = true;
+  if (!stripeVsPayments) {
+    const centsGap = input.stripeCents - input.paymentsCents;
+    const rowsGap = input.stripeRows - input.paymentsRows;
+    const explainedByFlight =
+      centsGap === input.stripeRecentCents && rowsGap === input.stripeRecentRows && rowsGap > 0;
+    if (explainedByFlight) {
+      bits.push(
+        `${rowsGap} invoice(s) worth ${usd(centsGap)} were paid in the last 15 minutes and the webhook has not delivered them yet`,
+      );
+    } else {
+      amberOnly = false;
+      bits.push(
+        `Stripe says ${usd(input.stripeCents)} over ${input.stripeRows} invoices, our stored payments say ${usd(input.paymentsCents)} over ${input.paymentsRows}`,
+      );
+    }
+  }
+  if (!paymentsVsFacts) {
+    if (input.paymentAfterRebuild) {
+      bits.push(
+        `stored payments (${usd(input.paymentsCents)}) and sale rows (${usd(input.factsCents)}) differ because a payment landed after the last rebuild; the next sync closes it`,
+      );
+    } else {
+      amberOnly = false;
+      bits.push(
+        `stored payments say ${usd(input.paymentsCents)} over ${input.paymentsRows} rows, the sale rows say ${usd(input.factsCents)} over ${input.factsRows}`,
+      );
+    }
+  }
+  if (amberOnly) return { status: "amber", reason: `Timing only: ${bits.join("; ")}.` };
+  return {
+    status: "red",
+    reason: `The $50 lane disagrees with Stripe (${bits.join("; ")}). Check the webhook endpoint in Stripe, then re-run the Ads V2 sync.`,
+  };
+}

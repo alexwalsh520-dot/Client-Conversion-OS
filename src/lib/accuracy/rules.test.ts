@@ -18,6 +18,7 @@ import {
   pct,
   usd,
   type BooksMismatch,
+  classifyStripeWitness,
 } from "./rules";
 
 // Every red and amber path below is forced with CONSTRUCTED numbers. No test
@@ -397,4 +398,36 @@ test("one front door: nothing to check at all is red, never green", () => {
 test("one front door: its tolerance note states plainly that there is no tolerance", () => {
   assert.match(ONE_DOOR_TOLERANCE_NOTE, /NO tolerance/);
   assert.match(ONE_DOOR_TOLERANCE_NOTE, /Any difference at all is red/);
+});
+
+// ── 14. Stripe witness ────────────────────────────────────────────────────
+
+const witnessBase = {
+  stripeCents: 250_000, stripeRows: 50,
+  paymentsCents: 250_000, paymentsRows: 50,
+  factsCents: 250_000, factsRows: 50,
+  stripeRecentCents: 0, stripeRecentRows: 0,
+  paymentAfterRebuild: false,
+};
+
+test("stripe witness: all three agree to the cent = green", () => {
+  assert.equal(classifyStripeWitness(witnessBase).status, "green");
+});
+
+test("stripe witness: only gap is an invoice paid in the last 15 minutes = amber", () => {
+  const v = classifyStripeWitness({ ...witnessBase, stripeCents: 255_000, stripeRows: 51, stripeRecentCents: 5_000, stripeRecentRows: 1 });
+  assert.equal(v.status, "amber");
+  assert.match(v.reason, /15 minutes/);
+});
+
+test("stripe witness: payments ahead of sale rows with a payment after rebuild = amber", () => {
+  const v = classifyStripeWitness({ ...witnessBase, factsCents: 245_000, factsRows: 49, paymentAfterRebuild: true });
+  assert.equal(v.status, "amber");
+});
+
+test("stripe witness: any other cent of difference = red", () => {
+  assert.equal(classifyStripeWitness({ ...witnessBase, paymentsCents: 249_900 }).status, "red");
+  assert.equal(classifyStripeWitness({ ...witnessBase, factsCents: 245_000, factsRows: 49 }).status, "red");
+  // A stale-looking gap larger than the in-flight invoices is still red.
+  assert.equal(classifyStripeWitness({ ...witnessBase, stripeCents: 260_000, stripeRows: 52, stripeRecentCents: 5_000, stripeRecentRows: 1 }).status, "red");
 });

@@ -72,3 +72,10 @@ alter table warehouse.adsv2_sale_facts
       'stripe_client_reference','stripe_contact_email','stripe_contact_phone','tracker_subscription_weld'
     ]::text[])
   );
+
+-- Step 6 (2026-09-12), applied as migration accuracy_cash_vs_sheet_calls_only_and_stripe_witness:
+--   warehouse_accuracy_cash_vs_sheet now compares CALL rows only on both sides
+--   (facts sale_kind = 'call'; tracker program_length <> 'Subscription').
+--   New warehouse_accuracy_stripe_witness(p_from, p_to): stored payments net of
+--   refunds vs Ads V2 sale rows for the $50 lane, by the ET day the money landed.
+--   See the live definitions for bodies.
