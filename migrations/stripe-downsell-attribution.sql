@@ -60,3 +60,15 @@ alter table warehouse.ads_keyword_events
 -- Both functions were dropped and recreated (return type change); bodies are
 -- otherwise byte-identical to the previous versions. See the live definitions.
 -- ---------------------------------------------------------------------------
+
+-- Applied as migration adsv2_sale_facts_stripe_evidence_keys (2026-09-12):
+alter table warehouse.adsv2_sale_facts
+  drop constraint if exists adsv2_sale_facts_evidence_key_check,
+  add constraint adsv2_sale_facts_evidence_key_check check (
+    evidence_key is null or evidence_key = any (array[
+      'subscriber_id','utm_content','share_url_token','attendee_email','meeting_url',
+      'subscriber_single_prebooking_keyword','human_resolution','subscriber_single_presale_keyword',
+      'booking_attribution_carry',
+      'stripe_client_reference','stripe_contact_email','stripe_contact_phone','tracker_subscription_weld'
+    ]::text[])
+  );
