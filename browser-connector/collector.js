@@ -78,7 +78,7 @@
       throw new Error(
         `Roster incomplete: found ${collected.size} of ${count}. Nothing will be reported as a full sync.`,
       );
-    return [...collected.values()];
+    return [...collected.values()].sort((a,b) => Number(b.owner === "Shaun Lundall") - Number(a.owner === "Shaun Lundall") || a.owner.localeCompare(b.owner) || a.name.localeCompare(b.name));
   }
   function updateRows() {
     return [
