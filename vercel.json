@@ -93,7 +93,11 @@
     },
     {
       "path": "/api/cron/daily-coacher-digest",
-      "schedule": "30 8 * * *"
+      "schedule": "0 18 * * 0"
+    },
+    {
+      "path": "/api/cron/testimonial-reminders",
+      "schedule": "0 15 * * *"
     },
     {
       "path": "/api/cron/check-in-weekly-digest",
