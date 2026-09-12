@@ -168,6 +168,8 @@ function baseOf(n: AdsV2Node): BaseMetrics {
     contractedCents: n.contractedCents,
     leadScoreSum: n.leadScoreSum ?? 0,
     leadScoreN: n.leadScoreN ?? 0,
+    subs: n.subs ?? 0,
+    subCents: n.subCents ?? 0,
   };
 }
 

@@ -57,6 +57,8 @@ interface LeafRow {
   contracted_usd_cents: number;
   lead_score_sum: number | null;
   lead_score_n: number | null;
+  subs: number | null;
+  sub_collected_usd_cents: number | null;
   has_spend: boolean;
   last_spend_day: string | null;
 }
@@ -158,6 +160,8 @@ interface DayRow {
   taken: number;
   new_clients: number;
   collected_usd_cents: number;
+  subs: number | null;
+  sub_collected_usd_cents: number | null;
 }
 
 interface RevenueDayRow {
@@ -224,6 +228,8 @@ export async function buildDaySeries(
         taken: d.taken,
         newClients: d.new_clients,
         collectedCents: d.collected_usd_cents,
+        subs: d.subs ?? 0,
+        subCents: d.sub_collected_usd_cents ?? 0,
         organicCents: r?.organic_scoped_cents ?? 0,
         miscChatCents: r?.misc_chat_all_cents ?? 0,
         adsAllCents: r?.ads_all_cents ?? 0,
@@ -274,6 +280,8 @@ export async function buildDaySeries(
       taken: d.taken,
       newClients: d.newClients,
       collectedCents: d.collectedCents,
+      subs: d.subs ?? 0,
+      subCents: d.subCents ?? 0,
     });
   }
   return {
@@ -310,6 +318,8 @@ function leafBase(l: LeafRow): BaseMetrics {
     contractedCents: l.contracted_usd_cents,
     leadScoreSum: l.lead_score_sum ?? 0,
     leadScoreN: l.lead_score_n ?? 0,
+    subs: l.subs ?? 0,
+    subCents: l.sub_collected_usd_cents ?? 0,
   };
 }
 
@@ -464,6 +474,8 @@ function baseOf(n: AdsV2Node): BaseMetrics {
     contractedCents: n.contractedCents,
     leadScoreSum: n.leadScoreSum ?? 0,
     leadScoreN: n.leadScoreN ?? 0,
+    subs: n.subs ?? 0,
+    subCents: n.subCents ?? 0,
   };
 }
 
@@ -482,6 +494,8 @@ function assignBase(n: AdsV2Node, b: BaseMetrics): void {
   n.contractedCents = b.contractedCents;
   n.leadScoreSum = b.leadScoreSum ?? 0;
   n.leadScoreN = b.leadScoreN ?? 0;
+  n.subs = b.subs ?? 0;
+  n.subCents = b.subCents ?? 0;
 }
 
 function makeNode(input: {

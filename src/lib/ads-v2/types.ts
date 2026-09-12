@@ -54,6 +54,12 @@ export interface BaseMetrics {
   // Optional-with-?? at read time: snapshots written before the pilot lack them.
   leadScoreSum: number;
   leadScoreN: number;
+  // $50 subscription lane (Stripe is the source of truth, 2026-09-12). Subs =
+  // first payments; subCents = first payments + renewals, net of refunds. Both
+  // are ALSO inside collectedCents (cash is cash); they never count as calls.
+  // Optional-with-?? at read time: snapshots written before the lane lack them.
+  subs: number;
+  subCents: number;
 }
 
 export interface BudgetInfo {
@@ -132,6 +138,10 @@ export interface MetricsDay {
   taken: number;
   newClients: number;
   collectedCents: number;
+  /** $50 first payments that day (optional on older snapshots). */
+  subs?: number;
+  /** $50 first payments + renewals collected that day, net of refunds. */
+  subCents?: number;
   // Revenue-category fields (optional: absent on snapshots written before the
   // revenue cards existed; the next version bump rebuilds them in).
   /** Organic-keyword sales collected, scoped to the selected account. */
@@ -210,6 +220,8 @@ export const EMPTY_BASE: BaseMetrics = {
   contractedCents: 0,
   leadScoreSum: 0,
   leadScoreN: 0,
+  subs: 0,
+  subCents: 0,
 };
 
 export function addBase(a: BaseMetrics, b: BaseMetrics): BaseMetrics {
@@ -228,5 +240,7 @@ export function addBase(a: BaseMetrics, b: BaseMetrics): BaseMetrics {
     contractedCents: a.contractedCents + b.contractedCents,
     leadScoreSum: (a.leadScoreSum ?? 0) + (b.leadScoreSum ?? 0),
     leadScoreN: (a.leadScoreN ?? 0) + (b.leadScoreN ?? 0),
+    subs: (a.subs ?? 0) + (b.subs ?? 0),
+    subCents: (a.subCents ?? 0) + (b.subCents ?? 0),
   };
 }

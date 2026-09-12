@@ -53,6 +53,8 @@ const dayBase = (d: MetricsDay): BaseMetrics => ({
   contractedCents: 0,
   leadScoreSum: 0,
   leadScoreN: 0,
+  subs: d.subs ?? 0,
+  subCents: d.subCents ?? 0,
 });
 
 export const CARD_DEFS: readonly CardDef[] = [
@@ -239,6 +241,28 @@ export const CARD_DEFS: readonly CardDef[] = [
     point: (d) => d.collectedCents / 100,
   },
   {
+    id: "subs",
+    label: "$50 subs",
+    meta: "First payments on the $50 plan",
+    sentence:
+      "How many people paid the $50 subscription for the first time each day, tied to one of this view's ad keywords by the identity riding on the Stripe link. Not a call: this never touches calls booked, show rate or close rate.",
+    source: "Stripe, the moment the first payment lands. The setter's tagged link carries the keyword and the ManyChat id into the checkout.",
+    format: "int",
+    value: (t) => t.subs ?? 0,
+    point: (d) => d.subs ?? 0,
+  },
+  {
+    id: "sub_cash",
+    label: "$50 sub cash",
+    meta: "First payments plus renewals, net of refunds",
+    sentence:
+      "Cash collected on the $50 subscription tied to this view's ad keywords: first payments plus every renewal that followed, minus refunds. This cash is also inside Collected revenue and ROAS; here it is shown on its own.",
+    source: "Stripe paid invoices, net of refunds, counted on the day the money landed.",
+    format: "usd",
+    value: (t) => (t.subCents ?? 0) / 100,
+    point: (d) => (d.subCents ?? 0) / 100,
+  },
+  {
     id: "organic_revenue",
     label: "Organic revenue",
     meta: "Cash from organic keywords",
@@ -315,6 +339,8 @@ export const DEFAULT_CARD_IDS: readonly string[] = [
   "calls_booked",
   "calls_taken",
   "collected",
+  "subs",
+  "sub_cash",
   "organic_revenue",
   "misc_chat_revenue",
   "attribution_coverage",

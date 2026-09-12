@@ -33,6 +33,8 @@ const RENDERED_COLUMN_KEYS = [
   "newClients",
   "closeRate",
   "msgToCall",
+  "subs",
+  "subCash",
   "collected",
   "costPerClient",
   "collectedRoi",

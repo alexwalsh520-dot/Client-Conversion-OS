@@ -69,6 +69,8 @@ const DEFAULT_WIDTHS: Record<string, number> = {
   newClients: 120,
   closeRate: 120,
   msgToCall: 120,
+  subs: 90,
+  subCash: 120,
   collected: 150,
   costPerClient: 130,
   collectedRoi: 140,

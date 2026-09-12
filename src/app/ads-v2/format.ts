@@ -102,6 +102,10 @@ function classFor(key: string, node: AdsV2Node): CellClass {
       return d.msgToCall == null ? "" : d.msgToCall >= 0.15 ? "pos" : d.msgToCall <= 0.12 ? "neg" : "";
     case "collected": // v1: always green
       return "pos";
+    case "subs":
+      return "";
+    case "subCash":
+      return (node.subCents ?? 0) > 0 ? "pos" : "";
     case "costPerClient": // v1 cpClient: <=$80 pos, >=$120 neg (only when set)
       return d.costPerClientCents
         ? d.costPerClientCents <= 8000
@@ -190,6 +194,12 @@ export function formatCell(key: string, node: AdsV2Node): Cell {
     case "msgToCall":
       text = pct(d.msgToCall);
       break;
+    case "subs":
+      text = int(node.subs ?? 0);
+      break;
+    case "subCash":
+      text = money(node.subCents ?? 0);
+      break;
     case "collected":
       text = money(node.collectedCents);
       break;
@@ -249,6 +259,10 @@ export function sortValue(key: string, node: AdsV2Node): number {
       return d.closeRate ?? -1;
     case "msgToCall":
       return d.msgToCall ?? -1;
+    case "subs":
+      return node.subs ?? 0;
+    case "subCash":
+      return node.subCents ?? 0;
     case "collected":
       return node.collectedCents;
     case "costPerClient":

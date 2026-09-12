@@ -177,5 +177,7 @@ export function toBaseMetrics(b: FunnelBase) {
     contractedCents: b.contracted_usd_cents,
     leadScoreSum: 0,
     leadScoreN: 0,
+    subs: 0,
+    subCents: 0,
   };
 }

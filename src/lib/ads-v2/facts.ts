@@ -417,7 +417,7 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
   }
 
   // ── Sale facts ───────────────────────────────────────────────────────────
-  const saleRows = await fetchAllRows<{
+  const saleRowsAll = await fetchAllRows<{
     id: string;
     sheet_row_key: string | null;
     date: string;
@@ -431,11 +431,12 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
     setter: string | null;
     call_type: string | null;
     offer: string | null;
+    program_length: string | null;
   }>((from, to) =>
     db
       .from("sales_tracker_rows")
       .select(
-        "id, sheet_row_key, date, prospect_name, call_taken_status, outcome, closer, contracted_revenue_cents, collected_revenue_cents, manychat_subscriber_id, setter, call_type:raw_payload->>callType, offer:raw_payload->>offer",
+        "id, sheet_row_key, date, prospect_name, call_taken_status, outcome, closer, contracted_revenue_cents, collected_revenue_cents, manychat_subscriber_id, setter, call_type:raw_payload->>callType, offer:raw_payload->>offer, program_length",
       )
       .gte("date", factFrom)
       .lte("date", saleTo)
@@ -443,6 +444,17 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
       .order("id", { ascending: true })
       .range(from, to),
   );
+
+  // The tracker's "Subscription" rows are the setters' hand log of $50 sales.
+  // Since 2026-09-12 Stripe is the source of truth for that money (owner call,
+  // Alex), so those rows never become sale facts: the Stripe lane below does,
+  // and counting both would double the cash. The rows still lend their pasted
+  // ManyChat id to a Stripe payment of the same person on the same days (the
+  // subscription weld), so no attribution the setters already earned is lost.
+  const isTrackerSubscriptionRow = (r: { program_length: string | null }) =>
+    (r.program_length || "").trim().toLowerCase() === "subscription";
+  const trackerSubscriptionRows = saleRowsAll.filter(isTrackerSubscriptionRow);
+  const saleRows = saleRowsAll.filter((r) => !isTrackerSubscriptionRow(r));
 
   // Origin-check keyword per subscriber (ad-origin evidence).
   const originRows = await fetchAllRows<{
@@ -587,6 +599,170 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
       })(),
     });
   }
+
+  // ── $50 subscription lane: Stripe payments become sale facts ─────────────
+  // One fact per PAID Stripe invoice (kind first_payment -> sale_kind
+  // 'subscription', kind renewal -> 'renewal'), net of refunds, never a call
+  // and never a win. Identity ladder, same honesty tiers as tracker rows:
+  //   1. keyword riding on the Stripe link (client_reference_id)  [hard key]
+  //   2. the ManyChat id on the link -> that person's booking / DM keyword
+  //   3. no id on the link -> the tracker Subscription row for the SAME name
+  //      within 3 days lends its pasted ManyChat id (subscription weld)
+  //   4. nothing -> awaiting review, never guessed.
+  const normName = (v: string | null | undefined) => (v || "").toLowerCase().replace(/[^a-z]/g, "");
+  const trackerSubsByName = new Map<string, { subscriberId: string; day: string; key: string }[]>();
+  for (const r of trackerSubscriptionRows) {
+    const pasted = (r.manychat_subscriber_id || "").trim();
+    const name = normName(r.prospect_name);
+    if (!pasted || !name) continue;
+    const list = trackerSubsByName.get(name) ?? [];
+    list.push({ subscriberId: pasted, day: r.date, key: r.sheet_row_key || r.id });
+    trackerSubsByName.set(name, list);
+  }
+  const dayDistance = (a: string, b: string) =>
+    Math.abs((new Date(`${a}T00:00:00Z`).getTime() - new Date(`${b}T00:00:00Z`).getTime()) / 86_400_000);
+
+  const stripeRows = await fetchAllRows<{
+    id: string;
+    kind: string;
+    client_key: string | null;
+    keyword: string | null;
+    subscriber_id: string | null;
+    email: string | null;
+    contact_name: string | null;
+    amount_cents: number | null;
+    refunded_cents: number | null;
+    currency: string | null;
+    paid_at: string;
+    invoice_id: string | null;
+    checkout_session_id: string | null;
+    subscription_id: string | null;
+    status: string | null;
+  }>((from, to) =>
+    db
+      .from("stripe_payments")
+      .select(
+        "id, kind, client_key, keyword, subscriber_id, email, contact_name, amount_cents, refunded_cents, currency, paid_at, invoice_id, checkout_session_id, subscription_id, status",
+      )
+      .gte("paid_at", `${shiftDay(factFrom, -1)}T00:00:00Z`)
+      .order("paid_at", { ascending: true })
+      .range(from, to),
+  );
+
+  let stripeFacts = 0;
+  for (const r of stripeRows) {
+    const day = etDay(r.paid_at);
+    if (day < factFrom || day > saleTo) continue;
+    const gross = Number(r.amount_cents || 0);
+    const net = Math.max(0, gross - Number(r.refunded_cents || 0));
+    const currency = (r.currency || "usd").toUpperCase();
+
+    let subscriberId = (r.subscriber_id || "").trim() || null;
+    let weld: { subscriber_id: string; tracker_row: string } | null = null;
+    if (!subscriberId) {
+      const cands = (trackerSubsByName.get(normName(r.contact_name)) ?? []).filter((c) => dayDistance(c.day, day) <= 3);
+      const ids = new Set(cands.map((c) => c.subscriberId));
+      if (ids.size === 1) {
+        subscriberId = cands[0].subscriberId;
+        weld = { subscriber_id: subscriberId, tracker_row: cands[0].key };
+      }
+    }
+
+    let keyword = r.keyword ? normalizeKeyword(r.keyword) : null;
+    let method: LinkMethod = keyword ? "link_dm" : "none";
+    let evidenceKey: string | null = keyword ? "stripe_client_reference" : null;
+    if (!keyword && subscriberId) {
+      const dmKeywordBySubscriber = new Map<string, string>();
+      const list = dmBySubscriber.get(subscriberId);
+      if (list) {
+        const eligible = list.filter((e) => e.day <= day);
+        const chosen = (eligible.length ? eligible : list).at(-1);
+        if (chosen) dmKeywordBySubscriber.set(subscriberId, chosen.keyword);
+      }
+      const resolved = resolveSaleKeyword({
+        humanResolution: null,
+        pastedSubscriberId: subscriberId,
+        bridgeSubscriberId: null,
+        bookingKeywordBySubscriber,
+        dmKeywordBySubscriber,
+        originCheckKeyword: originBySubscriber.get(subscriberId) ?? null,
+        paidKeywords: paidKeywordsAll,
+      });
+      keyword = resolved.keyword ? normalizeKeyword(resolved.keyword) : null;
+      method = resolved.method;
+      evidenceKey = keyword ? (weld ? "tracker_subscription_weld" : "subscriber_id") : null;
+    }
+
+    const client = keyword
+      ? keywordToClient.get(keyword) ?? organicKeywordToClient.get(keyword) ?? null
+      : null;
+    let isOrganic = false;
+    let awaiting = !keyword;
+    if (keyword && client) {
+      const cls = classifyKeyword({
+        keyword,
+        organicMarked: isOrganicMarked(client, keyword),
+        paidSpendDays: spendDaysFor(client, keyword),
+        eventDay: day,
+      });
+      if (cls === "organic") {
+        isOrganic = true;
+        method = "organic";
+        evidenceKey = null;
+      } else if (cls === "none") {
+        keyword = null;
+        method = "none";
+        awaiting = true;
+        evidenceKey = null;
+      }
+    } else if (keyword && !client) {
+      keyword = null;
+      method = "none";
+      awaiting = true;
+      evidenceKey = null;
+    }
+    const clientKey = client ?? ((r.client_key || "tyson").trim().toLowerCase() || "tyson");
+    const isRenewal = r.kind === "renewal";
+
+    saleFacts.push({
+      sale_key: `stripe:${r.invoice_id || r.checkout_session_id || r.id}`,
+      client_key: clientKey,
+      keyword_normalized: keyword,
+      method,
+      is_organic: isOrganic,
+      awaiting_review: awaiting,
+      call_taken: false,
+      is_win: false,
+      currency,
+      collected_cents: net,
+      contracted_cents: gross,
+      collected_usd_cents: convertCentsToUsd(net, currency, day, rateMap),
+      contracted_usd_cents: convertCentsToUsd(gross, currency, day, rateMap),
+      prospect_name: r.contact_name,
+      subscriber_id: subscriberId,
+      closer: null,
+      sale_et_day: day,
+      call_type: isRenewal ? "Subscription Renewal" : "Subscription",
+      sale_kind: isRenewal ? "renewal" : "subscription",
+      setter_name: subscriberId ? setterBySubscriber.get(subscriberId) ?? null : null,
+      evidence: {
+        source: "stripe_payments",
+        kind: r.kind,
+        invoice_id: r.invoice_id,
+        checkout_session_id: r.checkout_session_id,
+        subscription_id: r.subscription_id,
+        refunded_cents: Number(r.refunded_cents || 0),
+        method,
+        keyword,
+        weld,
+      },
+      evidence_key: evidenceKey,
+      evidence_detail: { subscriber_id: subscriberId, keyword, matched_by: method, weld },
+      blank_reason: keyword ? null : isOrganic ? "organic_dm" : "unknown",
+    });
+    stripeFacts++;
+  }
+  console.log(`[adsv2] stripe subscription lane: ${stripeFacts} facts (${trackerSubscriptionRows.length} tracker Subscription rows retired)`);
 
   // ── Replace the rolling window atomically per table ──────────────────────
   // Delete the window we just recomputed, then insert fresh. Facts outside the

@@ -49,3 +49,14 @@ alter table public.stripe_subscriptions enable row level security;
 alter table warehouse.ads_keyword_events
   drop constraint if exists ads_keyword_events_source_check,
   add constraint ads_keyword_events_source_check check (source = any (array['manychat'::text, 'ghl'::text, 'stripe'::text]));
+
+-- ---------------------------------------------------------------------------
+-- Step 5 (2026-09-12), applied as migration adsv2_sale_kind_and_subscription_columns:
+-- warehouse.adsv2_sale_facts.sale_kind ('call' | 'subscription' | 'renewal'),
+-- public.adsv2_sale_facts view recreated with the column appended, and
+-- adsv2_window_leaves / adsv2_window_days return two more columns:
+--   subs                     count(*) filter (where sale_kind = 'subscription')
+--   sub_collected_usd_cents  sum(collected_usd_cents) filter (where sale_kind in ('subscription','renewal'))
+-- Both functions were dropped and recreated (return type change); bodies are
+-- otherwise byte-identical to the previous versions. See the live definitions.
+-- ---------------------------------------------------------------------------

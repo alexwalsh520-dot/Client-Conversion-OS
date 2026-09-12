@@ -209,10 +209,30 @@ export const COLUMNS: readonly ColumnDef[] = [
     calc: true,
   },
   {
+    key: "subs",
+    label: "$50 subs",
+    sentence:
+      "How many people paid the $50 subscription for the first time from this ad's keyword in this window. Not a call: it never touches calls booked, show rate or close rate.",
+    source:
+      "Stripe, the moment the first payment lands. The setter's tagged link carries the keyword and the ManyChat id into the checkout, so the sale is tied by hard key.",
+    format: "int",
+    logged: true,
+  },
+  {
+    key: "subCash",
+    label: "$50 sub cash",
+    sentence:
+      "Cash collected on the $50 subscription from this ad's keyword: first payments plus every renewal that followed, minus refunds. This cash is also inside Collected revenue and ROAS; here it is shown on its own.",
+    source: "Stripe paid invoices, net of refunds, counted on the day the money landed.",
+    format: "usd",
+    logged: true,
+  },
+  {
     key: "collected",
     label: "Collected revenue",
-    sentence: "Cash actually collected from clients tied to this ad's keyword.",
-    source: "The sales tracker, tied to a keyword by hard key only.",
+    sentence:
+      "Cash actually collected from clients tied to this ad's keyword: coaching sales from the sales tracker plus $50 subscription cash from Stripe.",
+    source: "The sales tracker for coaching sales and Stripe for $50 subscriptions, each tied to a keyword by hard key only.",
     format: "usd",
     logged: true,
   },
