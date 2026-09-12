@@ -4,9 +4,11 @@ import styles from "./everfit.module.css";
 export default function EverfitClientQuestion({
   reportId,
   everfitId,
+  coachName,
 }: {
-  reportId: string;
-  everfitId: string;
+  reportId?: string;
+  everfitId?: string;
+  coachName?: string;
 }) {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
@@ -14,10 +16,11 @@ export default function EverfitClientQuestion({
   const [busy, setBusy] = useState(false);
   return (
     <div className={styles.panel}>
-      <h3>Ask about this client</h3>
+      <h3>{reportId ? "Ask about this client" : "Ask CCOS + Everfit"}</h3>
       <p className={styles.hint}>
-        Uses this report and verified current CCOS context. Answers are saved
-        with the report; no messages or client edits are made.
+        Uses saved Everfit reports and accessible CCOS records. Shared questions also
+        include meeting and finance records. Answers show evidence and gaps; this
+        does not collect new Everfit data.
       </p>
       <form
         onSubmit={async (e) => {
@@ -29,7 +32,7 @@ export default function EverfitClientQuestion({
             const response = await fetch("/api/coaching/everfit/ask", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ reportId, everfitId, question }),
+              body: JSON.stringify({ reportId, everfitId, question, coachName }),
             });
             const data = await response.json();
             if (!response.ok)
@@ -49,7 +52,7 @@ export default function EverfitClientQuestion({
             maxLength={1500}
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            placeholder="What should we follow up on before renewal?"
+            placeholder={reportId ? "What should we follow up on before renewal?" : "How are Shiraad’s clients doing? Give me a 150-word summary."}
           />
         </label>
         <button disabled={busy || !question.trim()}>

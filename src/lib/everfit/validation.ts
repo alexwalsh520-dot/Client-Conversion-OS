@@ -164,6 +164,9 @@ export function daysUntil(end: string | null, asOf = pkDate()): number | null {
       )
     : null;
 }
+export function isRetentionWindow(days: number | null): boolean {
+  return days !== null && days >= -10 && days <= 10;
+}
 export function lastCompletedSaturdayWindow(now = new Date()) {
   // Pakistan is UTC+05:00. Work in shifted UTC calendar fields to avoid host timezone effects.
   const shifted = new Date(now.getTime() + 5 * 3600000);

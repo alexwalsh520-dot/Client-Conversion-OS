@@ -4,6 +4,7 @@ import {
   parseImport,
   lastCompletedSaturdayWindow,
   daysUntil,
+  isRetentionWindow,
 } from "./validation";
 import { matchReport } from "./matching";
 import { canReadCoach, scopeReport } from "./access";
@@ -110,6 +111,10 @@ test("explicit timestamp window validates duration and cannot cover the future",
     () => parseImport({ ...report, window_end: null }, "Shiraad"),
     /Both/,
   );
+});
+test("retention includes both ten-day boundaries and excludes older expirations", () => {
+  for (const d of [-10, -1, 0, 1, 10]) assert.equal(isRetentionWindow(d), true);
+  for (const d of [-11, 11, null]) assert.equal(isRetentionWindow(d), false);
 });
 test("Saturday 18:00 PKT is the exact report closing boundary", () => {
   assert.equal(

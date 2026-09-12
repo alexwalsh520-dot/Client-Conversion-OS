@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw, Upload } from "lucide-react";
+import EverfitClientQuestion from "./everfit/EverfitClientQuestion";
 import EverfitDashboard from "./everfit/EverfitDashboard";
 import type { Client } from "@/lib/types";
 import type { ReportDetail, StoredReport } from "@/lib/everfit/types";
@@ -195,6 +196,7 @@ export default function EverfitTab({
           {error}
         </div>
       )}
+      <EverfitClientQuestion key={`chat-${coach}-${refresh}`} coachName={coach || undefined} />
       {isAdmin && (
         <details className={styles.details}>
           <summary>
@@ -277,8 +279,8 @@ export default function EverfitTab({
                   : "Your weekly reviews will appear here after an administrator imports them."}
               </p>
               <p className={styles.hint}>
-                Requested cadence: Saturday at 18:00 Pakistan time. Automatic
-                capture has not been enabled.
+                Syncs are manual and on demand. Ask your assistant to sync Everfit
+                for all coaches, or explicitly name a smaller scope.
               </p>
             </>
           )}

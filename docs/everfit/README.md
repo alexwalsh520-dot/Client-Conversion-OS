@@ -4,7 +4,7 @@ The Coaching Hub now has an Everfit tab for reviewed weekly client summaries. It
 
 ## Deploy and import
 
-1. Apply `supabase/migrations/20260912010825_everfit_weekly_reviews.sql` to the existing CCOS Supabase project. This creates service-only tables and two transactional functions. It does not modify existing client rows.
+1. Apply `supabase/migrations/20260912010825_everfit_weekly_reviews.sql` followed by `supabase/migrations/20260912030000_everfit_shared_questions.sql` to the existing CCOS Supabase project. This creates service-only tables and two transactional functions. It does not modify existing client rows.
 2. Use the existing `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, NextAuth settings, and optional `ANTHROPIC_API_KEY`. Do not paste credentials into source files. `EVERFIT_AI_MODEL` optionally overrides the existing CCOS default model for client questions.
 3. Deploy the branch through the normal CCOS preview/review process. Sign in as an administrator and open Coaching → Everfit → Import a reviewed report.
 4. Choose the internal CCOS coach name, select the local JSON export, review the preview, and save. The server rechecks emails against the current roster before storing the report. The preview intentionally shows no verified links until that server check runs.
@@ -31,9 +31,15 @@ Imports are bounded to 2 MB and 1–600 clients; duplicate Everfit IDs reject th
 
 ## Cadence and current limitations
 
-Saturday at 18:00 Asia/Karachi is the requested initial cadence. The tested window helper returns the last completed Saturday boundary, including the instant at 18:00, independent of host timezone. No recurring job has been enabled: the user requested pilot validation before final scheduling. This change consumes reviewed captures; it does not implement an unattended Everfit browser scraper or transcribe voice/image attachments.
+The confirmed approach is manual, on-demand sync through the user's signed-in local browser. A general request such as “Sync Everfit” means all coaches and all their clients. Narrow the scope only when the user explicitly requests particular coaches or clients. There is no fixed cadence; the user may request a sync weekly or whenever fresh information is needed. This supersedes the earlier Saturday report cadence, four-day refresh schedule, and cloud execution proposal. No cron or hosted-browser subscription is required or enabled for this approach.
 
-The contextual question endpoint uses the selected brief plus the current verified client row. It does not yet retrieve all meetings, financial transactions, or entire conversations. It cannot send messages or modify clients. Answers are generated and saved when asked; a failed generation does not claim success. End-to-end AI generation needs the existing CCOS AI key and connected database.
+Each sync must collect Everfit conversations and right-side Updates, read current CCOS context, and persist a dated snapshot while retaining previous reports. The user must keep the Mac awake and the authorized browser signed in during collection. The request is made in this assistant conversation; a CCOS button cannot yet launch local browser collection. The collection/import integration and shared chatbot remain unfinished.
+
+Summaries should cover the trailing seven days. Collection should also catch up from the last successful capture when syncs are more than a week apart, preserving the older material as history rather than labeling it as this week's activity. First captures must state their actual coverage. Deduplicate overlapping records and track per-client completeness. A failed client capture must not erase its previous report or be counted as a successful refresh; display last successful sync time and missing coverage. Voice/image attachments are not currently transcribed. The old Saturday boundary helper remains for the original pilot only and does not define on-demand sync timing.
+
+The retention view includes end dates from ten days before through ten days after today, inclusive, evaluated in Asia/Karachi. This date window is distinct from a verified retention outcome; date membership alone does not establish that a client is still unretained.
+
+The shared question box reads the current authorized roster, notes and billing fields, up to 100 saved Everfit reports, and meeting/finance records joined by authorized client IDs. Supplemental records are capped at 500 per 200-client batch, with explicit truncation metadata. Oversized context asks the user to select a coach rather than silently dropping records. Shared questions are persisted without a required report ID. The individual-client box still uses its selected brief and current verified client row. Neither path retrieves raw conversations, EODs, or every CCOS subsystem. It cannot send messages or modify clients. Answers are generated and saved when asked; a failed generation does not claim success. End-to-end AI generation needs the existing CCOS AI key and connected database.
 
 The report list currently returns the latest 200 accessible reports. Pagination and a client-facing portal can be added separately when the pilot is validated.
 

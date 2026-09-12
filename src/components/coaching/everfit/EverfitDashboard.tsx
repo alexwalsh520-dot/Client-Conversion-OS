@@ -9,7 +9,7 @@ import {
   Users,
   Link2,
 } from "lucide-react";
-import { daysUntil } from "@/lib/everfit/validation";
+import { daysUntil, isRetentionWindow } from "@/lib/everfit/validation";
 import type { EverfitBrief, ReportDetail } from "@/lib/everfit/types";
 import EverfitClientQuestion from "./EverfitClientQuestion";
 import styles from "./everfit.module.css";
@@ -74,7 +74,7 @@ export default function EverfitDashboard({
     .filter((c) => {
       const days = daysUntil(clientEnd(c));
       return (
-        (view !== "retention" || (days !== null && days <= 7)) &&
+        (view !== "retention" || isRetentionWindow(days)) &&
         (view !== "quality" ||
           c.match_status !== "Email verified" ||
           c.ccos_snapshot?.coach_name !== document.coach_name) &&
@@ -95,7 +95,7 @@ export default function EverfitDashboard({
   const current = document.clients.find((c) => c.everfit_id === selected);
   const endCount = document.clients.filter((c) => {
     const d = daysUntil(clientEnd(c));
-    return d !== null && d <= 7;
+    return isRetentionWindow(d);
   }).length;
   const verified = document.clients.filter(
     (c) => c.match_status === "Email verified",
@@ -143,9 +143,9 @@ export default function EverfitDashboard({
         />
         <Stat
           icon={<AlertTriangle size={16} />}
-          label="Upcoming or past end dates"
+          label="Clients in retention window"
           value={endCount}
-          note="Within 7 days or past · verify billing"
+          note="10 days before through 10 days after · verify outcome"
         />
         <Stat
           icon={<Activity size={16} />}
