@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getR2Config } from "@/lib/r2";
 
 export const runtime = "nodejs";
+// Large videos stream through here in full (Chrome needs the whole file when
+// the moov index sits at the end of an iPhone .mov). Give the stream time.
+export const maxDuration = 300;
 
 export async function GET(req: NextRequest) {
   try {
