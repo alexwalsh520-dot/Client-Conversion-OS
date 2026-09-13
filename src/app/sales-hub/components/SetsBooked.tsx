@@ -46,7 +46,13 @@ const CALL_TYPE_LABELS: Record<string, string> = {
 
 /* ── Component ────────────────────────────────────────────────────── */
 
-export default function SetsBooked({ filters }: { filters: Filters }) {
+export default function SetsBooked({
+  filters,
+  onTeam,
+}: {
+  filters: Filters;
+  onTeam?: (n: number | null) => void;
+}) {
   const [data, setData] = useState<SetsBookedResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -57,14 +63,17 @@ export default function SetsBooked({ filters }: { filters: Filters }) {
     try {
       const res = await fetch(`/api/sales-hub/sets-booked?dateFrom=${dateFrom}&dateTo=${dateTo}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setData(await res.json());
+      const body: SetsBookedResult = await res.json();
+      setData(body);
+      onTeam?.(body.team);
       setError(null);
     } catch (err) {
+      onTeam?.(null);
       setError(err instanceof Error ? err.message : "Failed to load");
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [filters, onTeam]);
 
   useEffect(() => {
     setLoading(true);
