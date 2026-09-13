@@ -1,25 +1,32 @@
 // Sets Booked — bookings counted at the moment the lead actually scheduled
 // the call (owner definition, 2026-09-11: "it's not from when the link was
 // sent, it's not from when the lead came in, it's from the actual time of
-// them scheduling the call").
+// them scheduling the call"). Strategy sessions only — onboarding calls are
+// not sets; personal-calendar/outbound sales calls count (the tracker logs
+// them as Strategy Session rows).
 //
-// Source: warehouse.metrics_lead_events booking events, written in real time
-// by the GHL appointment webhook — occurred_at is the scheduling moment
-// (verified against GHL's own calendar date_created). The sales tracker's
-// Date column is the CALL day, so it cannot answer "how many sets were made
-// today"; it is only used here to attribute each set to its setter.
+// Source: warehouse.ghl_appointments DIRECTLY — rows land the moment the GHL
+// webhook fires, so the number never lags the #appointment-notifs channel.
+// (v1 read the metrics_lead_events booking stream, which is rebuilt hourly
+// by the metrics-ledger-build cron — up to an hour behind Slack; that gap is
+// exactly the "channel says 8, hub says 7" incident of 2026-09-13.)
+// created_at is the scheduling moment, verified against GHL's own
+// calendar.date_created. The sales tracker's Date column is the CALL day,
+// so it can never answer "how many sets were made today"; it is only used
+// here to attribute each set to its setter.
 
 import { getServiceSupabase } from "@/lib/supabase";
 import { getActiveClients, getSetterLabelMap } from "@/lib/registry";
 import { fetchSheetData } from "@/lib/google-sheets";
 import { isExcludedSetter } from "@/lib/sales-hub/excluded-setters";
 import { toEtDateStr } from "@/lib/sales-hub/response-times";
+import { engineCalendar } from "@/lib/metrics-engine/calendars";
 
 export interface SetBookedRow {
   madeAt: string; // ISO instant the lead scheduled
   madeEtDay: string;
   leadName: string;
-  callType: string | null; // dm / onboarding / outbound …
+  callType: string | null; // dm / outbound (onboarding is excluded)
   callEtDay: string | null; // the day the call is scheduled to happen
   setterKey: string;
   setterLabel: string;
@@ -34,23 +41,14 @@ export interface SetsBookedResult {
   asOf: string;
 }
 
-interface BookingEventRow {
-  occurred_at: string;
-  lead_key: string | null;
-  client_key: string | null;
-  metadata: {
-    appointment_id?: string | null;
-    prospect_name?: string | null;
-    contact_name?: string | null;
-    call_type?: string | null;
-    start_et_day?: string | null;
-  } | null;
-}
-
-interface ApptStatusRow {
+interface ApptRow {
   appointment_id: string;
-  status: string | null;
+  contact_id: string | null;
   contact_name: string | null;
+  calendar_id: string | null;
+  status: string | null;
+  start_time: string | null;
+  created_at: string;
 }
 
 interface TagEventRow {
@@ -91,51 +89,53 @@ export async function getSetsBooked(opts: {
   const { dateFrom, dateTo } = opts;
   const db = getServiceSupabase();
 
-  // 1) Booking events whose SCHEDULING moment falls in the ET range.
-  const events: BookingEventRow[] = [];
+  // 1) Appointments CREATED in the ET range on a strategy-session calendar
+  //    (dm funnel or a rep's personal/outbound calendar). Onboarding and
+  //    reschedule calendars never count: onboarding is not a set, and a
+  //    reschedule re-books an existing set.
+  const appts: ApptRow[] = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await db
       .schema("warehouse")
-      .from("metrics_lead_events")
-      .select("occurred_at, lead_key, client_key, metadata")
-      .eq("event_type", "booking")
-      .gte("occurred_at", `${shiftDay(dateFrom, -1)}T00:00:00.000Z`)
-      .lte("occurred_at", `${shiftDay(dateTo, 1)}T23:59:59.999Z`)
-      .order("occurred_at", { ascending: true })
+      .from("ghl_appointments")
+      .select("appointment_id, contact_id, contact_name, calendar_id, status, start_time, created_at")
+      .gte("created_at", `${shiftDay(dateFrom, -1)}T00:00:00.000Z`)
+      .lte("created_at", `${shiftDay(dateTo, 1)}T23:59:59.999Z`)
+      .order("created_at", { ascending: true })
       .range(from, from + PAGE - 1);
-    if (error) throw new Error(`metrics_lead_events: ${error.message}`);
-    events.push(...((data || []) as BookingEventRow[]));
+    if (error) throw new Error(`ghl_appointments: ${error.message}`);
+    appts.push(...((data || []) as ApptRow[]));
     if (!data || data.length < PAGE) break;
   }
-  // Strategy sessions only (owner, 2026-09-11): onboarding calls are not
-  // sets. Personal-calendar/outbound sales calls still count — the tracker
-  // logs those as Strategy Session rows.
-  const inRange = events.filter((e) => {
-    if ((e.metadata?.call_type || "").toLowerCase() === "onboarding") return false;
-    const day = toEtDateStr(e.occurred_at);
+  const inRange = appts.filter((a) => {
+    const cal = a.calendar_id ? engineCalendar(a.calendar_id) : null;
+    if (!cal || (cal.side !== "dm" && cal.side !== "outbound")) return false;
+    const day = toEtDateStr(a.created_at);
     return day >= dateFrom && day <= dateTo;
   });
 
   // 2) One set per lead per day — a same-day rebook/reschedule is not a new set.
-  const byKey = new Map<string, BookingEventRow>();
-  for (const e of inRange) {
-    const name = normName(e.metadata?.prospect_name || e.metadata?.contact_name);
-    const lead = name || e.lead_key || e.metadata?.appointment_id || e.occurred_at;
-    const key = `${lead}:${toEtDateStr(e.occurred_at)}`;
-    if (!byKey.has(key)) byKey.set(key, e); // earliest event wins
+  const byKey = new Map<string, ApptRow>();
+  for (const a of inRange) {
+    const lead = normName(a.contact_name) || a.contact_id || a.appointment_id;
+    const key = `${lead}:${toEtDateStr(a.created_at)}`;
+    if (!byKey.has(key)) byKey.set(key, a); // earliest booking wins
   }
   const sets = [...byKey.values()];
 
-  // 3) Appointment status (cancelled sets stay visible but labeled).
-  const statusByAppt = new Map<string, ApptStatusRow>();
-  const apptIds = sets.map((e) => e.metadata?.appointment_id).filter((x): x is string => Boolean(x));
-  for (const ids of chunk(apptIds, 200)) {
+  // 3) GHL contact -> ManyChat subscriber bridge (for the assignment fallback).
+  const mcByContact = new Map<string, string>();
+  const contactIds = [...new Set(sets.map((a) => a.contact_id).filter((x): x is string => Boolean(x)))];
+  for (const ids of chunk(contactIds, 200)) {
     const { data } = await db
-      .schema("warehouse")
-      .from("ghl_appointments")
-      .select("appointment_id, status, contact_name")
-      .in("appointment_id", ids);
-    for (const r of (data || []) as ApptStatusRow[]) statusByAppt.set(r.appointment_id, r);
+      .from("manychat_contact_links")
+      .select("ghl_contact_id, subscriber_id")
+      .in("ghl_contact_id", ids);
+    for (const l of (data || []) as { ghl_contact_id: string | null; subscriber_id: string | null }[]) {
+      if (l.ghl_contact_id && l.subscriber_id && !mcByContact.has(l.ghl_contact_id)) {
+        mcByContact.set(l.ghl_contact_id, l.subscriber_id);
+      }
+    }
   }
 
   // 4) Setter attribution: tracker row (Setter column) by name+call-day,
@@ -195,10 +195,10 @@ export async function getSetsBooked(opts: {
     assignments = new Map();
   }
 
-  const setterFor = (e: BookingEventRow): { key: string; label: string } => {
-    const madeDay = toEtDateStr(e.occurred_at);
-    const callDay = e.metadata?.start_et_day || madeDay;
-    const name = normName(e.metadata?.prospect_name || e.metadata?.contact_name);
+  const setterFor = (a: ApptRow): { key: string; label: string } => {
+    const madeDay = toEtDateStr(a.created_at);
+    const callDay = a.start_time ? toEtDateStr(a.start_time) : madeDay;
+    const name = normName(a.contact_name);
     if (name) {
       const candidates = trackerSetter.get(name);
       if (candidates && candidates.length > 0) {
@@ -212,12 +212,12 @@ export async function getSetsBooked(opts: {
         }
       }
     }
-    const mcId = e.lead_key?.startsWith("mc:") ? e.lead_key.slice(3) : null;
+    const mcId = a.contact_id ? mcByContact.get(a.contact_id) : null;
     if (mcId) {
       const list = assignments.get(mcId) || [];
       let last: TagEventRow | null = null;
       for (const t of list) {
-        if (t.event_at <= e.occurred_at) last = t;
+        if (t.event_at <= a.created_at) last = t;
         else break;
       }
       const resolved = resolveLabel(last?.setter_name);
@@ -226,20 +226,19 @@ export async function getSetsBooked(opts: {
     return { key: "unassigned", label: "Unassigned" };
   };
 
-  const rows: SetBookedRow[] = sets.map((e) => {
-    const appt = e.metadata?.appointment_id ? statusByAppt.get(e.metadata.appointment_id) : undefined;
-    let { key, label } = setterFor(e);
+  const rows: SetBookedRow[] = sets.map((a) => {
+    const cal = a.calendar_id ? engineCalendar(a.calendar_id) : null;
+    let { key, label } = setterFor(a);
     if (isExcludedSetter(key)) ({ key, label } = { key: "unassigned", label: "Unassigned" });
     return {
-      madeAt: e.occurred_at,
-      madeEtDay: toEtDateStr(e.occurred_at),
-      leadName:
-        (e.metadata?.prospect_name || e.metadata?.contact_name || appt?.contact_name || "Unknown lead").trim(),
-      callType: e.metadata?.call_type || null,
-      callEtDay: e.metadata?.start_et_day || null,
+      madeAt: a.created_at,
+      madeEtDay: toEtDateStr(a.created_at),
+      leadName: (a.contact_name || "Unknown lead").trim(),
+      callType: cal?.side || null,
+      callEtDay: a.start_time ? toEtDateStr(a.start_time) : null,
       setterKey: key,
       setterLabel: label,
-      status: appt?.status || null,
+      status: a.status,
     };
   });
   rows.sort((a, b) => b.madeAt.localeCompare(a.madeAt));

@@ -191,6 +191,9 @@ async function fetchJSON<T>(url: string): Promise<T> {
 /* ── Component ────────────────────────────────────────────────────── */
 
 export default function SetterPerformance({ filters }: SetterPerformanceProps) {
+  // Headline "Sets Booked" (moment-of-scheduling) reported up by the
+  // SetsBooked block so the summary cards and the block agree.
+  const [setsTeam, setSetsTeam] = useState<number | null>(null);
   const { dateFrom, dateTo } = getEffectiveDates(filters);
 
   const [loading, setLoading] = useState(true);
@@ -352,6 +355,7 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
     <div>
       <SetterPerformanceSummary
         summary={summary}
+        setsTeam={setsTeam}
         loading={loading}
         error={error}
         extra={
@@ -368,7 +372,7 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
         }
       />
 
-      <SetsBooked filters={filters} />
+      <SetsBooked filters={filters} onTeam={setSetsTeam} />
 
       {loading ? (
         <LoadingCard />
@@ -412,11 +416,13 @@ export default function SetterPerformance({ filters }: SetterPerformanceProps) {
 
 function SetterPerformanceSummary({
   summary,
+  setsTeam,
   loading,
   error,
   extra,
 }: {
   summary: SetterSummary;
+  setsTeam: number | null;
   loading: boolean;
   error: string;
   extra?: ReactNode;
@@ -460,13 +466,13 @@ function SetterPerformanceSummary({
         />
         <SummaryCard
           icon={<PhoneCall size={12} style={{ color: "var(--accent)" }} />}
-          label="Calls Booked"
-          value={fmtNumber(summary.callsBooked)}
+          label="Sets Booked"
+          value={setsTeam === null ? "…" : fmtNumber(setsTeam)}
         />
         <SummaryCard
           icon={<TrendingUp size={12} style={{ color: "var(--success)" }} />}
           label="Booking Rate"
-          value={formatRate(summary.callsBooked, summary.newLeads)}
+          value={setsTeam === null ? "…" : formatRate(setsTeam, summary.newLeads)}
           color="var(--success)"
         />
       </div>
@@ -565,18 +571,12 @@ interface TableRow extends PerfCounts {
 // The 10 metric <td>s, shared by a setter row and its per-offer sub-rows.
 function MetricCells({ s }: { s: PerfCounts }) {
   const showDenominator = s.callsTaken + s.noShows;
-  const bookingRate = s.newLeads > 0 ? (s.callsBooked / s.newLeads) * 100 : 0;
   const showRate = showDenominator > 0 ? (s.callsTaken / showDenominator) * 100 : 0;
   const closeRate = s.callsTaken > 0 ? (s.wins / s.callsTaken) * 100 : 0;
   return (
     <>
       <td>{fmtNumber(s.newLeads)}</td>
       <td>{fmtNumber(s.callsBooked)}</td>
-      <td>
-        <span style={{ color: s.newLeads > 0 ? rateColor(bookingRate, 15, 8) : "var(--text-secondary)", fontWeight: 600 }}>
-          {formatRate(s.callsBooked, s.newLeads)}
-        </span>
-      </td>
       <td>{fmtNumber(s.callsTaken)}</td>
       <td style={{ color: s.wins > 0 ? "var(--success)" : "var(--text-secondary)" }}>{fmtNumber(s.wins)}</td>
       <td style={{ color: s.noShows > 0 ? "var(--danger)" : "var(--text-secondary)" }}>{fmtNumber(s.noShows)}</td>
@@ -634,8 +634,7 @@ function PerformanceTable({
           <tr>
             <th>{firstColumnLabel}</th>
             <th>New Leads</th>
-            <th>Booked</th>
-            <th>Booking Rate</th>
+            <th>On Calendar</th>
             <th>Taken</th>
             <th>Wins</th>
             <th>No Shows</th>
