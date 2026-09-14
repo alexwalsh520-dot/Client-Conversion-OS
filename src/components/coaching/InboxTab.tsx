@@ -79,7 +79,7 @@ export default function InboxTab() {
         <div className={styles.messages}>
           {before&&<button className={styles.older} onClick={()=>void open(selected,true)}>Earlier messages</button>}
           {messages.map((m,i)=><div key={m.message_id}>
-            {(i===0||messages[i-1].date!==m.date)&&<div className={styles.date}>{messageDate(m)}</div>}
+            {(i===0||messageDate(messages[i-1])!==messageDate(m))&&<div className={styles.date}>{messageDate(m)}</div>}
             <article className={`${styles.bubble} ${m.sender==="coach"?styles.outgoing:styles.incoming}`}>
               {m.text&&<p>{m.text}</p>}{m.attachments&&<span className={styles.attachment}>Attachment</span>}
               <time>{m.time}</time>
