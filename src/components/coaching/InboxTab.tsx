@@ -17,6 +17,7 @@ export default function InboxTab() {
   const [search,setSearch]=useState("");
   const [error,setError]=useState("");
   const [notice,setNotice]=useState("");
+  const [pasted,setPasted]=useState("");
   const [busy,setBusy]=useState(false);
   const [admin,setAdmin]=useState(false);
   const version=useRef(0);
@@ -62,6 +63,7 @@ export default function InboxTab() {
       </div>
     </div>
     <p style={{fontSize:12,color:"var(--text-secondary)"}}>Ask Codex to sync Everfit to collect new messages. Refresh reloads saved data. Each conversation shows its own verified coverage.</p>
+    {admin&&<details><summary style={{cursor:"pointer",fontSize:12}}>Paste a captured batch</summary><div style={{display:"grid",gap:8,marginTop:8}}><textarea aria-label="Captured inbox batch" value={pasted} maxLength={3000000} onChange={e=>setPasted(e.target.value)} rows={5} className="form-input" placeholder="Paste the batch prepared by Codex"/><button className="btn btn-secondary" disabled={busy||!pasted.trim()} onClick={()=>void importFile(new File([pasted],"inbox-batch.json",{type:"application/json"}))}>Save captured batch</button></div></details>}
     {error&&<div role="alert" style={{padding:14,border:"1px solid var(--danger)",borderRadius:10}}>{error}</div>}
     {notice&&<div role="status" style={{padding:12}}>{notice}</div>}
     <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
