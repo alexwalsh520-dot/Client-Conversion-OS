@@ -22,8 +22,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const LAST_SENT_KEY = "meetings_report_last_week_start";
 /** Score awarded per qualifying meeting (has a Fathom link that was added
  *  inside this report's week window). Was mentally +3, formalized to +5
- *  per MAS on 2026-09-14 alongside the Fathom-link-required rule. */
-const SCORE_PER_QUALIFYING_MEETING = 5;
+ *  per MAS on 2026-09-14 alongside the Fathom-link-required rule, then
+ *  bumped to +10 later the same day to make Fathom-logging more attractive. */
+const SCORE_PER_QUALIFYING_MEETING = 10;
 
 // Calendar date (YYYY-MM-DD) in Pakistan time for a UTC instant (ms).
 function pktDateStr(instantMs: number): string {

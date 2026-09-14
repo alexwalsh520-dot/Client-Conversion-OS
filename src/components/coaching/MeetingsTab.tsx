@@ -342,7 +342,7 @@ export default function MeetingsTab({ meetings, clients, onSave, onDelete }: Pro
               <label className="field-label">
                 Fathom link{" "}
                 <span style={{ color: "var(--text-muted)", fontWeight: 400, fontSize: 12 }}>
-                  (optional but strongly encouraged — a Fathom-linked meeting earns +5 in the weekly score)
+                  (optional but strongly encouraged — a Fathom-linked meeting earns +10 in the weekly score)
                 </span>
               </label>
               <input
@@ -405,7 +405,7 @@ export default function MeetingsTab({ meetings, clients, onSave, onDelete }: Pro
                     </a>
                   ) : (
                     <span
-                      title="No Fathom link yet — add one to earn +5 in the weekly score"
+                      title="No Fathom link yet — add one to earn +10 in the weekly score"
                       style={{
                         display: "inline-flex",
                         alignItems: "center",
