@@ -16,6 +16,7 @@ import {
   ClipboardCheck,
   Brain,
   Activity,
+  Heart,
 } from "lucide-react";
 import {
   coachPerformance,
@@ -53,6 +54,7 @@ import ClientProgressTab from "@/components/coaching/ClientProgressTab";
 import AskAhmadTab from "@/components/coaching/AskAhmadTab";
 import EverfitV2Tab from "@/components/coaching/EverfitV2Tab";
 import ReferralsTab from "@/components/coaching/ReferralsTab";
+import RetentionsTab from "@/components/coaching/RetentionsTab";
 import type { CheckInSubmissionRow } from "@/lib/check-in/types";
 
 const TABS: { key: CoachingTab; label: string; icon: React.ReactNode }[] = [
@@ -62,6 +64,7 @@ const TABS: { key: CoachingTab; label: string; icon: React.ReactNode }[] = [
   { key: "performance", label: "Coach Performance", icon: <Trophy size={14} /> },
   { key: "meetings", label: "Meetings", icon: <Calendar size={14} /> },
   { key: "milestones", label: "Milestones", icon: <Target size={14} /> },
+  { key: "retentions", label: "Retentions", icon: <Heart size={14} /> },
   { key: "eod", label: "EOD Reports", icon: <FileText size={14} /> },
   { key: "financials", label: "Financials", icon: <DollarSign size={14} /> },
   { key: "expenses", label: "Expenses", icon: <Receipt size={14} /> },
@@ -383,6 +386,9 @@ export default function CoachingPage() {
         )}
         {activeTab === "referrals" && (
           <ReferralsTab clients={clients} />
+        )}
+        {activeTab === "retentions" && (
+          <RetentionsTab />
         )}
       </div>
     </div>

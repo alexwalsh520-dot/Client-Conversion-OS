@@ -194,7 +194,7 @@ export interface FinanceRecord {
   retentionDate: string | null;
 }
 
-export type CoachingTab = 'everfit-v2' | 'roster' | 'onboarding' | 'performance' | 'meetings' | 'milestones' | 'eod' | 'financials' | 'expenses' | 'nutrition' | 'client-progress' | 'ask-ahmad' | 'referrals';
+export type CoachingTab = 'everfit-v2' | 'roster' | 'onboarding' | 'performance' | 'meetings' | 'milestones' | 'eod' | 'financials' | 'expenses' | 'nutrition' | 'client-progress' | 'ask-ahmad' | 'referrals' | 'retentions';
 
 export interface Expense {
   id?: number;
