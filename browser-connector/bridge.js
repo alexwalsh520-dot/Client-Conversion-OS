@@ -11,7 +11,7 @@ window.addEventListener("message", async (event) => {
   if (
     typeof id !== "string" ||
     id.length > 100 ||
-    !["PING", "START", "STATUS", "CANCEL"].includes(command)
+    !["PING", "START", "STATUS", "CANCEL", "INBOX_START", "INBOX_STATUS", "INBOX_CANCEL"].includes(command)
   )
     return;
   try {
@@ -37,16 +37,17 @@ window.addEventListener("message", async (event) => {
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
   if (
     sender.id !== chrome.runtime.id ||
-    !sender.url?.startsWith(chrome.runtime.getURL("runner.html"))
+    !["runner.html","inbox-runner.html"].some(p=>sender.url?.startsWith(chrome.runtime.getURL(p)))
   )
     return;
-  if (message.type !== "CCOS_API") return;
+  if (!["CCOS_API","CCOS_INBOX_API"].includes(message.type)) return;
   const actions = [
     "preflight",
     "resume",
     "start",
     "status",
     "capture",
+    "batch",
     "failure",
     "finish",
     "cancel",
@@ -55,7 +56,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     reply({ error: "Unsupported action." });
     return;
   }
-  fetch("/api/coaching/everfit/sync", {
+  fetch(message.type === "CCOS_INBOX_API" ? "/api/coaching/inbox" : "/api/coaching/everfit/sync", {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },

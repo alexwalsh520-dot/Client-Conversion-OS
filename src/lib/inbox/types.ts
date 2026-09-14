@@ -9,6 +9,8 @@ export interface InboxConversation {
   history_complete: boolean;
   checkpoint_id: string | null;
   message_count: number;
+  recent_activity?: { text: string; age: string }[];
+  activity_captured_at?: string | null;
 }
 export interface InboxMessage {
   message_id: string;

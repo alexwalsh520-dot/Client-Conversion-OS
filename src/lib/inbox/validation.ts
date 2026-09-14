@@ -7,7 +7,7 @@ export function parseInboxCapture(value: unknown) {
   if (typeof raw.newestReached !== "boolean" || typeof raw.historyStartReached !== "boolean")
     throw new Error("Explicit newest/history boundary evidence is required.");
   // The old weekly collector's historyComplete flag means a date boundary, not full history.
-  return { ...capture, newestReached: raw.newestReached, historyStartReached: raw.historyStartReached };
+  return { ...capture, activityCaptured: raw.activityCaptured === true, newestReached: raw.newestReached, historyStartReached: raw.historyStartReached };
 }
 
 export const MAX_INBOX_BYTES = 3_000_000;
