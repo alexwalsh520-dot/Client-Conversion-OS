@@ -76,7 +76,7 @@ export function DashboardShell({ data }: { data: DashboardData }) {
               fontWeight: 600,
               color: showDetails ? 'var(--gold)' : 'var(--text-3)',
               border: showDetails
-                ? '1px solid rgba(201,169,110,0.3)'
+                ? '1px solid rgba(58, 123, 234,0.3)'
                 : '1px solid var(--border)',
               background: showDetails ? 'var(--gold-bg)' : 'transparent',
             }}
@@ -267,7 +267,7 @@ function FunnelRow() {
     { value: '842K', label: 'Impressions', conv: '1.5%', bg: 'rgba(110,168,201,0.15)', color: '#6ea8c9' },
     { value: '12.5K', label: 'Clicks', conv: '10%', bg: 'rgba(110,168,201,0.18)', color: '#6ea8c9' },
     { value: '1,247', label: 'DMs', conv: '33%', bg: 'rgba(110,168,201,0.22)', color: '#6ea8c9' },
-    { value: '412', label: 'Qualified', conv: '21%', bg: 'rgba(201,169,110,0.18)', color: 'var(--gold)' },
+    { value: '412', label: 'Qualified', conv: '21%', bg: 'rgba(58, 123, 234,0.18)', color: 'var(--gold)' },
     { value: '87', label: 'Calls', conv: '26%', bg: 'rgba(95,219,142,0.15)', color: 'var(--green)' },
     { value: '23', label: 'Sales', conv: undefined, bg: 'rgba(95,219,142,0.25)', color: 'var(--green)' },
   ];

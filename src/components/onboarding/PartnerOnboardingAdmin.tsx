@@ -424,7 +424,7 @@ function TabBtn({ active, onClick, icon, children }: { active: boolean; onClick:
   return (
     <button onClick={onClick} style={{
       display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 16px", borderRadius: 10,
-      border: `1px solid ${active ? "rgba(201,169,110,0.4)" : "var(--border-primary)"}`,
+      border: `1px solid ${active ? "rgba(58, 123, 234,0.4)" : "var(--border-primary)"}`,
       background: active ? "var(--accent-soft)" : "transparent",
       color: active ? "var(--accent)" : "var(--text-secondary)",
       fontSize: 14, fontWeight: 600, cursor: "pointer",

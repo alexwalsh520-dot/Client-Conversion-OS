@@ -191,7 +191,7 @@ export default function WelcomePortal({ token }: Props) {
               padding: "7px 16px",
               borderRadius: 999,
               background: "var(--accent-soft)",
-              border: "1px solid rgba(201,169,110,0.3)",
+              border: "1px solid rgba(58, 123, 234,0.3)",
               marginBottom: 26,
             }}
           >
@@ -339,8 +339,8 @@ export default function WelcomePortal({ token }: Props) {
                     height: "100%",
                     width: `${Math.max(pct, ((stepIndex) / total) * 100)}%`,
                     borderRadius: 999,
-                    background: "linear-gradient(90deg, #c9a96e, #e8c36a)",
-                    boxShadow: "0 0 12px rgba(201,169,110,0.5)",
+                    background: "linear-gradient(90deg, #3a7bea, #e8c36a)",
+                    boxShadow: "0 0 12px rgba(58, 123, 234,0.5)",
                     transition: "width 0.5s cubic-bezier(0.22,1,0.36,1)",
                   }}
                 />
@@ -570,7 +570,7 @@ function StepStage({
                   padding: "14px 22px",
                   borderRadius: 12,
                   background: "var(--accent)",
-                  border: "1px solid rgba(201,169,110,0.4)",
+                  border: "1px solid rgba(58, 123, 234,0.4)",
                   color: "#0c0c0c",
                   fontSize: 15.5,
                   fontWeight: 700,
@@ -608,7 +608,7 @@ function StepStage({
               href={(step.meta?.referral_url as string) || "#"}
               target="_blank"
               rel="noopener noreferrer"
-              style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "12px 20px", borderRadius: 12, background: "var(--accent-soft)", border: "1px solid rgba(201,169,110,0.3)", color: "var(--accent)", fontSize: 15, fontWeight: 600, textDecoration: "none" }}
+              style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "12px 20px", borderRadius: 12, background: "var(--accent-soft)", border: "1px solid rgba(58, 123, 234,0.3)", color: "var(--accent)", fontSize: 15, fontWeight: 600, textDecoration: "none" }}
             >
               Open Mercury <ArrowUpRight size={16} />
             </a>
@@ -951,7 +951,7 @@ function ParticleField({ intensity = 1 }: { intensity?: number }) {
       for (const p of particles) {
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(201,169,110,0.12)";
+        ctx.fillStyle = "rgba(58, 123, 234,0.12)";
         ctx.fill();
       }
       window.addEventListener("resize", resize);
@@ -973,7 +973,7 @@ function ParticleField({ intensity = 1 }: { intensity?: number }) {
         const alpha = Math.sin(t * Math.PI) * 0.55;
         ctx!.beginPath();
         ctx!.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx!.fillStyle = `rgba(201,169,110,${alpha})`;
+        ctx!.fillStyle = `rgba(58, 123, 234,${alpha})`;
         ctx!.fill();
       }
       raf = requestAnimationFrame(tick);
@@ -1004,7 +1004,7 @@ function CenterGlow({ strong }: { strong?: boolean }) {
         pointerEvents: "none",
         background: strong
           ? "radial-gradient(circle at 50% 50%, rgba(126,201,160,0.16), transparent 55%)"
-          : "radial-gradient(circle at 50% 50%, rgba(201,169,110,0.14), transparent 55%)",
+          : "radial-gradient(circle at 50% 50%, rgba(58, 123, 234,0.14), transparent 55%)",
       }}
     />
   );
@@ -1049,7 +1049,7 @@ function PrimaryButton({
         gap: 8,
         padding: "13px 26px",
         borderRadius: 12,
-        border: "1px solid rgba(201,169,110,0.4)",
+        border: "1px solid rgba(58, 123, 234,0.4)",
         background: disabled ? "rgba(255,255,255,0.04)" : "var(--accent)",
         color: disabled ? "var(--text-muted)" : "#0c0c0c",
         fontSize: 15.5,
@@ -1100,7 +1100,7 @@ const ctaStyle: React.CSSProperties = {
   gap: 10,
   padding: "16px 34px",
   borderRadius: 14,
-  border: "1px solid rgba(201,169,110,0.45)",
+  border: "1px solid rgba(58, 123, 234,0.45)",
   background: "var(--accent)",
   color: "#0c0c0c",
   fontSize: 17,

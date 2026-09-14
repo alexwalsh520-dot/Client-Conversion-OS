@@ -28,7 +28,7 @@ export function DetailsButton({ open, onClick }: { open: boolean; onClick: () =>
         fontSize: 11,
         fontWeight: 600,
         color: open ? 'var(--gold)' : 'var(--text-3)',
-        border: open ? '1px solid rgba(201,169,110,0.3)' : '1px solid var(--border)',
+        border: open ? '1px solid rgba(58, 123, 234,0.3)' : '1px solid var(--border)',
         background: open ? 'var(--gold-bg)' : 'transparent',
       }}
     >

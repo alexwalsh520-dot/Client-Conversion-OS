@@ -225,7 +225,7 @@ export default function CalendarRange({
         }
         .cr-cell.cr-end .cr-daynum { color: var(--bg); font-weight: 700; }
         .cr-cell.cr-today {
-          box-shadow: inset 0 0 0 1px rgba(201,169,110,.42);
+          box-shadow: inset 0 0 0 1px rgba(58, 123, 234,.42);
         }
         @media (max-width: 560px) {
           .cr-cell { min-height: 34px; padding: 3px; }

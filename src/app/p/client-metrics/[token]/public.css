@@ -20,8 +20,8 @@
   --text-secondary: #e2e2e2;
   --text-muted: #52525b;
   --text-3: rgba(255, 255, 255, 0.55);
-  --accent: #c9a96e;
-  --accent-soft: rgba(201, 169, 110, 0.1);
+  --accent: #3a7bea;
+  --accent-soft: rgba(58, 123, 234, 0.1);
   --success: #7ec9a0;
   --success-soft: rgba(126, 201, 160, 0.1);
   --warning: #e8c36a;
@@ -131,8 +131,8 @@
 }
 
 .pub-tab.is-active {
-  background: var(--accent-soft, rgba(201, 169, 110, 0.1));
-  color: var(--accent, #c9a96e);
+  background: var(--accent-soft, rgba(58, 123, 234, 0.1));
+  color: var(--accent, #3a7bea);
 }
 
 .pub-tab-badge {
@@ -140,7 +140,7 @@
   font-weight: 700;
   border-radius: 999px;
   padding: 1px 7px;
-  background: var(--accent, #c9a96e);
+  background: var(--accent, #3a7bea);
   color: #0c0c0c;
   font-variant-numeric: tabular-nums;
 }
@@ -235,8 +235,8 @@
 }
 
 .pub-stat.is-active {
-  border-color: var(--accent, #c9a96e);
-  background: var(--accent-soft, rgba(201, 169, 110, 0.1));
+  border-color: var(--accent, #3a7bea);
+  background: var(--accent-soft, rgba(58, 123, 234, 0.1));
 }
 
 .pub-stat .pub-stat-label {
@@ -360,8 +360,8 @@
 }
 
 .pub-chip-upcoming {
-  color: var(--accent, #c9a96e);
-  background: var(--accent-soft, rgba(201, 169, 110, 0.1));
+  color: var(--accent, #3a7bea);
+  background: var(--accent-soft, rgba(58, 123, 234, 0.1));
 }
 
 .pub-chip-taken {
@@ -430,8 +430,8 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--accent, #c9a96e);
-  background: var(--accent-soft, rgba(201, 169, 110, 0.1));
+  color: var(--accent, #3a7bea);
+  background: var(--accent-soft, rgba(58, 123, 234, 0.1));
   border-radius: 999px;
   padding: 2px 8px;
 }

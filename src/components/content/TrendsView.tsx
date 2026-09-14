@@ -32,7 +32,7 @@ type Post = {
 type Snapshot = { date: string; followers: number };
 
 // Theme colors (kept as named constants so the intent is obvious).
-const GOLD = "#c9a96e";
+const GOLD = "#3a7bea";
 const GREEN = "#8ce0ab";
 const GRID = "#26262b";
 const SCATTER_DOT = "rgba(231,231,234,0.28)";

@@ -309,7 +309,7 @@ export default function EODReportsTab({ reports, clients, onSubmit, onUpdate, on
     switch (status) {
       case "onboarded": return "rgba(126, 201, 160, 0.15)";
       case "no_show": return "rgba(217, 142, 142, 0.15)";
-      case "rescheduled": return "rgba(201, 169, 110, 0.15)";
+      case "rescheduled": return "rgba(58, 123, 234, 0.15)";
       case "internal_meeting": return "rgba(107, 184, 224, 0.15)";
       default: return "var(--bg-glass)";
     }
@@ -500,7 +500,7 @@ export default function EODReportsTab({ reports, clients, onSubmit, onUpdate, on
                 )}
 
                 {calendarError && (
-                  <div style={{ padding: 10, marginBottom: 8, fontSize: 12, color: "var(--warning)", background: "rgba(201, 169, 110, 0.1)", borderRadius: 6 }}>
+                  <div style={{ padding: 10, marginBottom: 8, fontSize: 12, color: "var(--warning)", background: "rgba(58, 123, 234, 0.1)", borderRadius: 6 }}>
                     {calendarError}
                   </div>
                 )}
@@ -532,7 +532,7 @@ export default function EODReportsTab({ reports, clients, onSubmit, onUpdate, on
                                 : "1px solid var(--accent)",
                               background: alreadyAdded
                                 ? "rgba(126, 201, 160, 0.15)"
-                                : "rgba(201, 169, 110, 0.1)",
+                                : "rgba(58, 123, 234, 0.1)",
                               color: alreadyAdded ? "var(--success)" : "var(--accent)",
                               opacity: alreadyAdded ? 0.7 : 1,
                             }}
@@ -762,7 +762,7 @@ export default function EODReportsTab({ reports, clients, onSubmit, onUpdate, on
                 marginLeft: 8,
                 padding: "2px 6px",
                 borderRadius: 4,
-                background: report.role === "coach" ? "rgba(201, 169, 110, 0.2)" : report.role === "nutrition" ? "rgba(184, 164, 217, 0.2)" : "rgba(126, 201, 160, 0.2)",
+                background: report.role === "coach" ? "rgba(58, 123, 234, 0.2)" : report.role === "nutrition" ? "rgba(184, 164, 217, 0.2)" : "rgba(126, 201, 160, 0.2)",
                 color: report.role === "coach" ? "var(--accent)" : report.role === "nutrition" ? "var(--keith)" : "var(--success)",
               }}>
                 {report.role}
@@ -1000,7 +1000,7 @@ function EODSubmissionCalendar({ reports, eodTeam, onClientClick }: { reports: C
                 textAlign: "center",
                 cursor: isFuture ? "default" : "pointer",
                 background: isSelected
-                  ? "rgba(201, 169, 110, 0.2)"
+                  ? "rgba(58, 123, 234, 0.2)"
                   : allSubmitted
                   ? "rgba(126, 201, 160, 0.1)"
                   : hasMissing
@@ -1122,7 +1122,7 @@ function EODSubmissionCalendar({ reports, eodTeam, onClientClick }: { reports: C
                           <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 13 }}>{report.submittedBy}</span>
                           <span style={{
                             fontSize: 10, marginLeft: 6, padding: "1px 5px", borderRadius: 3,
-                            background: report.role === "coach" ? "rgba(201, 169, 110, 0.2)" : "rgba(126, 201, 160, 0.2)",
+                            background: report.role === "coach" ? "rgba(58, 123, 234, 0.2)" : "rgba(126, 201, 160, 0.2)",
                             color: report.role === "coach" ? "var(--accent)" : "var(--success)",
                           }}>{report.role}</span>
                         </div>
@@ -1229,7 +1229,7 @@ function MultiSelectDropdown({
                   fontSize: 11,
                   padding: "2px 8px",
                   borderRadius: 4,
-                  background: "rgba(201, 169, 110, 0.2)",
+                  background: "rgba(58, 123, 234, 0.2)",
                   color: "var(--accent)",
                   display: "flex",
                   alignItems: "center",
@@ -1292,13 +1292,13 @@ function MultiSelectDropdown({
                     alignItems: "center",
                     gap: 8,
                     color: selected.includes(name) ? "var(--accent)" : "var(--text-primary)",
-                    background: selected.includes(name) ? "rgba(201, 169, 110, 0.1)" : "transparent",
+                    background: selected.includes(name) ? "rgba(58, 123, 234, 0.1)" : "transparent",
                   }}
                   onMouseEnter={(e) => {
-                    (e.target as HTMLElement).style.background = "rgba(201, 169, 110, 0.15)";
+                    (e.target as HTMLElement).style.background = "rgba(58, 123, 234, 0.15)";
                   }}
                   onMouseLeave={(e) => {
-                    (e.target as HTMLElement).style.background = selected.includes(name) ? "rgba(201, 169, 110, 0.1)" : "transparent";
+                    (e.target as HTMLElement).style.background = selected.includes(name) ? "rgba(58, 123, 234, 0.1)" : "transparent";
                   }}
                 >
                   <input

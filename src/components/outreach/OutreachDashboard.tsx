@@ -139,7 +139,7 @@ function formatDateLabel(dateValue: string) {
 }
 
 const CHANNEL_COLORS = {
-  email: "#c9a96e",
+  email: "#3a7bea",
   dm: "#82c5c5",
 } as const;
 
@@ -177,7 +177,7 @@ function MetricCard({
         border: `1px solid ${active ? accent : "var(--border-primary)"}`,
         background: active
           ? channel === "email"
-            ? "rgba(201,169,110,0.12)"
+            ? "rgba(58, 123, 234,0.12)"
             : "rgba(130,197,197,0.12)"
           : "var(--hover-bg-subtle)",
         borderRadius: 14,

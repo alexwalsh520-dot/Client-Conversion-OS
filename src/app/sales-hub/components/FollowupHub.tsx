@@ -763,7 +763,7 @@ function VariantEditorTab({
                   padding: "10px 12px",
                   borderRadius: 8,
                   border: "1px dashed var(--border-subtle)",
-                  background: "rgba(201,169,110,0.05)",
+                  background: "rgba(58, 123, 234,0.05)",
                   display: "flex",
                   flexDirection: "column",
                   gap: 8,

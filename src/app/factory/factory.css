@@ -480,7 +480,7 @@
   gap: 6px;
   font-size: 11px;
   color: var(--text-secondary);
-  background: rgba(201, 169, 110, 0.08);
+  background: rgba(58, 123, 234, 0.08);
   border: 1px solid var(--accent-soft);
   border-radius: 7px;
   padding: 6px 9px;
@@ -941,7 +941,7 @@
 }
 .fc-lb-input::placeholder { color: rgba(255, 255, 255, 0.3); }
 .fc-lb-input:focus {
-  border-color: var(--accent, #c9a96e);
+  border-color: var(--accent, #3a7bea);
   background: rgba(255, 255, 255, 0.07);
 }
 
@@ -1135,7 +1135,7 @@
 .fcw-presence { display: flex; align-items: center; gap: 6px; margin-right: 10px; }
 .fcw-presence-chip { display: inline-flex; align-items: center; gap: 5px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px 2px 7px; font-size: 11px; font-weight: 600; color: var(--text-secondary); white-space: nowrap; }
 .fcw-presence-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success, #34d399); flex: none; }
-.fcw-cowarn { display: flex; align-items: center; gap: 8px; background: rgba(201, 169, 110, 0.08); border: 1px solid rgba(201, 169, 110, 0.35); color: var(--text-secondary); padding: 8px 12px; border-radius: 8px; font-size: 12.5px; margin: 0 16px; }
+.fcw-cowarn { display: flex; align-items: center; gap: 8px; background: rgba(58, 123, 234, 0.08); border: 1px solid rgba(58, 123, 234, 0.35); color: var(--text-secondary); padding: 8px 12px; border-radius: 8px; font-size: 12.5px; margin: 0 16px; }
 .fcw-toolbar { display: flex; align-items: center; gap: 10px; }
 .fcw-toolbar-busy { color: var(--text-muted); }
 .fcw-addgroup, .fcw-cancel { display: inline-flex; align-items: center; gap: 6px; background: var(--bg-card); border: 1px solid var(--border); color: var(--text-secondary); padding: 7px 12px; border-radius: 8px; font-size: 13px; cursor: pointer; }
@@ -1180,7 +1180,7 @@
 .fcw-stripe-live, .fcw-stripe-completed, .fcw-stripe-done { border-left: 3px solid #1fa463; }
 
 /* Tags (reusable) */
-.fcw-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 600; color: #b8a06a; background: rgba(201,169,110,.12); border: 1px solid rgba(201,169,110,.28); border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
+.fcw-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 600; color: #b8a06a; background: rgba(58, 123, 234,.12); border: 1px solid rgba(58, 123, 234,.28); border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
 .fcw-tagbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 16px; border-bottom: 1px solid var(--border); }
 .fcw-tagbar-icon { color: var(--text-muted); }
 .fcw-tag-edit { padding-right: 3px; }

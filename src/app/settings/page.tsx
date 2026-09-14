@@ -881,7 +881,7 @@ export default function SettingsPage() {
                                         fontSize: 11,
                                         background: "var(--accent-soft)",
                                         color: "var(--accent)",
-                                        border: "1px solid rgba(201,169,110,0.15)",
+                                        border: "1px solid rgba(58, 123, 234,0.15)",
                                       }}
                                     >
                                       {TAB_LABELS[tab] || tab}

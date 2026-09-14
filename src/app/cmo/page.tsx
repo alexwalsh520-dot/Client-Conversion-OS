@@ -215,7 +215,7 @@ type Loop = { id: string; title: string; detail?: string; status: LoopStatus; pr
 type LedgerEntry = { id: string; at?: string; kind?: string; title: string; value?: string; detail?: string; status?: string; result?: string };
 const LOOP_META: Record<LoopStatus, { label: string; color: string }> = {
   "in-progress": { label: "In progress", color: "#5b8def" },
-  "waiting-on-alex": { label: "Waiting on you", color: "#c9a96e" },
+  "waiting-on-alex": { label: "Waiting on you", color: "#3a7bea" },
   "hypothesis": { label: "Hypothesis", color: "#a78bfa" },
   "paused": { label: "Paused", color: "#7c9cff" },
   "backlog": { label: "Backlog", color: "#8b8f98" },
@@ -225,7 +225,7 @@ const LOOP_ORDER: LoopStatus[] = ["in-progress", "waiting-on-alex", "hypothesis"
 // Deuteran-safe palette: spread across blue / purple / teal / cyan / gold / amber / rose.
 // No green-vs-red pairs (the dot is decorative anyway — the text label carries the meaning).
 const BUCKET_COLOR: Record<string, string> = {
-  "Copywriting rule": "#c9a96e",
+  "Copywriting rule": "#3a7bea",
   "Attribution rule": "#5b8def",
   "Coaching playbook": "#7c9cff",
   "Org / people": "#a78bfa",
@@ -235,9 +235,9 @@ const BUCKET_COLOR: Record<string, string> = {
   "Meeting": "#a78bfa",
   "Creator context": "#e07ba0",
   "Feature spec": "#4cc4e0",
-  "Identity": "#c9a96e",
+  "Identity": "#3a7bea",
 };
-const colorFor = (b?: string) => (b && BUCKET_COLOR[b]) || "#c9a96e";
+const colorFor = (b?: string) => (b && BUCKET_COLOR[b]) || "#3a7bea";
 
 /* ============================================================
  * BrainGraph — the CMO's knowledge as an Obsidian-style force
@@ -1059,7 +1059,7 @@ function CmoStyles() {
   .cmo-tnote{font-size:11.5px;color:var(--text-muted);background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:9px 12px;margin-bottom:16px}
   .cmo-empty{text-align:center;padding:56px 24px;border:1px dashed var(--border);border-radius:12px;color:var(--text-muted);font-size:13px}
   .cmo-imp{max-width:840px;margin:0 auto}
-  .cmo-imp-hero{position:relative;display:flex;justify-content:space-between;align-items:flex-end;gap:28px;flex-wrap:wrap;border:1px solid var(--border);border-radius:16px;padding:26px 26px 24px;overflow:hidden;margin-bottom:26px;background:radial-gradient(130% 150% at 0% 0%, rgba(201,169,110,.12), transparent 55%), var(--bg-secondary)}
+  .cmo-imp-hero{position:relative;display:flex;justify-content:space-between;align-items:flex-end;gap:28px;flex-wrap:wrap;border:1px solid var(--border);border-radius:16px;padding:26px 26px 24px;overflow:hidden;margin-bottom:26px;background:radial-gradient(130% 150% at 0% 0%, rgba(58, 123, 234,.12), transparent 55%), var(--bg-secondary)}
   .cmo-imp-herolead{flex:1;min-width:240px}
   .cmo-imp-eyebrow{font-size:10px;text-transform:uppercase;letter-spacing:.18em;color:#d8b673;font-weight:700}
   .cmo-imp-headline{font-size:23px;font-weight:760;color:var(--text-primary);letter-spacing:-.025em;line-height:1.18;margin:11px 0 0;max-width:420px}
@@ -1067,29 +1067,29 @@ function CmoStyles() {
   .cmo-imp-metric{display:flex;flex-direction:column;gap:4px;text-align:right}
   .cmo-imp-metric.lead{padding-right:18px;margin-right:0;border-right:1px solid var(--border)}
   .cmo-imp-metricn{font-size:22px;font-weight:750;color:var(--text-secondary);font-variant-numeric:tabular-nums;letter-spacing:-.03em;line-height:1}
-  .cmo-imp-metric.lead .cmo-imp-metricn{font-size:38px;color:#d8b673;text-shadow:0 0 24px rgba(201,169,110,.35)}
+  .cmo-imp-metric.lead .cmo-imp-metricn{font-size:38px;color:#d8b673;text-shadow:0 0 24px rgba(58, 123, 234,.35)}
   .cmo-imp-metricl{font-size:9.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-muted);white-space:nowrap}
   .cmo-imp-section{margin-bottom:24px}
   .cmo-imp-sechead{display:flex;align-items:center;gap:9px;font-size:11.5px;font-weight:700;color:var(--text-primary);text-transform:uppercase;letter-spacing:.09em;margin:0 2px 13px}
   .cmo-imp-sechead em{font-style:normal;font-weight:400;text-transform:none;letter-spacing:0;font-size:11.5px;color:var(--text-muted)}
   .cmo-imp-secdot{width:7px;height:7px;border-radius:50%;background:var(--text-muted);flex-shrink:0}
-  .cmo-imp-secdot.dec{background:#d8b673;box-shadow:0 0 9px rgba(201,169,110,.6)}
+  .cmo-imp-secdot.dec{background:#d8b673;box-shadow:0 0 9px rgba(58, 123, 234,.6)}
   .cmo-imp-rows{display:flex;flex-direction:column;gap:8px}
   .cmo-imp-row{border:1px solid var(--border);border-radius:12px;background:var(--bg-secondary);cursor:pointer;transition:transform .14s ease,border-color .14s ease,box-shadow .14s ease}
-  .cmo-imp-row:hover{transform:translateY(-1px);border-color:rgba(201,169,110,.4);box-shadow:0 6px 20px -12px rgba(0,0,0,.5)}
-  .cmo-imp-row.dec{border-left:2.5px solid rgba(201,169,110,.6)}
-  .cmo-imp-row.open{border-color:rgba(201,169,110,.4)}
+  .cmo-imp-row:hover{transform:translateY(-1px);border-color:rgba(58, 123, 234,.4);box-shadow:0 6px 20px -12px rgba(0,0,0,.5)}
+  .cmo-imp-row.dec{border-left:2.5px solid rgba(58, 123, 234,.6)}
+  .cmo-imp-row.open{border-color:rgba(58, 123, 234,.4)}
   .cmo-imp-rowhead{display:flex;align-items:flex-start;gap:14px;padding:15px 16px}
   .cmo-imp-rowtext{flex:1;min-width:0}
   .cmo-imp-titleline{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
   .cmo-imp-title{font-size:14px;font-weight:650;color:var(--text-primary);line-height:1.35;letter-spacing:-.01em}
-  .cmo-imp-val{flex-shrink:0;font-size:11px;font-weight:700;color:#e3c281;background:rgba(201,169,110,.13);border:1px solid rgba(201,169,110,.3);padding:4px 10px;border-radius:7px;white-space:nowrap;letter-spacing:.01em;font-variant-numeric:tabular-nums}
+  .cmo-imp-val{flex-shrink:0;font-size:11px;font-weight:700;color:#e3c281;background:rgba(58, 123, 234,.13);border:1px solid rgba(58, 123, 234,.3);padding:4px 10px;border-radius:7px;white-space:nowrap;letter-spacing:.01em;font-variant-numeric:tabular-nums}
   .cmo-imp-meta{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:11px;color:var(--text-muted)}
   .cmo-imp-kind{text-transform:uppercase;letter-spacing:.08em;font-weight:700;font-size:10px;color:var(--text-secondary)}
   .cmo-imp-sep{opacity:.5}
   .cmo-imp-status{margin-left:4px;font-size:9px;text-transform:uppercase;letter-spacing:.07em;font-weight:600;padding:2px 8px;border-radius:5px;border:1px solid var(--border)}
   .cmo-imp-status.s-shipped{color:#9ec9a6;border-color:rgba(158,201,166,.3)}
-  .cmo-imp-status.s-pending{color:#e3c281;border-color:rgba(201,169,110,.35);background:rgba(201,169,110,.06)}
+  .cmo-imp-status.s-pending{color:#e3c281;border-color:rgba(58, 123, 234,.35);background:rgba(58, 123, 234,.06)}
   .cmo-imp-chev{flex-shrink:0;font-size:17px;color:var(--text-muted);line-height:1;width:14px;text-align:center;font-weight:300}
   .cmo-imp-detail{margin:0 16px;padding:13px 0 16px;border-top:1px solid var(--border);color:var(--text-secondary);font-size:12.5px;line-height:1.62}
   .cmo-imp-detail p{margin:0 0 9px}

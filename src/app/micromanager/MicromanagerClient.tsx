@@ -118,7 +118,7 @@ function gradeLabel(v: number | null): string {
 
 const STAGE: Record<string, { label: string; fg: string; bg: string }> = {
   "won": { label: "Closed", fg: "var(--success, #4ade80)", bg: "rgba(74,222,128,0.12)" },
-  "follow-up": { label: "Follow Up", fg: "var(--accent)", bg: "var(--accent-soft, rgba(201,169,110,0.12))" },
+  "follow-up": { label: "Follow Up", fg: "var(--accent)", bg: "var(--accent-soft, rgba(58, 123, 234,0.12))" },
   "lost": { label: "No Close", fg: "var(--danger, #f87171)", bg: "rgba(248,113,113,0.12)" },
   "no-show": { label: "No Show", fg: "var(--text-muted)", bg: "var(--hover-bg-subtle)" },
   "unclear": { label: "Unclear", fg: "var(--text-muted)", bg: "var(--hover-bg-subtle)" },

@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-const BG = "#09090b", CARD = "#111114", INSET = "#0d0d10", LINE = "#26262b", TEXT = "#e7e7ea", DIM = "#9a9aa4", BODY = "#c9c9d0", GOLD = "#c9a96e";
+const BG = "#09090b", CARD = "#111114", INSET = "#0d0d10", LINE = "#26262b", TEXT = "#e7e7ea", DIM = "#9a9aa4", BODY = "#c9c9d0", GOLD = "#3a7bea";
 
 const KIND: Record<string, { color: string; bg: string; icon: string; label: string }> = {
   scale: { color: "#8ce0ab", bg: "#14311f", icon: "▲", label: "SCALE" },
@@ -125,7 +125,7 @@ export default function CmoAgentPage() {
                 {/* Row 1: chips + live */}
                 <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                   <span style={chip(k.color, k.bg)}>{k.icon} {k.label}</span>
-                  <span style={{ ...chip(GOLD, "transparent"), border: `1px solid rgba(201,169,110,0.35)` }}>{i.creator}</span>
+                  <span style={{ ...chip(GOLD, "transparent"), border: `1px solid rgba(58, 123, 234,0.35)` }}>{i.creator}</span>
                   <span style={{ flex: 1 }} />
                   {ev.running !== undefined && (
                     <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: ev.running ? "#8ce0ab" : DIM, ...num }}>

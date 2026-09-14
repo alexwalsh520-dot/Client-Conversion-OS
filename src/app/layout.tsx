@@ -36,6 +36,13 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <head>
+        {/* Display faces for the sidebar wordmark easter egg (LogoWordmark). */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Outfit:wght@800&family=Sixtyfour&family=JetBrains+Mono:wght@800&family=Doto:wght@900&family=Silkscreen:wght@700&family=Jersey+10&family=Workbench&display=swap"
+        />
         {/* Paint the last-used theme before hydration to avoid a flash. The
             signed-in user's own saved choice is reconciled by ThemeToggle once
             the session loads. */}
@@ -52,9 +59,11 @@ export default function RootLayout({
           <ThemeInit />
           <div className="app-layout">
             <Sidebar />
-            <main className="main-content">
-              <AccessGate>{children}</AccessGate>
-            </main>
+            <div className="app-shell">
+              <main className="main-content">
+                <AccessGate>{children}</AccessGate>
+              </main>
+            </div>
           </div>
           <GlassGlow />
         </SessionWrapper>

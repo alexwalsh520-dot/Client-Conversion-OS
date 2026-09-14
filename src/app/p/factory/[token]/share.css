@@ -60,7 +60,7 @@
   transition: transform 130ms ease, border-color 130ms ease;
   display: block;
 }
-.pf-card:hover { transform: translateY(-2px); border-color: #c9a96e; }
+.pf-card:hover { transform: translateY(-2px); border-color: #3a7bea; }
 .pf-card img { width: 100%; aspect-ratio: 9 / 16; object-fit: cover; display: block; }
 .pf-card-label {
   position: absolute;
@@ -135,12 +135,12 @@
   outline: none;
 }
 .pf-input::placeholder { color: rgba(255, 255, 255, 0.32); }
-.pf-input:focus { border-color: #c9a96e; background: rgba(255, 255, 255, 0.09); }
+.pf-input:focus { border-color: #3a7bea; background: rgba(255, 255, 255, 0.09); }
 
 .pf-send {
   border-radius: 8px;
-  border: 1px solid rgba(201, 169, 110, 0.45);
-  background: rgba(201, 169, 110, 0.18);
+  border: 1px solid rgba(58, 123, 234, 0.45);
+  background: rgba(58, 123, 234, 0.18);
   color: #e7cfa0;
   font: inherit;
   font-size: 12.5px;
@@ -218,8 +218,8 @@
   left: 50%;
   transform: translateX(-50%);
   z-index: 200;
-  background: rgba(201, 169, 110, 0.16);
-  border: 1px solid rgba(201, 169, 110, 0.5);
+  background: rgba(58, 123, 234, 0.16);
+  border: 1px solid rgba(58, 123, 234, 0.5);
   color: #e7cfa0;
   font-size: 12.5px;
   padding: 8px 18px;

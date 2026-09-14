@@ -4,8 +4,8 @@
   /* ── Deep black / charcoal base ────────────────────── */
   --bg-primary: #0c0c0c;
   --bg-secondary: #121212;
-  --bg-card: rgba(18, 18, 18, 0.75);
-  --bg-card-hover: rgba(26, 26, 26, 0.85);
+  --bg-card: rgba(24, 24, 24, 0.9);
+  --bg-card-hover: rgba(32, 32, 32, 0.95);
   --bg-glass: rgba(255, 255, 255, 0.025);
   --bg-glass-hover: rgba(255, 255, 255, 0.055);
 
@@ -14,7 +14,7 @@
   --hover-bg-subtle: rgba(255, 255, 255, 0.02);
   --scroll-thumb: rgba(255, 255, 255, 0.06);
   --scroll-thumb-hover: rgba(255, 255, 255, 0.14);
-  --selection-bg: rgba(201, 169, 110, 0.25);
+  --selection-bg: rgba(58, 123, 234, 0.25);
   --color-scheme: dark;
 
   --border-primary: rgba(255, 255, 255, 0.06);
@@ -26,9 +26,9 @@
   --text-muted: #52525b;
 
   /* ── Accent palette: warm gold + sage ──────────────── */
-  --accent: #c9a96e;
-  --accent-soft: rgba(201, 169, 110, 0.10);
-  --accent-glow: rgba(201, 169, 110, 0.06);
+  --accent: #3a7bea;
+  --accent-soft: rgba(58, 123, 234, 0.10);
+  --accent-glow: rgba(58, 123, 234, 0.06);
 
   --success: #7ec9a0;
   --success-soft: rgba(126, 201, 160, 0.10);
@@ -46,8 +46,18 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 
-  --sidebar-width: 240px;
-  --sidebar-collapsed-width: 64px;
+  --sidebar-width: 224px;
+  --sidebar-collapsed-width: 56px;
+
+  /* ── App shell: sidebar + backdrop are the darkest layer, pages sit on a
+     slightly lighter inset card, and cards on the page lift once more ── */
+  --shell-backdrop: #0a0a0a;
+  --shell-card: #121212;
+  --shell-card-border: rgba(255, 255, 255, 0.07);
+
+  /* ── Sidebar text: bright enough to read, not stark white ── */
+  --sidebar-fg: rgba(255, 255, 255, 0.78);
+  --sidebar-fg-active: #fafafa;
 
   /* ═══════════════════════════════════════════════════════════════════
      MOZI METRICS — CSS variables used by mozi components
@@ -58,8 +68,8 @@
   --text: #ffffff;
   --text-2: #e2e2e2;
   --text-3: rgba(255,255,255,0.55);
-  --gold: #c9a96e;
-  --gold-bg: rgba(201,169,110,0.08);
+  --gold: #3a7bea;
+  --gold-bg: rgba(58, 123, 234,0.08);
   --green: #5fdb8e;
   --green-bg: rgba(95,219,142,0.06);
   --green-b: rgba(95,219,142,0.18);
@@ -104,6 +114,12 @@ html.light {
   /* ── Clean off-white base ─────────────────────────── */
   --bg-primary: #f6f6f4;
   --bg-secondary: #ffffff;
+
+  --shell-backdrop: #e6e6e3;
+  --shell-card: #fafaf9;
+  --shell-card-border: rgba(0, 0, 0, 0.08);
+  --sidebar-fg: #3f3f46;
+  --sidebar-fg-active: #18181b;
   --bg-card: rgba(255, 255, 255, 0.85);
   --bg-card-hover: rgba(255, 255, 255, 0.97);
   --bg-glass: rgba(0, 0, 0, 0.02);
@@ -113,7 +129,7 @@ html.light {
   --hover-bg-subtle: rgba(0, 0, 0, 0.03);
   --scroll-thumb: rgba(0, 0, 0, 0.14);
   --scroll-thumb-hover: rgba(0, 0, 0, 0.26);
-  --selection-bg: rgba(184, 149, 79, 0.22);
+  --selection-bg: rgba(23, 95, 199, 0.22);
   --color-scheme: light;
 
   --border-primary: rgba(0, 0, 0, 0.09);
@@ -125,9 +141,9 @@ html.light {
   --text-muted: #71717a;
 
   /* ── Accent: slightly deeper gold for contrast on white ── */
-  --accent: #a9823f;
-  --accent-soft: rgba(169, 130, 63, 0.12);
-  --accent-glow: rgba(169, 130, 63, 0.10);
+  --accent: #175fc7;
+  --accent-soft: rgba(23, 95, 199, 0.12);
+  --accent-glow: rgba(23, 95, 199, 0.10);
 
   --success: #3f9e6b;
   --success-soft: rgba(63, 158, 107, 0.12);
@@ -149,8 +165,8 @@ html.light {
   --text: #18181b;
   --text-2: #3f3f46;
   --text-3: rgba(0, 0, 0, 0.55);
-  --gold: #a9823f;
-  --gold-bg: rgba(169, 130, 63, 0.10);
+  --gold: #175fc7;
+  --gold-bg: rgba(23, 95, 199, 0.10);
   --green: #2f9e63;
   --green-bg: rgba(47, 158, 99, 0.08);
   --green-b: rgba(47, 158, 99, 0.22);
@@ -230,6 +246,21 @@ body {
 .app-layout {
   display: flex;
   min-height: 100vh;
+  background: var(--shell-backdrop);
+}
+
+/* The inset card every page renders inside (Buffer / RipDrip style). */
+.app-shell {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 7px 7px 7px 0;
+  min-height: calc(100vh - 14px);
+  background: var(--shell-card);
+  border: 1px solid var(--shell-card-border);
+  border-radius: 12px;
+  overflow: clip;
 }
 
 .main-content {
@@ -287,8 +318,8 @@ body {
   top: 0;
   left: 0;
   height: 100vh;
-  background: var(--bg-secondary);
-  border-right: 1px solid var(--border-primary);
+  background: var(--shell-backdrop);
+  border-right: none;
   display: flex;
   flex-direction: column;
   z-index: 40;
@@ -300,11 +331,45 @@ body {
 .sidebar-collapsed { width: var(--sidebar-collapsed-width); }
 
 .sidebar-logo {
-  padding: 20px 16px 16px;
+  padding: 14px 7px 8px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 60px;
+  min-height: 56px;
+}
+
+/* Wordmark button. Clicking it cycles the display font (see LogoWordmark). */
+.sidebar-logo-btn {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 32px;
+  padding: 0 7px;
+  border: none;
+  background: none;
+  border-radius: 6.4px;
+  color: var(--sidebar-fg-active);
+  cursor: pointer;
+  transition: background 0.2s ease;
+  white-space: nowrap;
+}
+
+.sidebar-logo-btn:hover {
+  background: var(--hover-bg);
+}
+
+.sidebar-logo-btn:active {
+  transform: scale(0.97);
+}
+
+.sidebar-collapsed .sidebar-logo-btn {
+  width: 100%;
+  justify-content: center;
+  padding: 0;
+}
+
+.sidebar-logo-text,
+.sidebar-logo-mark {
+  line-height: 1;
 }
 
 .sidebar-logo-icon {
@@ -320,7 +385,7 @@ body {
 }
 
 .sidebar-logo-icon:hover {
-  box-shadow: 0 0 16px rgba(201, 169, 110, 0.15);
+  box-shadow: 0 0 16px rgba(58, 123, 234, 0.15);
   transform: scale(1.05);
 }
 
@@ -409,7 +474,7 @@ body {
   font-size: 12.25px;
   line-height: 17.5px;
   font-weight: 400;
-  color: var(--text-muted);
+  color: var(--sidebar-fg);
   text-decoration: none;
   transition: color 0.2s ease, background 0.2s ease;
   white-space: nowrap;
@@ -418,7 +483,7 @@ body {
 }
 
 .sidebar-link:hover {
-  color: var(--text-primary);
+  color: var(--sidebar-fg-active);
   background: var(--hover-bg);
 }
 
@@ -435,7 +500,7 @@ body {
 }
 
 .sidebar-link-active {
-  color: var(--text-primary);
+  color: var(--sidebar-fg-active);
   font-weight: 500;
   background: var(--accent-soft);
 }
@@ -456,7 +521,7 @@ body {
 
 .sidebar-bottom {
   padding: 7px;
-  border-top: 1px solid var(--border-primary);
+  border-top: none;
   display: flex;
   flex-direction: column;
   gap: 3.5px;
@@ -528,7 +593,7 @@ body {
 
 .sidebar-user:hover .sidebar-user-avatar {
   border-color: var(--accent);
-  box-shadow: 0 0 8px rgba(201, 169, 110, 0.15);
+  box-shadow: 0 0 8px rgba(58, 123, 234, 0.15);
 }
 
 /* Client filter in sidebar */
@@ -621,7 +686,7 @@ body {
   height: 300px;
   transform: translate(-50%, -50%);
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(201, 169, 110, 0.06) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(58, 123, 234, 0.06) 0%, transparent 70%);
   opacity: 0;
   transition: opacity 0.4s ease;
   pointer-events: none;
@@ -924,7 +989,7 @@ select.form-input option {
 .status-at-risk { background: var(--warning-soft); color: var(--warning); }
 .status-at-risk:hover { box-shadow: 0 0 12px rgba(232, 195, 106, 0.15); }
 .status-completed { background: var(--accent-soft); color: var(--accent); }
-.status-completed:hover { box-shadow: 0 0 12px rgba(201, 169, 110, 0.15); }
+.status-completed:hover { box-shadow: 0 0 12px rgba(58, 123, 234, 0.15); }
 .status-pending { background: var(--bg-glass); color: var(--text-muted); }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -1097,7 +1162,7 @@ select.form-input option {
 .form-input:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(201, 169, 110, 0.08), 0 0 20px rgba(201, 169, 110, 0.06);
+  box-shadow: 0 0 0 3px rgba(58, 123, 234, 0.08), 0 0 20px rgba(58, 123, 234, 0.06);
 }
 
 .form-input:hover:not(:focus) {
@@ -1141,13 +1206,13 @@ select.form-input option {
 }
 
 .btn-primary:hover {
-  box-shadow: 0 4px 24px rgba(201, 169, 110, 0.25), 0 0 0 1px rgba(201, 169, 110, 0.15);
+  box-shadow: 0 4px 24px rgba(58, 123, 234, 0.25), 0 0 0 1px rgba(58, 123, 234, 0.15);
   transform: translateY(-2px);
 }
 
 .btn-primary:active {
   transform: translateY(0px) scale(0.98);
-  box-shadow: 0 1px 8px rgba(201, 169, 110, 0.15);
+  box-shadow: 0 1px 8px rgba(58, 123, 234, 0.15);
 }
 
 .btn-secondary {
@@ -1226,13 +1291,13 @@ textarea.input-field {
 
 .glow-accent {
   box-shadow:
-    0 0 0 1px rgba(201, 169, 110, 0.12),
-    0 0 40px rgba(201, 169, 110, 0.06),
-    0 0 80px rgba(201, 169, 110, 0.03);
+    0 0 0 1px rgba(58, 123, 234, 0.12),
+    0 0 40px rgba(58, 123, 234, 0.06),
+    0 0 80px rgba(58, 123, 234, 0.03);
 }
 
 .gradient-text {
-  background: linear-gradient(135deg, #c9a96e 0%, #dcc49a 40%, #7ec9a0 100%);
+  background: linear-gradient(135deg, #3a7bea 0%, #6d9ef2 60%, #a9c6f5 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -1348,13 +1413,13 @@ textarea.input-field {
 /* Gold divider */
 .luxe-divider {
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(201, 169, 110, 0.2), transparent);
+  background: linear-gradient(90deg, transparent, rgba(58, 123, 234, 0.2), transparent);
   margin: 32px 0;
 }
 
 /* Focus ring */
 :focus-visible {
-  outline: 2px solid rgba(201, 169, 110, 0.4);
+  outline: 2px solid rgba(58, 123, 234, 0.4);
   outline-offset: 2px;
 }
 
@@ -1692,10 +1757,24 @@ textarea.input-field {
     margin: 0 !important;
   }
 
+  .app-shell {
+    margin: 0;
+    border: none;
+    border-radius: 0;
+    min-height: 100vh;
+  }
+
   html.force-desktop .main-content {
     padding: 32px 40px !important;
     max-width: 1100px !important;
     margin: 0 auto !important;
+  }
+
+  html.force-desktop .app-shell {
+    margin: 7px 7px 7px 0;
+    border: 1px solid var(--shell-card-border);
+    border-radius: 12px;
+    min-height: calc(100vh - 14px);
   }
 
   /* ── Metric grids: stack to 2 columns ── */

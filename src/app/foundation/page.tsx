@@ -7,7 +7,7 @@ import { getServiceSupabase } from "@/lib/supabase";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const GOLD = "#c9a96e";
+const GOLD = "#3a7bea";
 const INK = "#09090b";
 const PANEL = "#0f0f12";
 const LINE = "#26262b";

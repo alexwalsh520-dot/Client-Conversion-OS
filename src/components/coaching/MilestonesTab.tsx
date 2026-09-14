@@ -972,7 +972,7 @@ function UpcomingRetentions({ clients, milestones, coaches, onClientClick }: {
                         fontSize: 11, padding: "2px 8px", borderRadius: 4,
                         background: d.status === "completed" ? "rgba(126, 201, 160, 0.15)"
                           : d.status === "attempted" ? "rgba(217, 142, 142, 0.15)"
-                          : "rgba(201, 169, 110, 0.15)",
+                          : "rgba(58, 123, 234, 0.15)",
                         color: d.status === "completed" ? "var(--success)"
                           : d.status === "attempted" ? "var(--danger)"
                           : "var(--accent)",

@@ -174,7 +174,7 @@ export default function OnboardingTab({ clients, onClientClick }: Props) {
                   <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 14, cursor: onClientClick ? "pointer" : "default" }} onClick={() => onClientClick?.(client.name)}>{client.name}</span>
                   <span style={{
                     fontSize: 11, padding: "2px 6px", borderRadius: 4,
-                    background: client.onboardingStatus === "no_show" ? "rgba(217, 142, 142, 0.2)" : "rgba(201, 169, 110, 0.2)",
+                    background: client.onboardingStatus === "no_show" ? "rgba(217, 142, 142, 0.2)" : "rgba(58, 123, 234, 0.2)",
                     color: client.onboardingStatus === "no_show" ? "var(--danger)" : "var(--warning)",
                   }}>
                     {client.onboardingStatus === "no_show" ? "No-Show" : "Rescheduled"}

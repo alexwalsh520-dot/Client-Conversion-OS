@@ -274,7 +274,7 @@ export function StatusPill({ status }: { status: string }) {
 }
 
 export const primaryBtn: React.CSSProperties = {
-  width: "100%", padding: "10px 18px", borderRadius: 10, border: "1px solid rgba(201,169,110,0.4)",
+  width: "100%", padding: "10px 18px", borderRadius: 10, border: "1px solid rgba(58, 123, 234,0.4)",
   background: "var(--accent)", color: "#0c0c0c", fontSize: 14, fontWeight: 700, cursor: "pointer",
 };
 

@@ -63,7 +63,7 @@ html.light .dm-overlay {
   --green-dim: #6fae90;
   --red: #c0504a;
   --red-dim: #cf8b86;
-  --gold: #a9823f;
+  --gold: #175fc7;
   --gold-dim: #b89a6a;
   --blue: #4f7fb0;
 }
@@ -1749,7 +1749,7 @@ body.metric-dragging {
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
 }
 .adprev-card.pinned {
-  border-color: var(--gold-dim, #a9823f);
+  border-color: var(--gold-dim, #175fc7);
 }
 .adprev-thumbwrap {
   position: relative;
@@ -2278,7 +2278,7 @@ td.num.dm-click:hover {
   text-overflow: ellipsis;
 }
 .dm-kw {
-  color: var(--gold, #c9a96e);
+  color: var(--gold, #3a7bea);
   letter-spacing: 0.04em;
 }
 /* The assigned setter's name, as a small neutral tag beside the lead's name
@@ -2313,7 +2313,7 @@ td.num.dm-click:hover {
   color: var(--text-3, #8a8a93);
 }
 .dm-handle-link:hover {
-  color: var(--gold, #c9a96e);
+  color: var(--gold, #3a7bea);
 }
 .dm-close,
 .dm-back {
@@ -2372,8 +2372,8 @@ td.num.dm-click:hover {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--gold, #c9a96e) 16%, transparent);
-  color: var(--gold, #c9a96e);
+  background: color-mix(in srgb, var(--gold, #3a7bea) 16%, transparent);
+  color: var(--gold, #3a7bea);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2450,8 +2450,8 @@ td.num.dm-click:hover {
   border-bottom-left-radius: 4px;
 }
 .dm-bubble.creator {
-  background: color-mix(in srgb, var(--gold, #c9a96e) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--gold, #c9a96e) 26%, transparent);
+  background: color-mix(in srgb, var(--gold, #3a7bea) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--gold, #3a7bea) 26%, transparent);
   border-bottom-right-radius: 4px;
 }
 .dm-empty-msg {
@@ -2484,8 +2484,8 @@ td.num.dm-click:hover {
   white-space: nowrap;
 }
 .dm-seg-btn.on {
-  background: color-mix(in srgb, var(--gold, #c9a96e) 16%, transparent);
-  color: var(--gold, #c9a96e);
+  background: color-mix(in srgb, var(--gold, #3a7bea) 16%, transparent);
+  color: var(--gold, #3a7bea);
 }
 .dm-group-head {
   display: flex;
@@ -2502,7 +2502,7 @@ td.num.dm-click:hover {
   font-size: 10.5px;
   font-weight: 600;
   letter-spacing: 0.06em;
-  color: var(--gold, #c9a96e);
+  color: var(--gold, #3a7bea);
 }
 .dm-group-ad {
   flex: 1 1 auto;
@@ -2578,7 +2578,7 @@ td.num.dm-click:hover {
   margin-top: 2px;
 }
 .dm-bubble.jumped {
-  outline: 1px solid color-mix(in srgb, var(--gold, #c9a96e) 60%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--gold, #3a7bea) 60%, transparent);
 }
 
 /* ── DM words feed: scope toggle ───────────────────────────────────────── */
@@ -2599,7 +2599,7 @@ td.num.dm-click:hover {
   white-space: nowrap;
 }
 .dm-scope-btn.on {
-  background: color-mix(in srgb, var(--gold, #c9a96e) 14%, transparent);
-  border-color: color-mix(in srgb, var(--gold, #c9a96e) 40%, transparent);
-  color: var(--gold, #c9a96e);
+  background: color-mix(in srgb, var(--gold, #3a7bea) 14%, transparent);
+  border-color: color-mix(in srgb, var(--gold, #3a7bea) 40%, transparent);
+  color: var(--gold, #3a7bea);
 }

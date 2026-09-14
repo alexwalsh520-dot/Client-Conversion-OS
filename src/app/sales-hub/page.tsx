@@ -165,15 +165,15 @@ function GoldShimmerButton({
           85% { opacity: 0.2; transform: translate(-8px, -22px) scale(0.4); }
         }
         @keyframes goldPulse {
-          0%, 100% { box-shadow: 0 0 8px rgba(201,169,110,0.3), 0 0 16px rgba(201,169,110,0.1); }
-          50% { box-shadow: 0 0 12px rgba(201,169,110,0.5), 0 0 24px rgba(201,169,110,0.2), 0 0 40px rgba(201,169,110,0.08); }
+          0%, 100% { box-shadow: 0 0 8px rgba(58, 123, 234,0.3), 0 0 16px rgba(58, 123, 234,0.1); }
+          50% { box-shadow: 0 0 12px rgba(58, 123, 234,0.5), 0 0 24px rgba(58, 123, 234,0.2), 0 0 40px rgba(58, 123, 234,0.08); }
         }
         .gold-btn {
           position: relative;
           width: 40px;
           height: 40px;
           border-radius: 10px;
-          border: 1px solid rgba(201,169,110,0.4);
+          border: 1px solid rgba(58, 123, 234,0.4);
           cursor: pointer;
           display: flex;
           align-items: center;
@@ -181,11 +181,11 @@ function GoldShimmerButton({
           background:
             linear-gradient(
               135deg,
-              rgba(201,169,110,0.15) 0%,
+              rgba(58, 123, 234,0.15) 0%,
               rgba(180,140,70,0.25) 25%,
               rgba(220,190,130,0.35) 50%,
               rgba(180,140,70,0.25) 75%,
-              rgba(201,169,110,0.15) 100%
+              rgba(58, 123, 234,0.15) 100%
             );
           background-size: 200% 100%;
           animation: goldShimmer 3s ease-in-out infinite, goldPulse 2.5s ease-in-out infinite;
@@ -199,9 +199,9 @@ function GoldShimmerButton({
           border-radius: 11px;
           background: linear-gradient(
             135deg,
-            rgba(201,169,110,0.6) 0%,
+            rgba(58, 123, 234,0.6) 0%,
             rgba(240,210,150,0.8) 40%,
-            rgba(201,169,110,0.6) 60%,
+            rgba(58, 123, 234,0.6) 60%,
             rgba(160,130,70,0.5) 100%
           );
           background-size: 200% 200%;
@@ -215,20 +215,20 @@ function GoldShimmerButton({
         }
         .gold-btn:hover {
           transform: scale(1.08);
-          border-color: rgba(201,169,110,0.7);
-          box-shadow: 0 0 16px rgba(201,169,110,0.5), 0 0 32px rgba(201,169,110,0.2) !important;
+          border-color: rgba(58, 123, 234,0.7);
+          box-shadow: 0 0 16px rgba(58, 123, 234,0.5), 0 0 32px rgba(58, 123, 234,0.2) !important;
         }
         .gold-btn:active {
           transform: scale(0.96);
         }
         .gold-btn.active {
-          border-color: rgba(201,169,110,0.8);
+          border-color: rgba(58, 123, 234,0.8);
           background:
             linear-gradient(
               135deg,
-              rgba(201,169,110,0.25) 0%,
+              rgba(58, 123, 234,0.25) 0%,
               rgba(180,140,70,0.4) 50%,
-              rgba(201,169,110,0.25) 100%
+              rgba(58, 123, 234,0.25) 100%
             );
         }
         .gold-particle {
@@ -236,7 +236,7 @@ function GoldShimmerButton({
           width: 3px;
           height: 3px;
           border-radius: 50%;
-          background: radial-gradient(circle, rgba(240,210,150,0.9) 0%, rgba(201,169,110,0.4) 100%);
+          background: radial-gradient(circle, rgba(240,210,150,0.9) 0%, rgba(58, 123, 234,0.4) 100%);
           pointer-events: none;
         }
         .gold-particle:nth-child(1) { top: 4px; right: 2px; animation: goldParticle1 2.8s ease-in-out infinite; }
@@ -259,7 +259,7 @@ function GoldShimmerButton({
           size={18}
           style={{
             color: "#e8d5a8",
-            filter: "drop-shadow(0 0 4px rgba(201,169,110,0.6))",
+            filter: "drop-shadow(0 0 4px rgba(58, 123, 234,0.6))",
           }}
         />
       </button>
@@ -372,7 +372,7 @@ export default function SalesHubPage() {
         <div
           style={{
             borderRadius: 12,
-            border: "1px solid rgba(201,169,110,0.2)",
+            border: "1px solid rgba(58, 123, 234,0.2)",
             background: "var(--bg-card)",
             padding: "20px 18px",
             position: "relative",
@@ -387,7 +387,7 @@ export default function SalesHubPage() {
               left: 0,
               right: 0,
               height: 2,
-              background: "linear-gradient(90deg, transparent, rgba(201,169,110,0.6), transparent)",
+              background: "linear-gradient(90deg, transparent, rgba(58, 123, 234,0.6), transparent)",
             }}
           />
           <AlexTesting filters={filters} />

@@ -41,7 +41,7 @@ interface Viewport { tx: number; ty: number; scale: number }
 
 const DEFAULT_VIEWPORT: Viewport = { tx: 0, ty: 0, scale: 1 };
 const NODE_W = { reel: 260, note: 240, frame: 520 } as const;
-const FRAME_COLORS = ["#c9a96e", "#6ea8c9", "#8bc96e", "#c96e8b", "#a98bc9"];
+const FRAME_COLORS = ["#3a7bea", "#6ea8c9", "#8bc96e", "#c96e8b", "#a98bc9"];
 
 function uid() {
   return Math.random().toString(36).slice(2, 10);

@@ -487,7 +487,7 @@ export default function OutreachPage() {
                 type="monotone"
                 dataKey="leadsImported"
                 name="Leads Imported"
-                stroke="#c9a96e"
+                stroke="#3a7bea"
                 strokeWidth={2}
                 dot={false}
               />

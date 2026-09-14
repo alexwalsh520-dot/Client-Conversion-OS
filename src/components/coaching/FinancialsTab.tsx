@@ -235,7 +235,7 @@ export default function FinancialsTab() {
                             fontSize: 11,
                             padding: "2px 8px",
                             borderRadius: 4,
-                            background: r.isNew?.toLowerCase() === "yes" ? "rgba(126, 201, 160, 0.15)" : "rgba(201, 169, 110, 0.15)",
+                            background: r.isNew?.toLowerCase() === "yes" ? "rgba(126, 201, 160, 0.15)" : "rgba(58, 123, 234, 0.15)",
                             color: r.isNew?.toLowerCase() === "yes" ? "var(--success)" : "var(--accent)",
                           }}>
                             {r.isNew || "-"}
@@ -325,7 +325,7 @@ export default function FinancialsTab() {
                               ? { bg: "rgba(217, 142, 142, 0.15)", fg: "var(--danger)" }
                               : isHandled
                                 ? { bg: "rgba(255,255,255,0.06)", fg: "var(--text-muted)" }
-                                : { bg: "rgba(201, 169, 110, 0.15)", fg: "var(--accent)" };
+                                : { bg: "rgba(58, 123, 234, 0.15)", fg: "var(--accent)" };
                             return (
                               <span style={{
                                 fontSize: 11,

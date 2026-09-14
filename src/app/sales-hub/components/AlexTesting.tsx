@@ -377,13 +377,13 @@ function CashChart({
       >
         <defs>
           <linearGradient id="cashGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#c9a96e" stopOpacity="0.3" />
-            <stop offset="60%" stopColor="#c9a96e" stopOpacity="0.08" />
-            <stop offset="100%" stopColor="#c9a96e" stopOpacity="0" />
+            <stop offset="0%" stopColor="#3a7bea" stopOpacity="0.3" />
+            <stop offset="60%" stopColor="#3a7bea" stopOpacity="0.08" />
+            <stop offset="100%" stopColor="#3a7bea" stopOpacity="0" />
           </linearGradient>
           <radialGradient id="particleGlow">
-            <stop offset="0%" stopColor="#c9a96e" stopOpacity="0.9" />
-            <stop offset="100%" stopColor="#c9a96e" stopOpacity="0" />
+            <stop offset="0%" stopColor="#3a7bea" stopOpacity="0.9" />
+            <stop offset="100%" stopColor="#3a7bea" stopOpacity="0" />
           </radialGradient>
           <filter id="gridGlow">
             <feGaussianBlur stdDeviation="1" result="blur" />
@@ -409,7 +409,7 @@ function CashChart({
             y1={topPad + r * cellH}
             x2={leftPad + chartW}
             y2={topPad + r * cellH}
-            stroke="rgba(201,169,110,0.06)"
+            stroke="rgba(58, 123, 234,0.06)"
             strokeWidth={0.5}
           />
         ))}
@@ -420,7 +420,7 @@ function CashChart({
             y1={topPad}
             x2={leftPad + c * cellW}
             y2={topPad + chartH}
-            stroke="rgba(201,169,110,0.06)"
+            stroke="rgba(58, 123, 234,0.06)"
             strokeWidth={0.5}
           />
         ))}
@@ -481,7 +481,7 @@ function CashChart({
             <path
               d={smoothPath(currentPts)}
               fill="none"
-              stroke="#c9a96e"
+              stroke="#3a7bea"
               strokeWidth={4}
               strokeLinecap="round"
               opacity={0.3}
@@ -491,7 +491,7 @@ function CashChart({
             <path
               d={smoothPath(currentPts)}
               fill="none"
-              stroke="#c9a96e"
+              stroke="#3a7bea"
               strokeWidth={2.5}
               strokeLinecap="round"
             />
@@ -505,8 +505,8 @@ function CashChart({
             cx={p.x}
             cy={p.y}
             r={hoverIdx === i ? 6 : 3}
-            fill={hoverIdx === i ? "#c9a96e" : "#121212"}
-            stroke="#c9a96e"
+            fill={hoverIdx === i ? "#3a7bea" : "#121212"}
+            stroke="#3a7bea"
             strokeWidth={hoverIdx === i ? 2.5 : 1.5}
             style={{ transition: "r 0.15s ease, fill 0.15s ease, stroke-width 0.15s ease" }}
           />
@@ -519,7 +519,7 @@ function CashChart({
             y1={topPad}
             x2={mouseXPct}
             y2={topPad + chartH}
-            stroke="rgba(201,169,110,0.25)"
+            stroke="rgba(58, 123, 234,0.25)"
             strokeWidth={1}
             strokeDasharray="4 3"
           />
@@ -531,7 +531,7 @@ function CashChart({
             cy={hoverPt.y}
             r={10}
             fill="none"
-            stroke="rgba(201,169,110,0.2)"
+            stroke="rgba(58, 123, 234,0.2)"
             strokeWidth={1}
           />
         )}
@@ -561,12 +561,12 @@ function CashChart({
             top: `${(hoverPt.y / height) * 100 - 16}%`,
             transform: "translate(-50%, -100%)",
             background: "rgba(15,15,18,0.95)",
-            border: "1px solid rgba(201,169,110,0.4)",
+            border: "1px solid rgba(58, 123, 234,0.4)",
             borderRadius: 8,
             padding: "8px 12px",
             pointerEvents: "none",
             zIndex: 20,
-            boxShadow: "0 4px 20px rgba(0,0,0,0.6), 0 0 15px rgba(201,169,110,0.15)",
+            boxShadow: "0 4px 20px rgba(0,0,0,0.6), 0 0 15px rgba(58, 123, 234,0.15)",
             whiteSpace: "nowrap",
           }}
         >
@@ -587,7 +587,7 @@ function CashChart({
             style={{
               fontSize: 16,
               fontWeight: 700,
-              color: "#c9a96e",
+              color: "#3a7bea",
               letterSpacing: "-0.5px",
             }}
           >
@@ -874,8 +874,8 @@ const ALL_KEYFRAMES = `
   100% { top: 100%; opacity: 0; }
 }
 @keyframes inboxGlow {
-  0%, 100% { box-shadow: 0 0 15px rgba(201,169,110,0.15); }
-  50% { box-shadow: 0 0 30px rgba(201,169,110,0.35); }
+  0%, 100% { box-shadow: 0 0 15px rgba(58, 123, 234,0.15); }
+  50% { box-shadow: 0 0 30px rgba(58, 123, 234,0.35); }
 }
 @keyframes aiPulse {
   0%, 100% { transform: scale(1); opacity: 0.8; }
@@ -949,7 +949,7 @@ function FunnelStep({
   const hc = health ? healthColor(health) : color || "var(--accent)";
   const glow = health
     ? healthGlow(health)
-    : "0 0 15px rgba(201,169,110,0.2)";
+    : "0 0 15px rgba(58, 123, 234,0.2)";
   return (
     <div
       style={{
@@ -1062,7 +1062,7 @@ function FunnelConnector({ delay }: { delay: number }) {
           width: 2,
           height: "100%",
           background:
-            "linear-gradient(to bottom, rgba(201,169,110,0.3), rgba(201,169,110,0.08))",
+            "linear-gradient(to bottom, rgba(58, 123, 234,0.3), rgba(58, 123, 234,0.08))",
           position: "relative",
           overflow: "hidden",
         }}
@@ -1168,8 +1168,8 @@ function VerticalFunnel({
           marginTop: 16,
           textAlign: "center",
           padding: "10px 16px",
-          background: "rgba(201,169,110,0.06)",
-          border: "1px solid rgba(201,169,110,0.15)",
+          background: "rgba(58, 123, 234,0.06)",
+          border: "1px solid rgba(58, 123, 234,0.15)",
           borderRadius: 8,
           transition:
             "transform 0.15s ease-out, box-shadow 0.15s ease-out, border-color 0.15s ease-out",
@@ -1258,7 +1258,7 @@ function FunnelSection({ metrics }: { metrics: PeriodMetrics }) {
                   : "1px solid var(--border-primary)",
               background:
                 view === btn.key
-                  ? "rgba(201,169,110,0.15)"
+                  ? "rgba(58, 123, 234,0.15)"
                   : "var(--hover-bg-subtle)",
               color:
                 view === btn.key ? "var(--accent)" : "var(--text-muted)",
@@ -1267,7 +1267,7 @@ function FunnelSection({ metrics }: { metrics: PeriodMetrics }) {
                 "all 0.15s ease-out, transform 0.15s ease-out, box-shadow 0.15s ease-out, border-color 0.15s ease-out",
               boxShadow:
                 view === btn.key
-                  ? "0 0 12px rgba(201,169,110,0.2)"
+                  ? "0 0 12px rgba(58, 123, 234,0.2)"
                   : "none",
             }}
           >
@@ -1492,8 +1492,8 @@ function BottleneckInbox({ metrics }: { metrics: PeriodMetrics }) {
       style={{
         position: "relative",
         borderRadius: 12,
-        border: "1px solid rgba(201,169,110,0.2)",
-        background: "rgba(201,169,110,0.03)",
+        border: "1px solid rgba(58, 123, 234,0.2)",
+        background: "rgba(58, 123, 234,0.03)",
         overflow: "hidden",
         animation: "inboxGlow 4s ease-in-out infinite",
         transition:
@@ -1523,8 +1523,8 @@ function BottleneckInbox({ metrics }: { metrics: PeriodMetrics }) {
           alignItems: "center",
           gap: 10,
           padding: "14px 18px",
-          borderBottom: "1px solid rgba(201,169,110,0.12)",
-          background: "rgba(201,169,110,0.04)",
+          borderBottom: "1px solid rgba(58, 123, 234,0.12)",
+          background: "rgba(58, 123, 234,0.04)",
         }}
       >
         <div style={{ position: "relative" }}>
@@ -1598,9 +1598,9 @@ function BottleneckInbox({ metrics }: { metrics: PeriodMetrics }) {
                     : "12px 12px 4px 12px",
                 background:
                   msg.role === "ai"
-                    ? "rgba(201,169,110,0.08)"
+                    ? "rgba(58, 123, 234,0.08)"
                     : "rgba(126,201,160,0.1)",
-                border: `1px solid ${msg.role === "ai" ? "rgba(201,169,110,0.15)" : "rgba(126,201,160,0.15)"}`,
+                border: `1px solid ${msg.role === "ai" ? "rgba(58, 123, 234,0.15)" : "rgba(126,201,160,0.15)"}`,
                 fontSize: 12.5,
                 lineHeight: 1.55,
                 color: "var(--text-secondary)",
@@ -1693,7 +1693,7 @@ function BottleneckInbox({ metrics }: { metrics: PeriodMetrics }) {
           display: "flex",
           gap: 8,
           padding: "12px 18px",
-          borderTop: "1px solid rgba(201,169,110,0.12)",
+          borderTop: "1px solid rgba(58, 123, 234,0.12)",
           background: "rgba(0,0,0,0.15)",
         }}
       >
@@ -1707,7 +1707,7 @@ function BottleneckInbox({ metrics }: { metrics: PeriodMetrics }) {
             flex: 1,
             padding: "8px 12px",
             borderRadius: 8,
-            border: "1px solid rgba(201,169,110,0.15)",
+            border: "1px solid rgba(58, 123, 234,0.15)",
             background: "var(--hover-bg-subtle)",
             color: "var(--text-primary)",
             fontSize: 12,
@@ -1720,10 +1720,10 @@ function BottleneckInbox({ metrics }: { metrics: PeriodMetrics }) {
           style={{
             padding: "8px 14px",
             borderRadius: 8,
-            border: "1px solid rgba(201,169,110,0.3)",
+            border: "1px solid rgba(58, 123, 234,0.3)",
             background:
               input.trim() && !thinking
-                ? "rgba(201,169,110,0.15)"
+                ? "rgba(58, 123, 234,0.15)"
                 : "var(--hover-bg-subtle)",
             color:
               input.trim() && !thinking
@@ -1808,8 +1808,8 @@ function setupMouseTracking(
 
     const htmlEl = el as HTMLElement;
     htmlEl.style.transform = `perspective(600px) rotateX(${rotX}deg) rotateY(${rotY}deg) scale(${scale.toFixed(4)}) translate(${tx}px, ${ty}px)`;
-    htmlEl.style.boxShadow = `0 0 ${Math.round(pi * 30 * glowMul)}px rgba(201,169,110,${glowA}), inset 0 0 ${Math.round(pi * 10 * glowMul)}px rgba(201,169,110,${(pi * 0.06 * glowMul).toFixed(2)})`;
-    htmlEl.style.borderColor = `rgba(201,169,110,${borderA})`;
+    htmlEl.style.boxShadow = `0 0 ${Math.round(pi * 30 * glowMul)}px rgba(58, 123, 234,${glowA}), inset 0 0 ${Math.round(pi * 10 * glowMul)}px rgba(58, 123, 234,${(pi * 0.06 * glowMul).toFixed(2)})`;
+    htmlEl.style.borderColor = `rgba(58, 123, 234,${borderA})`;
   });
 
   const texts = container.querySelectorAll("[data-reactive-text]");
@@ -1822,7 +1822,7 @@ function setupMouseTracking(
     );
     const p = Math.max(0, 1 - dist / 200);
     const htmlEl = el as HTMLElement;
-    htmlEl.style.textShadow = `0 0 ${Math.round(p * 14)}px rgba(201,169,110,${(p * 0.7).toFixed(2)})`;
+    htmlEl.style.textShadow = `0 0 ${Math.round(p * 14)}px rgba(58, 123, 234,${(p * 0.7).toFixed(2)})`;
     htmlEl.style.transform = `scale(${(1 + p * 0.025).toFixed(4)})`;
   });
 
@@ -1836,7 +1836,7 @@ function setupMouseTracking(
     );
     const p = Math.max(0, 1 - dist / 180);
     const htmlEl = el as HTMLElement;
-    htmlEl.style.filter = `drop-shadow(0 0 ${Math.round(p * 10)}px rgba(201,169,110,${(p * 0.8).toFixed(2)}))`;
+    htmlEl.style.filter = `drop-shadow(0 0 ${Math.round(p * 10)}px rgba(58, 123, 234,${(p * 0.8).toFixed(2)}))`;
     htmlEl.style.transform = `scale(${(1 + p * 0.2).toFixed(3)}) rotate(${(p * 10).toFixed(1)}deg)`;
   });
 
@@ -1848,7 +1848,7 @@ function setupMouseTracking(
     const p = Math.max(0, 1 - dist / 150);
     const htmlEl = el as HTMLElement;
     htmlEl.style.filter = `brightness(${(1 + p * 0.3).toFixed(2)})`;
-    htmlEl.style.boxShadow = `0 0 ${Math.round(p * 12)}px rgba(201,169,110,${(p * 0.3).toFixed(2)})`;
+    htmlEl.style.boxShadow = `0 0 ${Math.round(p * 12)}px rgba(58, 123, 234,${(p * 0.3).toFixed(2)})`;
   });
 
   const seps = container.querySelectorAll("[data-reactive-sep]");
@@ -2114,7 +2114,7 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
           height: 300,
           borderRadius: "50%",
           background:
-            "radial-gradient(circle, rgba(201,169,110,0.1) 0%, rgba(201,169,110,0.03) 40%, transparent 70%)",
+            "radial-gradient(circle, rgba(58, 123, 234,0.1) 0%, rgba(58, 123, 234,0.03) 40%, transparent 70%)",
           transform: "translate(-50%, -50%)",
           pointerEvents: "none",
           opacity: 0,
@@ -2132,8 +2132,8 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
           gap: 8,
           padding: "10px 16px",
           borderRadius: 10,
-          border: "1px solid rgba(201,169,110,0.12)",
-          background: "rgba(201,169,110,0.03)",
+          border: "1px solid rgba(58, 123, 234,0.12)",
+          background: "rgba(58, 123, 234,0.03)",
           flexWrap: "wrap",
           ...RC,
         }}
@@ -2157,7 +2157,7 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
                   : "1px solid var(--border-primary)",
               background:
                 alexDatePreset === tab.key
-                  ? "rgba(201,169,110,0.18)"
+                  ? "rgba(58, 123, 234,0.18)"
                   : "var(--hover-bg-subtle)",
               color:
                 alexDatePreset === tab.key
@@ -2176,7 +2176,7 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
               style={{
                 width: 1,
                 height: 20,
-                background: "rgba(201,169,110,0.15)",
+                background: "rgba(58, 123, 234,0.15)",
                 flexShrink: 0,
               }}
             />
@@ -2187,7 +2187,7 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
               style={{
                 padding: "4px 8px",
                 borderRadius: 6,
-                border: "1px solid rgba(201,169,110,0.2)",
+                border: "1px solid rgba(58, 123, 234,0.2)",
                 background: "var(--hover-bg-subtle)",
                 color: "var(--text-primary)",
                 fontSize: 11,
@@ -2204,7 +2204,7 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
               style={{
                 padding: "4px 8px",
                 borderRadius: 6,
-                border: "1px solid rgba(201,169,110,0.2)",
+                border: "1px solid rgba(58, 123, 234,0.2)",
                 background: "var(--hover-bg-subtle)",
                 color: "var(--text-primary)",
                 fontSize: 11,
@@ -2249,7 +2249,7 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
               right: 0,
               height: 3,
               background:
-                "linear-gradient(90deg, var(--accent), rgba(201,169,110,0.2))",
+                "linear-gradient(90deg, var(--accent), rgba(58, 123, 234,0.2))",
               transition: "filter 0.15s ease-out",
             }}
           />
@@ -2951,7 +2951,7 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
         style={{
           height: 1,
           background:
-            "linear-gradient(to right, transparent, rgba(201,169,110,0.25), transparent)",
+            "linear-gradient(to right, transparent, rgba(58, 123, 234,0.25), transparent)",
           marginTop: 8,
           transition: "opacity 0.15s ease-out, height 0.15s ease-out",
         }}
@@ -2969,11 +2969,11 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
             justifyContent: "space-between",
             padding: "14px 18px",
             borderRadius: alexTestOpen ? "10px 10px 0 0" : 10,
-            border: "1px solid rgba(201,169,110,0.2)",
+            border: "1px solid rgba(58, 123, 234,0.2)",
             borderBottom: alexTestOpen
-              ? "1px solid rgba(201,169,110,0.1)"
+              ? "1px solid rgba(58, 123, 234,0.1)"
               : undefined,
-            background: "rgba(201,169,110,0.04)",
+            background: "rgba(58, 123, 234,0.04)",
             cursor: "pointer",
             ...RC,
           }}
@@ -3023,7 +3023,7 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
               style={{
                 fontSize: 10,
                 color: "var(--text-muted)",
-                background: "rgba(201,169,110,0.08)",
+                background: "rgba(58, 123, 234,0.08)",
                 padding: "2px 8px",
                 borderRadius: 4,
               }}
@@ -3051,7 +3051,7 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
               "max-height 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
             borderRadius: "0 0 10px 10px",
             border: alexTestOpen
-              ? "1px solid rgba(201,169,110,0.15)"
+              ? "1px solid rgba(58, 123, 234,0.15)"
               : "none",
             borderTop: "none",
             background: "rgba(0,0,0,0.1)",
@@ -3101,7 +3101,7 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
               style={{
                 height: 1,
                 background:
-                  "linear-gradient(to right, transparent, rgba(201,169,110,0.2), transparent)",
+                  "linear-gradient(to right, transparent, rgba(58, 123, 234,0.2), transparent)",
                 transition:
                   "opacity 0.15s ease-out, height 0.15s ease-out",
               }}
@@ -3139,7 +3139,7 @@ export default function AlexTesting({ filters }: AlexTestingProps) {
                     fontSize: 9,
                     fontWeight: 700,
                     color: "var(--accent)",
-                    background: "rgba(201,169,110,0.1)",
+                    background: "rgba(58, 123, 234,0.1)",
                     padding: "2px 6px",
                     borderRadius: 4,
                     letterSpacing: "0.5px",

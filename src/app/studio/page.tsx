@@ -1235,8 +1235,8 @@ function AdCanvas({
             top: -20,
             width: imageGuides.snapped ? 3 : 2,
             height: H + 40,
-            background: imageGuides.snapped ? "#7C5CFC" : "rgba(201, 169, 110, 0.6)",
-            boxShadow: imageGuides.snapped ? "0 0 14px rgba(201, 169, 110, 0.8), 0 0 4px rgba(201, 169, 110, 1)" : "0 0 6px rgba(201, 169, 110, 0.3)",
+            background: imageGuides.snapped ? "#7C5CFC" : "rgba(58, 123, 234, 0.6)",
+            boxShadow: imageGuides.snapped ? "0 0 14px rgba(58, 123, 234, 0.8), 0 0 4px rgba(58, 123, 234, 1)" : "0 0 6px rgba(58, 123, 234, 0.3)",
             pointerEvents: "none",
             zIndex: 50,
           }}
@@ -1251,8 +1251,8 @@ function AdCanvas({
             left: -20,
             height: imageGuides.snapped ? 3 : 2,
             width: W + 40,
-            background: imageGuides.snapped ? "#7C5CFC" : "rgba(201, 169, 110, 0.6)",
-            boxShadow: imageGuides.snapped ? "0 0 14px rgba(201, 169, 110, 0.8), 0 0 4px rgba(201, 169, 110, 1)" : "0 0 6px rgba(201, 169, 110, 0.3)",
+            background: imageGuides.snapped ? "#7C5CFC" : "rgba(58, 123, 234, 0.6)",
+            boxShadow: imageGuides.snapped ? "0 0 14px rgba(58, 123, 234, 0.8), 0 0 4px rgba(58, 123, 234, 1)" : "0 0 6px rgba(58, 123, 234, 0.3)",
             pointerEvents: "none",
             zIndex: 50,
           }}

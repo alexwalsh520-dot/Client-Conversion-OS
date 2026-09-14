@@ -308,7 +308,7 @@ function MealPlanTaskPanel({
       {intakeForm && <IntakeFormDetail form={intakeForm} />}
 
       {/* Generation controls */}
-      <div style={{ marginTop: 20, padding: 16, background: "rgba(201,169,110,0.08)", borderRadius: 10, border: "1px solid rgba(201,169,110,0.2)" }}>
+      <div style={{ marginTop: 20, padding: 16, background: "rgba(58, 123, 234,0.08)", borderRadius: 10, border: "1px solid rgba(58, 123, 234,0.2)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
           <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: 6 }}>
             <Sparkles size={14} /> Custom Meal Plan

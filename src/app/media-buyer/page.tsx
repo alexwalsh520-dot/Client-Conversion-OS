@@ -452,7 +452,7 @@ function SalesCallRow({ call }: { call: SalesCall }) {
             href={call.recording_link}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-[#c9a96e] hover:underline"
+            className="inline-flex items-center gap-1 text-[#3a7bea] hover:underline"
           >
             Recording <ExternalLink className="w-3 h-3" />
           </a>
@@ -662,7 +662,7 @@ export default function MediaBuyerPage() {
       {/* ── Header Bar ── */}
       <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-5 border-b border-white/5">
         <div className="flex items-center gap-3">
-          <BarChart3 className="w-6 h-6" style={{ color: "#c9a96e" }} />
+          <BarChart3 className="w-6 h-6" style={{ color: "#3a7bea" }} />
           <h1 className="text-2xl font-bold text-white tracking-tight">Media Buyer</h1>
         </div>
 
@@ -675,7 +675,7 @@ export default function MediaBuyerPage() {
                 onClick={() => setDatePreset(p.value)}
                 className="px-3 py-1.5 text-xs font-medium transition-colors"
                 style={{
-                  backgroundColor: datePreset === p.value ? "#c9a96e" : "transparent",
+                  backgroundColor: datePreset === p.value ? "#3a7bea" : "transparent",
                   color: datePreset === p.value ? "#0c0c0c" : "#e2e2e2",
                 }}
               >
@@ -734,12 +734,12 @@ export default function MediaBuyerPage() {
             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h4v4H2V2zm0 6h4v4H2V8zm6-6h4v4H8V2zm6 0h2v4h-2V2zM8 8h4v4H8V8zm6 0h2v4h-2V8z" opacity="0.8"/></svg>
             Campaigns
             {level !== "campaign" && breadcrumbs.length > 1 && (
-              <span className="text-[10px] font-bold rounded px-1.5 py-0.5" style={{ backgroundColor: "#c9a96e", color: "#0c0c0c" }}>
+              <span className="text-[10px] font-bold rounded px-1.5 py-0.5" style={{ backgroundColor: "#3a7bea", color: "#0c0c0c" }}>
                 1 selected
               </span>
             )}
             {level === "campaign" && (
-              <div className="absolute bottom-0 left-0 right-0 h-[2px]" style={{ backgroundColor: "#c9a96e" }} />
+              <div className="absolute bottom-0 left-0 right-0 h-[2px]" style={{ backgroundColor: "#3a7bea" }} />
             )}
           </button>
 
@@ -759,12 +759,12 @@ export default function MediaBuyerPage() {
             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M1 3h14v2H1V3zm2 4h10v2H3V7zm2 4h6v2H5v-2z" opacity="0.8"/></svg>
             Ad Sets
             {level === "ad" && breadcrumbs.length > 2 && (
-              <span className="text-[10px] font-bold rounded px-1.5 py-0.5" style={{ backgroundColor: "#c9a96e", color: "#0c0c0c" }}>
+              <span className="text-[10px] font-bold rounded px-1.5 py-0.5" style={{ backgroundColor: "#3a7bea", color: "#0c0c0c" }}>
                 1 selected
               </span>
             )}
             {level === "adset" && (
-              <div className="absolute bottom-0 left-0 right-0 h-[2px]" style={{ backgroundColor: "#c9a96e" }} />
+              <div className="absolute bottom-0 left-0 right-0 h-[2px]" style={{ backgroundColor: "#3a7bea" }} />
             )}
           </button>
 
@@ -784,7 +784,7 @@ export default function MediaBuyerPage() {
             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 1h12a1 1 0 011 1v12a1 1 0 01-1 1H2a1 1 0 01-1-1V2a1 1 0 011-1zm1 2v10h10V3H3z" opacity="0.8"/></svg>
             Ads
             {level === "ad" && (
-              <div className="absolute bottom-0 left-0 right-0 h-[2px]" style={{ backgroundColor: "#c9a96e" }} />
+              <div className="absolute bottom-0 left-0 right-0 h-[2px]" style={{ backgroundColor: "#3a7bea" }} />
             )}
           </button>
 
@@ -796,7 +796,7 @@ export default function MediaBuyerPage() {
                 <button
                   key={i}
                   onClick={() => handleBreadcrumbClick(i + 1)}
-                  className="text-xs px-2 py-1 rounded border transition-colors hover:border-[#c9a96e]/40"
+                  className="text-xs px-2 py-1 rounded border transition-colors hover:border-[#3a7bea]/40"
                   style={{ borderColor: "#27272a", color: "#e2e2e2" }}
                 >
                   {crumb.name?.substring(0, 25)}{crumb.name && crumb.name.length > 25 ? "..." : ""} ✕
@@ -818,7 +818,7 @@ export default function MediaBuyerPage() {
           <button
             onClick={fetchData}
             className="mt-2 text-xs font-medium underline"
-            style={{ color: "#c9a96e" }}
+            style={{ color: "#3a7bea" }}
           >
             Retry
           </button>
@@ -862,14 +862,14 @@ export default function MediaBuyerPage() {
                     {/* Name column */}
                     <th
                       className="sticky left-0 z-20 bg-[#121212] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider min-w-[280px] cursor-pointer select-none hover:bg-white/[0.03] transition-colors"
-                      style={{ color: sortKey === "name" ? "#c9a96e" : "#e2e2e2" }}
+                      style={{ color: sortKey === "name" ? "#3a7bea" : "#e2e2e2" }}
                       onClick={() => handleSort("name")}
                     >
                       <div className="flex items-center gap-1">
                         {level === "ad" ? "Date" : level === "campaign" ? "Campaign" : level === "adset" ? "Ad Set" : "Name"}
                         <span className="inline-flex flex-col leading-none" style={{ fontSize: "8px", lineHeight: "8px" }}>
-                          <span style={{ color: sortKey === "name" && sortDir === "asc" ? "#c9a96e" : "#3f3f46" }}>▲</span>
-                          <span style={{ color: sortKey === "name" && sortDir === "desc" ? "#c9a96e" : "#3f3f46" }}>▼</span>
+                          <span style={{ color: sortKey === "name" && sortDir === "asc" ? "#3a7bea" : "#3f3f46" }}>▲</span>
+                          <span style={{ color: sortKey === "name" && sortDir === "desc" ? "#3a7bea" : "#3f3f46" }}>▼</span>
                         </span>
                       </div>
                     </th>
@@ -880,7 +880,7 @@ export default function MediaBuyerPage() {
                           key={col.key}
                           className="px-4 py-3 text-xs font-semibold uppercase tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-white/[0.03] transition-colors"
                           style={{
-                            color: isSorted ? "#c9a96e" : "#e2e2e2",
+                            color: isSorted ? "#3a7bea" : "#e2e2e2",
                             textAlign: col.align,
                             minWidth: col.minWidth,
                           }}
@@ -889,8 +889,8 @@ export default function MediaBuyerPage() {
                           <div className="flex items-center gap-1" style={{ justifyContent: col.align === "right" ? "flex-end" : "flex-start" }}>
                             {col.label}
                             <span className="inline-flex flex-col leading-none" style={{ fontSize: "8px", lineHeight: "8px" }}>
-                              <span style={{ color: isSorted && sortDir === "asc" ? "#c9a96e" : "#3f3f46" }}>▲</span>
-                              <span style={{ color: isSorted && sortDir === "desc" ? "#c9a96e" : "#3f3f46" }}>▼</span>
+                              <span style={{ color: isSorted && sortDir === "asc" ? "#3a7bea" : "#3f3f46" }}>▲</span>
+                              <span style={{ color: isSorted && sortDir === "desc" ? "#3a7bea" : "#3f3f46" }}>▼</span>
                             </span>
                           </div>
                         </th>
@@ -950,7 +950,7 @@ export default function MediaBuyerPage() {
                                     )}
                                   </span>
                                 )}
-                                <span className={`font-medium truncate max-w-[250px] ${isClickable ? "hover:underline" : ""}`} style={{ color: isClickable ? "#c9a96e" : "#e4e4e7" }}>
+                                <span className={`font-medium truncate max-w-[250px] ${isClickable ? "hover:underline" : ""}`} style={{ color: isClickable ? "#3a7bea" : "#e4e4e7" }}>
                                   {isAdDaily ? row.date : row.name}
                                 </span>
                               </div>
@@ -986,7 +986,7 @@ export default function MediaBuyerPage() {
                             <tr className="border-t border-white/5 bg-[#121212]">
                               <td
                                 className="sticky left-0 z-10 bg-[#121212] px-4 py-2 text-xs font-semibold uppercase tracking-wider"
-                                style={{ color: "#c9a96e" }}
+                                style={{ color: "#3a7bea" }}
                               >
                                 Sales Calls
                               </td>
@@ -1045,7 +1045,7 @@ export default function MediaBuyerPage() {
                             className="px-4 py-3 text-sm font-semibold whitespace-nowrap"
                             style={{
                               textAlign: col.align,
-                              color: "#c9a96e",
+                              color: "#3a7bea",
                               minWidth: col.minWidth,
                             }}
                           >

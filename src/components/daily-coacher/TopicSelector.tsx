@@ -83,7 +83,7 @@ export default function TopicSelector({ phase, selectedKey, onSelect }: Props) {
                 border: isSelected
                   ? "1px solid var(--accent)"
                   : isElevated
-                    ? "1px solid rgba(201, 169, 110, 0.3)"
+                    ? "1px solid rgba(58, 123, 234, 0.3)"
                     : "1px solid var(--border-primary)",
                 background: isSelected ? "var(--accent-soft)" : "var(--bg-glass)",
                 color: "var(--text-primary)",

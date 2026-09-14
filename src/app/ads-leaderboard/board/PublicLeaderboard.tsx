@@ -9,7 +9,7 @@ const C = {
   text: "#f6f6f8",
   sub: "#9a9aa6",
   gold: "#d8b878",
-  gold2: "#c9a96e",
+  gold2: "#3a7bea",
   green: "#5fdb8e",
 };
 

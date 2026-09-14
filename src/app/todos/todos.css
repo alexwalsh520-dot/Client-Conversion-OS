@@ -8,7 +8,7 @@
   --td-text: #eceaf0;
   --td-muted: #98959f;
   --td-faint: #67646f;
-  --td-gold: #c9a96e;
+  --td-gold: #3a7bea;
   --td-gold-dim: #8f7a52;
   --td-good: #4ade80;
   --td-bad: #f87171;
@@ -58,7 +58,7 @@
   color: var(--td-text);
 }
 .td-daychip.on {
-  background: rgba(201, 169, 110, 0.16);
+  background: rgba(58, 123, 234, 0.16);
   border-color: var(--td-gold);
   color: var(--td-gold);
 }
@@ -406,7 +406,7 @@
   cursor: pointer;
 }
 .td-custom-bar .td-zoom button:hover {
-  color: #c9a96e;
+  color: #3a7bea;
   border-color: #8f7a52;
 }
 .td-custom-bar .td-zoom .td-zoom-val {

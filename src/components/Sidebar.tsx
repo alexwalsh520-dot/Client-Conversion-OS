@@ -15,6 +15,7 @@ import {
   PanelLeft,
 } from "lucide-react";
 import { ThemeIconButton } from "@/components/ThemeToggle";
+import LogoWordmark from "@/components/LogoWordmark";
 import {
   NAV_ITEMS,
   MARKETING_NAV_ITEMS,
@@ -193,14 +194,7 @@ export default function Sidebar() {
 
         {/* Logo */}
         <div className="sidebar-logo">
-          <div className="sidebar-logo-icon">
-            <span className="gradient-text" style={{ fontWeight: 800, fontSize: 16 }}>C</span>
-          </div>
-          {!collapsed && (
-            <span className="gradient-text" style={{ fontWeight: 700, fontSize: 18, letterSpacing: "-0.5px" }}>
-              CCOS
-            </span>
-          )}
+          <LogoWordmark collapsed={collapsed} />
         </div>
 
         {/* Navigation */}

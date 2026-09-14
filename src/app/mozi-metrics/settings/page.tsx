@@ -71,7 +71,7 @@ const BUSINESS_TYPES = [
 
 const SYNC_SOURCES = ['Stripe', 'Whop', 'Mercury', 'Meta', 'GHL', 'Sheets'] as const;
 
-const GOLD = '#c9a96e';
+const GOLD = '#3a7bea';
 const SURFACE = 'rgba(14,14,18,0.92)';
 const BORDER = 'rgba(255,255,255,0.06)';
 const INPUT_BG = '#0e0e12';
@@ -132,7 +132,7 @@ function Section({
           disabled={saving}
           className="px-4 py-1.5 rounded-lg text-xs font-medium transition-all duration-150"
           style={{
-            background: saving ? 'rgba(201,169,110,0.3)' : GOLD,
+            background: saving ? 'rgba(58, 123, 234,0.3)' : GOLD,
             color: '#0c0c0c',
             opacity: saving ? 0.7 : 1,
           }}
@@ -177,7 +177,7 @@ function Field({
             border: `1px solid ${BORDER}`,
           }}
           onFocus={(e) => {
-            e.currentTarget.style.borderColor = 'rgba(201,169,110,0.4)';
+            e.currentTarget.style.borderColor = 'rgba(58, 123, 234,0.4)';
           }}
           onBlur={(e) => {
             e.currentTarget.style.borderColor = BORDER;
@@ -413,8 +413,8 @@ export default function MoziSettingsPage() {
                   }
                   className="rounded-lg px-3 py-3 text-center transition-all duration-150"
                   style={{
-                    background: active ? 'rgba(201,169,110,0.12)' : INPUT_BG,
-                    border: `1px solid ${active ? 'rgba(201,169,110,0.5)' : BORDER}`,
+                    background: active ? 'rgba(58, 123, 234,0.12)' : INPUT_BG,
+                    border: `1px solid ${active ? 'rgba(58, 123, 234,0.5)' : BORDER}`,
                   }}
                 >
                   <div
@@ -537,7 +537,7 @@ export default function MoziSettingsPage() {
                             border: `1px solid ${BORDER}`,
                           }}
                           onFocus={(e) => {
-                            e.currentTarget.style.borderColor = 'rgba(201,169,110,0.4)';
+                            e.currentTarget.style.borderColor = 'rgba(58, 123, 234,0.4)';
                           }}
                           onBlur={(e) => {
                             e.currentTarget.style.borderColor = BORDER;
@@ -556,7 +556,7 @@ export default function MoziSettingsPage() {
                             border: `1px solid ${BORDER}`,
                           }}
                           onFocus={(e) => {
-                            e.currentTarget.style.borderColor = 'rgba(201,169,110,0.4)';
+                            e.currentTarget.style.borderColor = 'rgba(58, 123, 234,0.4)';
                           }}
                           onBlur={(e) => {
                             e.currentTarget.style.borderColor = BORDER;
@@ -574,7 +574,7 @@ export default function MoziSettingsPage() {
                             border: `1px solid ${BORDER}`,
                           }}
                           onFocus={(e) => {
-                            e.currentTarget.style.borderColor = 'rgba(201,169,110,0.4)';
+                            e.currentTarget.style.borderColor = 'rgba(58, 123, 234,0.4)';
                           }}
                           onBlur={(e) => {
                             e.currentTarget.style.borderColor = BORDER;
@@ -599,9 +599,9 @@ export default function MoziSettingsPage() {
             onClick={addCoach}
             className="text-xs font-medium px-3 py-1.5 rounded-lg transition-all hover:brightness-110"
             style={{
-              background: 'rgba(201,169,110,0.1)',
+              background: 'rgba(58, 123, 234,0.1)',
               color: GOLD,
-              border: `1px solid rgba(201,169,110,0.2)`,
+              border: `1px solid rgba(58, 123, 234,0.2)`,
             }}
           >
             + Add Coach
@@ -783,7 +783,7 @@ export default function MoziSettingsPage() {
               disabled={syncing}
               className="px-4 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 flex items-center gap-2"
               style={{
-                background: syncing ? 'rgba(201,169,110,0.3)' : GOLD,
+                background: syncing ? 'rgba(58, 123, 234,0.3)' : GOLD,
                 color: '#0c0c0c',
                 opacity: syncing ? 0.7 : 1,
               }}
