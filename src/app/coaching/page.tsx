@@ -16,6 +16,7 @@ import {
   ClipboardCheck,
   Brain,
   Activity,
+  MessageSquare,
 } from "lucide-react";
 import {
   coachPerformance,
@@ -51,11 +52,13 @@ import ExpensesTab from "@/components/coaching/ExpensesTab";
 import NutritionTab from "@/components/coaching/NutritionTab";
 import ClientProgressTab from "@/components/coaching/ClientProgressTab";
 import AskAhmadTab from "@/components/coaching/AskAhmadTab";
+import InboxTab from "@/components/coaching/InboxTab";
 import EverfitTab from "@/components/coaching/EverfitTab";
 import ReferralsTab from "@/components/coaching/ReferralsTab";
 import type { CheckInSubmissionRow } from "@/lib/check-in/types";
 
 const TABS: { key: CoachingTab; label: string; icon: React.ReactNode }[] = [
+  { key: "inbox", label: "Inbox", icon: <MessageSquare size={14} /> },
   { key: "everfit", label: "Everfit", icon: <Activity size={14} /> },
   { key: "roster", label: "Client Roster", icon: <Users size={14} /> },
   { key: "onboarding", label: "Onboarding", icon: <UserPlus size={14} /> },
@@ -270,7 +273,7 @@ export default function CoachingPage() {
               {syncMsg}
             </span>
           )}
-          {activeTab !== "everfit" && <button
+          {activeTab !== "everfit" && activeTab !== "inbox" && <button
             onClick={handleSync}
             disabled={syncing}
             style={{
@@ -330,6 +333,7 @@ export default function CoachingPage() {
 
       {/* Tab Content */}
       <div className="section">
+        {activeTab === "inbox" && <InboxTab />}
         {activeTab === "everfit" && <EverfitTab clients={clients} isAdmin={isAdmin} />}
         {activeTab === "roster" && (
           <ClientRosterTab clients={clients} pauses={pauses} milestones={milestones} meetings={meetings} eodReports={eodReports} nutritionForms={nutritionForms} onSave={handleSaveClient} onDelete={handleDeleteClient} onDeleteMeeting={handleDeleteMeeting} selectedClientName={selectedClientName} onClearSelection={() => setSelectedClientName(null)} />
