@@ -1,0 +1,8 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { metrics, parseReport, programStatus, type V2Client, type V2Report } from './report';
+const client=(id:string,days:number|null,replies:number|null=0):V2Client=>({id,name:id,days_remaining:days,replies_7d:replies,activity_7d:0,workouts_completed:1,workouts_assigned:2,workout_pct:null,summary:'',evidence:[]});
+const report=(clients:V2Client[]):V2Report=>({schema_version:2,coach_name:'Coach',review_date:'2026-09-16',timezone:'Asia/Karachi',retention_days:14,roster_count:clients.length,roster_complete:true,coverage_notes:[],summary:'',clients});
+test('retention boundaries and active-only confirmed ghosts',()=>{const r=report([client('a',15),client('b',14),client('c',0),client('d',-7),client('e',-8),client('f',2,null)]);const m=metrics(r);assert.deepEqual(m.retentions.map(c=>c.id),['b','c','d','f']);assert.equal(m.ghosts.length,2);assert.equal(m.unknownGhosts.length,1);assert.equal(programStatus(-7),'Ended within 7 days');assert.equal(programStatus(-8),'Ended');});
+test('weighted workouts and zero-assignment N/A',()=>{const a=client('a',1),b={...client('b',1),workouts_completed:9,workouts_assigned:10};assert.equal(metrics(report([a,b])).workoutPct,100*10/12);assert.equal(metrics(report([{...a,workouts_completed:0,workouts_assigned:0}])).workoutPct,null);});
+test('invalid coverage, duplicate identities and invented counts are rejected',()=>{const r=report([client('a',1)]);assert.deepEqual(parseReport(r),r);assert.throws(()=>parseReport({...r,roster_count:2}));assert.throws(()=>parseReport(report([client('a',1),client('a',2)])));assert.throws(()=>parseReport(report([{...client('a',1),workouts_completed:3}])));});
