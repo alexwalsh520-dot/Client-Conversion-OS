@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "CCOS Everfit Sync",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "On-demand Everfit reading and automatic saving to your CCOS coaching workspace.",
   "permissions": ["storage"],
   "host_permissions": [

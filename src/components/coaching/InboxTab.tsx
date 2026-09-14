@@ -54,8 +54,8 @@ export default function InboxTab() {
   }
   const bottom = useRef<HTMLDivElement>(null);
   useEffect(()=>{bottom.current?.scrollIntoView({block:"nearest"});},[selected?.everfit_id]);
-  const coaches=[...new Set(conversations.map(c=>c.coach_name).filter((c):c is string=>!!c))].sort();
-  const filtered=conversations.filter(c=>(!coach||c.coach_name===coach)&&`${c.name} ${c.owner}`.toLowerCase().includes(search.toLowerCase()));
+  const coaches=[...new Set(conversations.map(c=>c.coach_name||c.owner).filter((c):c is string=>!!c))].sort();
+  const filtered=conversations.filter(c=>(!coach||(c.coach_name||c.owner)===coach)&&`${c.name} ${c.owner}`.toLowerCase().includes(search.toLowerCase()));
   return <section aria-label="Inbox" className={`${styles.inbox} ${selected ? styles.hasSelection : ""}`}>
     <aside className={styles.sidebar}>
       <header className={styles.sidebarHeader}>
