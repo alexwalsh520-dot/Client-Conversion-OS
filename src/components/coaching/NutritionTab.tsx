@@ -21,6 +21,7 @@ import {
   Trash2,
   Loader2,
   Eye,
+  Zap,
 } from "lucide-react";
 import type { Client, NutritionIntakeForm } from "@/lib/types";
 import { NutritionV2TaskPanel } from "./nutrition-v2/NutritionV2TaskPanel";
@@ -680,6 +681,48 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
   const [linkingFormId, setLinkingFormId] = useState<number | null>(null);
   const [linkClientSearch, setLinkClientSearch] = useState("");
 
+  // Auto-connect state (drives the "Auto-connect matches" button that hits
+  // POST /api/nutrition/auto-link and shows a small result banner).
+  const [autoLinking, setAutoLinking] = useState(false);
+  const [autoLinkResult, setAutoLinkResult] = useState<
+    | null
+    | {
+        linked: { clientName: string; formName: string; matchType: string }[];
+        ambiguous: { formName: string; reason: string }[];
+        error?: string;
+      }
+  >(null);
+
+  const runAutoLink = async () => {
+    setAutoLinking(true);
+    setAutoLinkResult(null);
+    try {
+      const res = await fetch("/api/nutrition/auto-link", { method: "POST" });
+      const body = (await res.json()) as {
+        linked?: { clientName: string; formName: string; matchType: string }[];
+        ambiguous?: { formName: string; reason: string }[];
+        error?: string;
+      };
+      if (!res.ok) {
+        setAutoLinkResult({ linked: [], ambiguous: [], error: body.error ?? `HTTP ${res.status}` });
+      } else {
+        setAutoLinkResult({
+          linked: body.linked ?? [],
+          ambiguous: body.ambiguous ?? [],
+        });
+        if ((body.linked ?? []).length > 0 && onRefreshClients) onRefreshClients();
+      }
+    } catch (err) {
+      setAutoLinkResult({
+        linked: [],
+        ambiguous: [],
+        error: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setAutoLinking(false);
+    }
+  };
+
   // Categorize forms and clients
   const linkedFormIds = new Set<number>(
     clients.map((c) => c.nutritionFormId).filter((id): id is number => id != null)
@@ -742,17 +785,104 @@ export default function NutritionTab({ clients, nutritionForms, onLinkForm, onRe
 
       {/* ---- Unlinked Section ---- */}
       <div className="section" style={{ marginBottom: 20 }}>
-        <button
-          onClick={() => setExpandedUnlinked(!expandedUnlinked)}
-          style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", cursor: "pointer", color: "var(--text-primary)", fontSize: 16, fontWeight: 600, padding: 0, marginBottom: 12 }}
-        >
-          {expandedUnlinked ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-          <UtensilsCrossed size={16} />
-          Unlinked Intake Forms
-          <span style={{ background: "rgba(245,158,11,0.2)", color: "#f59e0b", fontSize: 12, padding: "2px 8px", borderRadius: 10, fontWeight: 600, marginLeft: 4 }}>
-            {recentUnlinkedForms.length}
-          </span>
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
+          <button
+            onClick={() => setExpandedUnlinked(!expandedUnlinked)}
+            style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", cursor: "pointer", color: "var(--text-primary)", fontSize: 16, fontWeight: 600, padding: 0 }}
+          >
+            {expandedUnlinked ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+            <UtensilsCrossed size={16} />
+            Unlinked Intake Forms
+            <span style={{ background: "rgba(245,158,11,0.2)", color: "#f59e0b", fontSize: 12, padding: "2px 8px", borderRadius: 10, fontWeight: 600, marginLeft: 4 }}>
+              {recentUnlinkedForms.length}
+            </span>
+          </button>
+          <button
+            onClick={runAutoLink}
+            disabled={autoLinking || recentUnlinkedForms.length === 0}
+            title="Auto-link any unlinked intake form whose email or full name exactly matches a client on the roster"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "6px 10px",
+              borderRadius: 6,
+              border: "1px solid var(--border-primary)",
+              background: autoLinking ? "var(--hover-bg)" : "var(--accent)",
+              color: "#000",
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: (autoLinking || recentUnlinkedForms.length === 0) ? "not-allowed" : "pointer",
+              opacity: recentUnlinkedForms.length === 0 ? 0.5 : 1,
+            }}
+          >
+            {autoLinking ? <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> : <Zap size={12} />}
+            {autoLinking ? "Matching…" : "Auto-connect matches"}
+          </button>
+        </div>
+
+        {autoLinkResult && (
+          <div
+            className="glass-static"
+            style={{
+              padding: 12,
+              borderRadius: 8,
+              marginBottom: 12,
+              fontSize: 12,
+              border: autoLinkResult.error
+                ? "1px solid rgba(239,68,68,0.4)"
+                : "1px solid var(--border-primary)",
+              background: autoLinkResult.error ? "rgba(239,68,68,0.08)" : undefined,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: autoLinkResult.error || autoLinkResult.linked.length > 0 || autoLinkResult.ambiguous.length > 0 ? 6 : 0 }}>
+              <strong style={{ color: autoLinkResult.error ? "#ef4444" : "var(--text-primary)" }}>
+                {autoLinkResult.error
+                  ? "Auto-link failed"
+                  : `Auto-connect: ${autoLinkResult.linked.length} linked${autoLinkResult.ambiguous.length ? `, ${autoLinkResult.ambiguous.length} need manual review` : ""}`}
+              </strong>
+              <button
+                onClick={() => setAutoLinkResult(null)}
+                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: 0 }}
+                title="Dismiss"
+              >
+                <X size={13} />
+              </button>
+            </div>
+            {autoLinkResult.error && (
+              <div style={{ color: "#ef4444" }}>{autoLinkResult.error}</div>
+            )}
+            {autoLinkResult.linked.length > 0 && (
+              <ul style={{ margin: "4px 0 0 0", paddingLeft: 18, color: "var(--text-muted)" }}>
+                {autoLinkResult.linked.map((l, i) => (
+                  <li key={`l-${i}`}>
+                    <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>{l.clientName}</span>{" "}
+                    ← form for {l.formName} <span style={{ color: "var(--text-muted)" }}>({l.matchType})</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {autoLinkResult.ambiguous.length > 0 && (
+              <div style={{ marginTop: autoLinkResult.linked.length > 0 ? 6 : 0 }}>
+                <div style={{ color: "var(--text-muted)", marginBottom: 2 }}>Skipped (link manually):</div>
+                <ul style={{ margin: 0, paddingLeft: 18, color: "var(--text-muted)" }}>
+                  {autoLinkResult.ambiguous.map((a, i) => (
+                    <li key={`a-${i}`}>
+                      <span style={{ color: "var(--text-primary)" }}>{a.formName}</span> — {a.reason}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {!autoLinkResult.error &&
+              autoLinkResult.linked.length === 0 &&
+              autoLinkResult.ambiguous.length === 0 && (
+                <div style={{ color: "var(--text-muted)" }}>
+                  No exact email or full-name matches found among the current unlinked forms.
+                </div>
+              )}
+          </div>
+        )}
 
         {expandedUnlinked && (
           <div className="glass-static" style={{ overflow: "auto" }}>
