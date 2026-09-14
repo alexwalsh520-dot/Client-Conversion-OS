@@ -50,11 +50,11 @@ function applyTheme(theme: Theme, key: string) {
 }
 
 /**
- * Appearance toggle. Switches the whole app between dark and light by adding
- * a class on <html>; every page follows because styles read CSS variables.
- * The choice is saved against the signed-in user's account email.
+ * Shared theme state. Used by the full toggle on Settings AND the compact
+ * icon button in the sidebar footer, so both stay in sync through the same
+ * per-user storage keys and the class on <html>.
  */
-export default function ThemeToggle() {
+function useTheme() {
   const { data: session, status } = useSession();
   const email = session?.user?.email ?? null;
   const [theme, setTheme] = useState<Theme>("dark");
@@ -83,6 +83,38 @@ export default function ThemeToggle() {
     setTheme(next);
     applyTheme(next, userKey(email));
   }
+
+  return { theme, choose };
+}
+
+/**
+ * Compact one-icon toggle for the sidebar footer. Shows the mode you would
+ * switch TO (sun while dark, moon while light), the way most apps do it.
+ */
+export function ThemeIconButton({ className }: { className?: string }) {
+  const { theme, choose } = useTheme();
+  const next: Theme = theme === "dark" ? "light" : "dark";
+  const Icon = theme === "dark" ? Sun : Moon;
+  return (
+    <button
+      type="button"
+      className={className}
+      onClick={() => choose(next)}
+      aria-label={`Switch to ${next} mode`}
+      title={`Switch to ${next} mode`}
+    >
+      <Icon size={16} />
+    </button>
+  );
+}
+
+/**
+ * Appearance toggle. Switches the whole app between dark and light by adding
+ * a class on <html>; every page follows because styles read CSS variables.
+ * The choice is saved against the signed-in user's account email.
+ */
+export default function ThemeToggle() {
+  const { theme, choose } = useTheme();
 
   const options: { value: Theme; label: string; icon: typeof Sun }[] = [
     { value: "dark", label: "Dark", icon: Moon },

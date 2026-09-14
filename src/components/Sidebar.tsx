@@ -6,15 +6,15 @@ import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
 import {
   Settings,
-  ChevronLeft,
-  ChevronRight,
   ChevronDown,
   LogOut,
   Menu,
   X,
   Monitor,
   EyeOff,
+  PanelLeft,
 } from "lucide-react";
+import { ThemeIconButton } from "@/components/ThemeToggle";
 import {
   NAV_ITEMS,
   MARKETING_NAV_ITEMS,
@@ -151,7 +151,7 @@ export default function Sidebar() {
         onContextMenu={(e) => { e.preventDefault(); setMenu({ href: item.href, label: item.label, x: e.clientX, y: e.clientY, hidden: isHidden(item.href) }); }}
       >
         <span className="sidebar-link-icon">
-          <Icon size={18} />
+          <Icon size={16} />
         </span>
         {!collapsed && <span>{item.label}</span>}
         {collapsed && <span className="sidebar-tooltip">{item.label}</span>}
@@ -272,7 +272,7 @@ export default function Sidebar() {
                 </div>
               )}
               {!collapsed && (
-                <span style={{ flex: 1, fontSize: 13, color: "var(--text-secondary)" }}>
+                <span style={{ flex: 1, fontSize: 12.25, lineHeight: "17.5px", color: "var(--text-secondary)" }}>
                   {session.user.name ?? session.user.email}
                 </span>
               )}
@@ -280,10 +280,19 @@ export default function Sidebar() {
             </button>
           )}
 
-          {/* Collapse toggle (desktop only) */}
-          <button className="sidebar-toggle-btn desktop-only" onClick={toggleCollapsed}>
-            {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
-          </button>
+          {/* Footer controls: theme on the left, collapse on the right (desktop only) */}
+          <div className="sidebar-footer-controls desktop-only">
+            <ThemeIconButton className="sidebar-icon-btn" />
+            <button
+              type="button"
+              className="sidebar-icon-btn"
+              onClick={toggleCollapsed}
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              <PanelLeft size={16} />
+            </button>
+          </div>
         </div>
       </aside>
 

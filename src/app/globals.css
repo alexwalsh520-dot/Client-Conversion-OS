@@ -326,20 +326,24 @@ body {
 
 .sidebar-nav {
   flex: 1;
-  padding: 8px;
+  padding: 7px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3.5px;
   overflow-y: auto;
 }
 
 .sidebar-section-label {
-  font-size: 9px;
+  font-size: 10.5px;
   font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 1.6px;
-  color: var(--text-muted);
-  padding: 16px 12px 6px;
+  line-height: 14px;
+  letter-spacing: normal;
+  color: var(--text-secondary);
+  opacity: 0.7;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  padding: 0 7px;
   white-space: nowrap;
   overflow: hidden;
 }
@@ -358,10 +362,8 @@ body {
   cursor: pointer;
   font-family: inherit;
   text-align: left;
-  border-radius: 8px;
-  /* Override the label's tall asymmetric 16px/6px padding so the Marketing
-     dropdown header is a compact, balanced section toggle (was looking boxy). */
-  padding: 7px 12px;
+  border-radius: 6.4px;
+  padding: 0 7px;
   margin-top: 4px;
   transition: color 0.2s ease, background 0.2s ease;
 }
@@ -388,7 +390,7 @@ body {
 .sidebar-section-links {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3.5px;
 }
 
 .sidebar-divider {
@@ -400,14 +402,16 @@ body {
 .sidebar-link {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
+  gap: 7px;
+  padding: 7px;
+  min-height: 28px;
+  border-radius: 6.4px;
+  font-size: 12.25px;
+  line-height: 17.5px;
+  font-weight: 400;
   color: var(--text-muted);
   text-decoration: none;
-  transition: all 0.2s ease;
+  transition: color 0.2s ease, background 0.2s ease;
   white-space: nowrap;
   overflow: hidden;
   position: relative;
@@ -416,15 +420,10 @@ body {
 .sidebar-link:hover {
   color: var(--text-primary);
   background: var(--hover-bg);
-  padding-left: 16px;
 }
 
 .sidebar-link-nested {
-  padding-left: 20px;
-}
-
-.sidebar-link-nested:hover {
-  padding-left: 24px;
+  padding-left: 18px;
 }
 
 .sidebar-link:hover .sidebar-link-icon {
@@ -437,6 +436,7 @@ body {
 
 .sidebar-link-active {
   color: var(--text-primary);
+  font-weight: 500;
   background: var(--accent-soft);
 }
 
@@ -446,8 +446,8 @@ body {
 
 .sidebar-link-icon {
   flex-shrink: 0;
-  width: 20px;
-  height: 20px;
+  width: 14px;
+  height: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -455,42 +455,56 @@ body {
 }
 
 .sidebar-bottom {
-  padding: 12px 8px;
+  padding: 7px;
   border-top: 1px solid var(--border-primary);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 3.5px;
 }
 
-.sidebar-toggle-btn {
+/* Footer control row: theme button on the left, collapse (panel icon) on the
+   right, both pushed to the right edge. Stacks vertically when collapsed. */
+.sidebar-footer-controls {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  gap: 3.5px;
+}
+
+.sidebar-collapsed .sidebar-footer-controls {
+  flex-direction: column;
   justify-content: center;
-  width: 100%;
-  padding: 8px;
-  border-radius: 8px;
+}
+
+.sidebar-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6.4px;
   border: none;
   background: none;
   color: var(--text-muted);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: color 0.2s ease, background 0.2s ease;
 }
 
-.sidebar-toggle-btn:hover {
+.sidebar-icon-btn:hover {
   color: var(--text-primary);
   background: var(--hover-bg);
 }
 
-.sidebar-toggle-btn:active {
-  transform: scale(0.92);
+.sidebar-icon-btn:active {
+  transform: scale(0.94);
 }
 
 .sidebar-user {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  border-radius: 8px;
+  gap: 7px;
+  padding: 5px 7px;
+  border-radius: 6.4px;
   cursor: pointer;
   transition: all 0.2s ease;
   border: none;
@@ -504,8 +518,8 @@ body {
 }
 
 .sidebar-user-avatar {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   border: 1px solid var(--border-primary);
   flex-shrink: 0;
