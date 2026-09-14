@@ -17,15 +17,16 @@ async function main(){
   const saved=new Set(status.items.map(i=>i.everfit_id));let done=saved.size,failed=0,pending=[];
   const plan=status.run.plan;await update({done,total:plan.length,failed});
   async function flush(){if(!pending.length)return;const result=await api({action:'batch',runId,captures:pending});done+=result.saved;failed+=result.failed.length;pending=[];await update({done,failed});}
+  await navigate('https://app.everfit.io/home/inbox');
   for(const client of plan){
     if((await job()).cancelRequested){await flush();await api({action:'finish',runId});await update({status:'interrupted',message:'Stopped. Press Sync to resume.'});return;}
     if(saved.has(client.id))continue;
     await update({message:`${client.owner} · ${client.name}`});
     try{
-      await navigate('https://app.everfit.io/home/inbox/'+client.id);
       const checkpoint=status.checkpoints.find(c=>c.everfit_id===client.id)?.checkpoint_id;
       const capture=await read('inbox',{...client,checkpoint});
       const next={...capture,id:client.id,owner:client.owner,capturedAt:new Date().toISOString()};
+      if(new TextEncoder().encode(JSON.stringify(next)).length>2700000)throw Error('History exceeds one batch; this client needs chunked backfill.');
       if(new TextEncoder().encode(JSON.stringify([...pending,next])).length>2700000)await flush();
       pending.push(next);if(pending.length>=10)await flush();
     }catch(e){failed++;await update({failed,message:`${client.name}: ${e.message}`});}
