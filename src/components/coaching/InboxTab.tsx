@@ -45,9 +45,9 @@ export default function InboxTab() {
   async function importFile(file: File) {
     setBusy(true);setError("");setNotice("");
     try {
-      if(file.size>2000000) throw new Error("Import exceeds 2 MB. Split captures into smaller files.");
+      if(file.size>3000000) throw new Error("Import exceeds 3 MB. Split captures into smaller files.");
       const response=await read("/api/coaching/inbox",{method:"POST",headers:{"Content-Type":"application/json"},body:await file.text()});
-      setNotice(response.runId?`Sync started. Run ID: ${response.runId}`:response.status?`Sync ${response.status}: ${response.complete}/${response.total} conversations verified.`:response.complete?"Messages saved; conversation coverage verified.":"Messages saved; more history or boundary verification is needed.");
+      setNotice(typeof response.saved==="number"?`Batch saved: ${response.saved} conversations; ${response.verified} verified; ${response.needsMore.length} need more history; ${response.failed.length} failed.${response.failed.length?` Retry: ${response.failed.map((f: {id: string})=>f.id).join(", ")}`:""}`:response.runId?`Sync started. Run ID: ${response.runId}`:response.status?`Sync ${response.status}: ${response.complete}/${response.total} conversations verified.`:response.complete?"Messages saved; conversation coverage verified.":"Messages saved; more history or boundary verification is needed.");
       await load();
     }catch(e){setError((e as Error).message);}finally{setBusy(false);}
   }
