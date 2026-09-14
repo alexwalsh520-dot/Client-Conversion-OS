@@ -141,7 +141,7 @@ function LeadCard({
         padding: "13px 14px",
         borderRadius: 8,
         border: "1px solid var(--border-subtle)",
-        borderLeft: `3px solid ${accent}`,
+        borderLeft: "1px solid var(--border-subtle)",
         background: "var(--bg-elevated)",
         minWidth: 0,
       }}

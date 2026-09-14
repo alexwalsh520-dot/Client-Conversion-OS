@@ -239,7 +239,7 @@ function Kpi({ label, value, highlight }: { label: string; value: string; highli
         borderRadius: 8,
         background: "var(--bg-elevated)",
         border: "1px solid var(--border-subtle)",
-        borderLeft: highlight ? "2px solid var(--accent)" : "1px solid var(--border-subtle)",
+        borderLeft: "1px solid var(--border-subtle)",
       }}
     >
       <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.6 }}>

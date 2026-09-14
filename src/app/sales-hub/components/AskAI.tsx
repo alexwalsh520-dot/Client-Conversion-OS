@@ -83,7 +83,7 @@ export default function AskAI() {
         style={{
           borderRadius: 12,
           border: "1px solid var(--border-subtle)",
-          borderLeft: "3px solid var(--accent)",
+          borderLeft: "1px solid var(--border-subtle)",
           overflow: "hidden",
         }}
       >

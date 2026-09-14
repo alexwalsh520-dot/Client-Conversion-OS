@@ -422,7 +422,7 @@ export default function WeeklyReport({ filters }: WeeklyReportProps) {
                 padding: 20,
                 background: "rgba(0,0,0,0.15)",
                 borderRadius: 12,
-                borderLeft: `3px solid ${activeTab === "marketing" ? "var(--accent)" : "var(--success)"}`,
+                borderLeft: "1px solid var(--border-subtle)",
                 maxHeight: 600,
                 overflowY: "auto",
               }}

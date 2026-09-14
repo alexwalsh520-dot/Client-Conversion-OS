@@ -755,7 +755,7 @@ function PreCallBriefsSection() {
                       padding: 16,
                       background: "rgba(0,0,0,0.2)",
                       borderRadius: 10,
-                      borderLeft: "3px solid var(--accent)",
+                      borderLeft: "1px solid var(--border-subtle)",
                     }}
                   >
                     <ReviewMarkdown content={brief} />

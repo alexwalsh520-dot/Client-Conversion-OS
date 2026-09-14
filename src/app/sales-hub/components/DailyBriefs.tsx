@@ -271,7 +271,7 @@ export default function DailyBriefs({ filters }: DailyBriefsProps) {
                       padding: 16,
                       background: "rgba(0,0,0,0.2)",
                       borderRadius: 12,
-                      borderLeft: "3px solid var(--accent)",
+                      borderLeft: "1px solid var(--border-subtle)",
                       maxHeight: 400,
                       overflowY: "auto",
                     }}

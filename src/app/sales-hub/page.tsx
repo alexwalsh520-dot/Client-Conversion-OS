@@ -63,7 +63,7 @@ function CollapsibleSection({
           borderRadius: 12,
           border: "1px solid var(--border-subtle)",
           overflow: "hidden",
-          borderLeft: open ? "3px solid var(--accent)" : "1px solid var(--border-subtle)",
+          borderLeft: "1px solid var(--border-subtle)",
           transition: "border-color 0.2s ease",
         }}
       >
