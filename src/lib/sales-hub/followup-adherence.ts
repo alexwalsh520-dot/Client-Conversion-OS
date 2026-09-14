@@ -61,7 +61,58 @@ function sanitizeSetterLabel(
 }
 
 const NEEDS_STALE_DAYS = 10;
+// Instagram's human-agent window: 7 days after the LEAD's last message, we
+// lose the ability to reply (owner, 2026-09-14: "only account for the people
+// within the last 7 days — after that we lose the ability to follow up").
+// No follow-up is owed — sent, missed, or queued — once that window closes.
+const FOLLOWUPABLE_DAYS = 7;
+const FOLLOWUPABLE_MS = FOLLOWUPABLE_DAYS * 24 * 3600 * 1000;
 const STOP_TAG_SUBSTRINGS = ["booked", "sold", "closed", "waiting"];
+
+// "Chat Closed" (or any other terminal tag) ends the follow-up obligation
+// (owner, 2026-09-14). Those tag events aren't wired as External Requests
+// yet, so for the NEEDS queue we check the lead's CURRENT ManyChat tags via
+// the API (no timestamps there — historical due points can't be re-dated,
+// they get exact once the External Request is wired). Cached, fail-open.
+const chatClosedCache = new Map<string, { closed: boolean; at: number }>();
+const CHAT_CLOSED_TTL_MS = 10 * 60 * 1000;
+const CHAT_CLOSED_CHECK_LIMIT = 150;
+const CHAT_CLOSED_CONCURRENCY = 8;
+
+function manychatKeyFor(clientKey: string): string | null {
+  const map: Record<string, string | undefined> = {
+    tyson_sonnek: process.env.MANYCHAT_API_KEY_TYSON,
+    keith_holland: process.env.MANYCHAT_API_KEY_KEITH,
+  };
+  return map[clientKey] || null;
+}
+
+async function subscriberChatClosed(clientKey: string, subscriberId: string): Promise<boolean> {
+  const now = Date.now();
+  const cached = chatClosedCache.get(subscriberId);
+  if (cached && now - cached.at < CHAT_CLOSED_TTL_MS) return cached.closed;
+  const key = manychatKeyFor(clientKey);
+  if (!key) return false;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 2500);
+    const res = await fetch(
+      `https://api.manychat.com/fb/subscriber/getInfo?subscriber_id=${encodeURIComponent(subscriberId)}`,
+      { headers: { Authorization: `Bearer ${key}` }, signal: ctrl.signal },
+    );
+    clearTimeout(timer);
+    if (!res.ok) return false;
+    const data = (await res.json()) as { data?: { tags?: { name?: string }[] } };
+    const closed = (data.data?.tags || []).some((tag) => {
+      const name = (tag.name || "").toLowerCase();
+      return STOP_TAG_SUBSTRINGS.some((sub) => name.includes(sub));
+    });
+    chatClosedCache.set(subscriberId, { closed, at: now });
+    return closed;
+  } catch {
+    return false; // ManyChat unreachable — keep the lead in the queue
+  }
+}
 
 export interface FollowupStage {
   stage: number;
@@ -313,6 +364,7 @@ export async function getFollowupAdherence(params: {
 
   const duePoints: DuePoint[] = [];
   const needsFollowup: NeedsFollowupRow[] = [];
+  const needsClientKey = new Map<string, string>(); // subscriberId -> manychat client key
   // For booking attribution: every SENT follow-up per lead.
   const sentBySubscriber = new Map<string, { stage: number; sentAtMs: number }[]>();
 
@@ -341,6 +393,11 @@ export async function getFollowupAdherence(params: {
     let anchorAt: string | null = null;
     let depth = 0;
     let lastFollowup: DuePoint | null = null;
+    // The lead's last inbound (falling back to the first loaded message)
+    // anchors the 7-day followupable window.
+    let lastInboundMs: number | null = null;
+    let firstMsgMs: number | null = null;
+    const followupableUntil = () => (lastInboundMs ?? firstMsgMs ?? 0) + FOLLOWUPABLE_MS;
 
     const stoppedBefore = (a: LeadAssignment, ms: number) => {
       const done = doneAtBySubscriber.get(a.subscriberId);
@@ -357,6 +414,7 @@ export async function getFollowupAdherence(params: {
       const { openAt, closeAt } = windowFor(anchorAt, stage);
       const closeMs = new Date(closeAt).getTime();
       if (beforeMs <= closeMs) return; // window hadn't lapsed yet — no miss
+      if (new Date(openAt).getTime() > followupableUntil()) return; // IG window closed — nothing was owed
       if (stoppedBefore(a, new Date(openAt).getTime())) return; // lead was done first
       if (!inMetricsRange(openAt)) return;
       duePoints.push({
@@ -373,8 +431,11 @@ export async function getFollowupAdherence(params: {
 
     for (const m of ordered) {
       if (!m.sent_at || !m.direction) continue;
+      const mMs = new Date(m.sent_at).getTime();
+      if (firstMsgMs === null && Number.isFinite(mMs)) firstMsgMs = mMs;
 
       if (m.direction === "inbound") {
+        if (Number.isFinite(mMs)) lastInboundMs = mMs;
         // The lead spoke: whatever follow-up they answered gets reply credit,
         // an un-followed lapsed window is a miss, and the chain resets.
         if (lastFollowup && !lastFollowup.replied) lastFollowup.replied = true;
@@ -408,7 +469,11 @@ export async function getFollowupAdherence(params: {
       }
 
       const stage = depth + 1;
-      if (stage <= MAX_FOLLOWUPS && !stoppedBefore(lead, new Date(m.sent_at).getTime())) {
+      if (
+        stage <= MAX_FOLLOWUPS &&
+        !stoppedBefore(lead, new Date(m.sent_at).getTime()) &&
+        new Date(windowFor(anchorAt, stage).openAt).getTime() <= followupableUntil()
+      ) {
         const { openAt } = windowFor(anchorAt, stage);
         let status: "in" | "off";
         if (stage === 1) {
@@ -446,11 +511,13 @@ export async function getFollowupAdherence(params: {
       const closeMs = new Date(closeAt).getTime();
       const anchorMs = new Date(anchorAt).getTime();
       const stopped = stoppedBefore(lead, nowMs);
+      const followupable = openMs <= followupableUntil();
 
-      if (!stopped && nowMs > closeMs) {
+      if (!stopped && followupable && nowMs > closeMs) {
         recordMissedIfLapsed(lead, nowMs);
       }
-      if (!stopped && nowMs >= openMs && anchorMs >= staleCutoffMs) {
+      if (!stopped && followupable && nowMs <= followupableUntil() && nowMs >= openMs && anchorMs >= staleCutoffMs) {
+        needsClientKey.set(lead.subscriberId, lead.client.key);
         needsFollowup.push({
           client: lead.client.id,
           clientLabel: lead.client.label,
@@ -502,10 +569,26 @@ export async function getFollowupAdherence(params: {
 
   needsFollowup.sort((a, b) => b.overdueMinutes - a.overdueMinutes || a.dueAt.localeCompare(b.dueAt));
 
+  // Live "Chat Closed" check on the queue head — closed chats owe nothing.
+  const closedIds = new Set<string>();
+  const toCheck = needsFollowup.slice(0, CHAT_CLOSED_CHECK_LIMIT);
+  const checkQueue = [...new Set(toCheck.map((r) => r.subscriberId))];
+  await Promise.all(
+    Array.from({ length: CHAT_CLOSED_CONCURRENCY }, async () => {
+      for (;;) {
+        const id = checkQueue.shift();
+        if (!id) return;
+        const clientKey = needsClientKey.get(id) || "tyson_sonnek";
+        if (await subscriberChatClosed(clientKey, id)) closedIds.add(id);
+      }
+    }),
+  );
+  const openNeeds = needsFollowup.filter((r) => !closedIds.has(r.subscriberId));
+
   return {
     team: summarizeGroup("team", "Team", duePoints, bookedByStageTeam),
     setters,
-    needsFollowup: needsFollowup.slice(0, 100),
+    needsFollowup: openNeeds.slice(0, 100),
     maxFollowups: MAX_FOLLOWUPS,
     asOf: iso(nowMs),
     cadence: "FU1: 15–60 working min · FU2+: every 24h (22–26h window) · 11am–11pm ET",

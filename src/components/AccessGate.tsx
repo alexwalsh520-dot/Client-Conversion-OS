@@ -132,6 +132,13 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
     // enforced by /api/public/setters/<token>). Setters open it at the midday
     // check-in. No CCOS login.
     pathname.startsWith("/p/setters/") ||
+    // /p/setter-view/<token> is the public, no-login per-setter view of the
+    // Sales Hub (Today/Yesterday only). Token-gated server-side.
+    pathname.startsWith("/p/setter-view/") ||
+    // /p/setter-board/<token> is the public, no-login setter leaderboard.
+    // Token-gated server-side (was missing here — logged-out viewers got
+    // bounced to /login by the client gate).
+    pathname.startsWith("/p/setter-board/") ||
     // /p/ads-v2/<token> is a public, no-login client share link for the Ads v2
     // tab. It resolves the token server-side to ONE client and shows only that
     // client's Ads v2 view (data hard-scoped by /api/public/ads-v2/<token>).
