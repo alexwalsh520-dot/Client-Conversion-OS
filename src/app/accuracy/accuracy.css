@@ -22,7 +22,7 @@
   --red-dim: #a36560;
   --amber: #d4b27a;
   --amber-dim: #8a7348;
-  --gold: #d4b27a;
+  --gold: #3a7bea;
   --mono: "JetBrains Mono", ui-monospace, monospace;
 
   font-family: "Inter", system-ui, sans-serif;
@@ -114,7 +114,7 @@ html.light .acc {
 .acc .acc-run:hover:not(:disabled) {
   color: var(--text-1);
   border-color: var(--gold);
-  box-shadow: 0 0 0 3px rgba(212, 178, 122, 0.12);
+  box-shadow: 0 0 0 3px rgba(58, 123, 234, 0.12);
 }
 
 .acc .acc-run:disabled {
@@ -190,7 +190,7 @@ html.light .acc {
 
 .acc .acc-dot.amber {
   background: var(--amber);
-  box-shadow: 0 0 0 3px rgba(212, 178, 122, 0.14);
+  box-shadow: 0 0 0 3px rgba(58, 123, 234, 0.14);
 }
 
 .acc .acc-dot.red {

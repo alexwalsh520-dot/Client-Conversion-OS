@@ -255,8 +255,8 @@ body {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  margin: 7px 7px 7px 0;
-  min-height: calc(100vh - 14px);
+  margin: 8px 8px 8px 0;
+  min-height: calc(100vh - 16px);
   background: var(--shell-card);
   border: 1px solid var(--shell-card-border);
   border-radius: 12px;
@@ -1771,10 +1771,10 @@ textarea.input-field {
   }
 
   html.force-desktop .app-shell {
-    margin: 7px 7px 7px 0;
+    margin: 8px 8px 8px 0;
     border: 1px solid var(--shell-card-border);
     border-radius: 12px;
-    min-height: calc(100vh - 14px);
+    min-height: calc(100vh - 16px);
   }
 
   /* ── Metric grids: stack to 2 columns ── */

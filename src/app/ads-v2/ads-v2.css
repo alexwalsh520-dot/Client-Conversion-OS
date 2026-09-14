@@ -28,8 +28,8 @@
   --green-dim: #4f9b76;
   --red: #e89a94;
   --red-dim: #a36560;
-  --gold: #d4b27a;
-  --gold-dim: #8a7348;
+  --gold: #3a7bea;
+  --gold-dim: #2b5cb0;
   --blue: #7aa7d4;
   --mono: "JetBrains Mono", ui-monospace, monospace;
 }
@@ -64,7 +64,7 @@ html.light .dm-overlay {
   --red: #c0504a;
   --red-dim: #cf8b86;
   --gold: #175fc7;
-  --gold-dim: #b89a6a;
+  --gold-dim: #8fb4ee;
   --blue: #4f7fb0;
 }
 
@@ -1416,7 +1416,7 @@ html.light .dm-overlay {
 }
 .adsv2 .metric-card-shell.drop-target .panel {
   border-color: var(--gold-dim);
-  box-shadow: 0 0 0 1px rgba(212, 178, 122, 0.18);
+  box-shadow: 0 0 0 1px rgba(58, 123, 234, 0.18);
 }
 .adsv2 .metric-floating-card {
   position: fixed;
