@@ -4,7 +4,7 @@ Coaching → Inbox reads durable one-to-one conversation messages. This is separ
 
 ## Storage and access
 
-Migration `20260914092850_everfit_inbox.sql` (followed by `20260914094103_everfit_inbox_source_order.sql`) adds conversations, messages, sync runs and per-run items. It was applied to CCOS project `bostjayrguulwaltnbgt`. All tables have RLS and revoke PUBLIC/anon/authenticated access. NextAuth protects the `/api/coaching/inbox` route, which uses the existing server-only Supabase client. Administrators import; coaches read only explicitly mapped coach identities with a verified client link and matching current roster assignment. Unlinked/unknown-owner conversations stay admin-only. Client matches require a unique normalized exact email, never a name. Identity changes fail closed.
+Migration `20260914092850_everfit_inbox.sql` (followed by `20260914094103_everfit_inbox_source_order.sql`) adds conversations, messages, sync runs and per-run items. It was applied to CCOS project `bostjayrguulwaltnbgt`. All tables have RLS and revoke PUBLIC/anon/authenticated access. NextAuth protects the `/api/coaching/inbox` route, which uses the existing server-only Supabase client. Administrators import; all authenticated users with Coaching access can read the shared team inbox, including unlinked clients. This is the explicit team-sharing policy requested for Inbox and does not change weekly report permissions. Client matches require a unique normalized exact email, never a name. Identity changes fail closed.
 
 Messages are keyed by `(everfit_id,message_id)`. Repeated captures update the same observed message rather than append duplicates. Conversation metadata, message upserts and capture status are committed in one transaction. Missing messages are never treated as deletions. Captures from older than the last observation are rejected. Exact historical revisions and deletion detection are not implemented.
 
@@ -22,7 +22,7 @@ Messages are keyed by `(everfit_id,message_id)`. Repeated captures update the sa
 
 ## Current limits
 
-The initial UI supports coach filtering, client/coach search and paginated messages. Messages are ordered by native message ID using the C collation. Everfit’s rendered inbox was checked against its visible chronology; mixed-case keys must not use locale collation. Displayed relative dates are stored as observed, not parsed into invented absolute times. Attachment presence is retained but attachment files, reactions, read receipts, sender display names and transcripts are not copied yet. This is a text inbox foundation, not full Everfit visual parity. The existing browser extension still targets weekly summaries; it does not automatically route its captures to Inbox. Codex can import reviewed captures using the separate authenticated sync page. No scheduled/cloud scraper is enabled.
+The initial UI supports coach filtering, client/coach search and paginated messages. Messages are ordered by native message ID using the C collation. Everfit’s rendered inbox was checked against its visible chronology; mixed-case keys must not use locale collation. Displayed relative dates are stored as observed, not parsed into invented absolute times. Attachment presence is retained but attachment files, reactions, read receipts, sender display names and transcripts are not copied yet. This is a text inbox foundation, not full Everfit visual parity. The existing browser extension still targets weekly summaries; it does not automatically route its captures to Inbox. Codex can import reviewed captures using the separate authenticated sync page. The Inbox Sync button uses the version 0.2.0 Chrome reader. It enumerates the entire team roster and imports conversations plus activity in batches. The reader needs one-time installation; no cloud scraper is enabled.
 
 ## Checks
 
@@ -43,3 +43,11 @@ The connected SQL tool uses `supabase_read_only_user`; even direct INSERT is rej
 For token-efficient browser work, keep captures in the browser-tool session and transfer the serialized batch directly into `/coaching/inbox-sync` → **Sync payload** → **Submit batch**. Return only counts/checkpoints while collecting. Read rendered Everfit DOM through supported browser APIs; never extract cookies or call private Everfit APIs. The reusable `ccos-inbox-sync` skill documents this workflow.
 
 The Inbox UI uses a compact coach filter and search within its conversation sidebar, date-separated chat bubbles, and a mobile back navigation. Relative source dates are displayed against the message observation date so they do not remain “Today” forever.
+
+## Team sync and activity
+
+Migration `20260914103348_inbox_activity_snapshot.sql` adds a per-client recent-activity snapshot. `activityCaptured:true` replaces that snapshot with `updates` and timestamps it; absent activity never clears existing data. The read API returns it with the conversation.
+
+`Sync all coaches` talks to the Chrome reader through the existing origin-scoped bridge. The new inbox job is separate from weekly reports. Download `/downloads/ccos-everfit-sync.zip`, unzip, and load the extracted directory using Chrome's Load unpacked control. No cookie or additional host permissions were added. The reader requires an administrator CCOS session and an Everfit session with access to each coach. Missing client/inbox access is recorded as a failure, not as an empty inbox. Team members can read all conversations; import is admin-only.
+
+The initial run also registers the complete discovered roster in the UI; clients awaiting capture are explicitly marked Not synced yet. Full-history reads stop at a stored checkpoint or repeated stable top-of-history checks. Large histories beyond the capture limit remain partial. Activity is a snapshot with relative source labels and an as-of time, not an inferred complete event history.

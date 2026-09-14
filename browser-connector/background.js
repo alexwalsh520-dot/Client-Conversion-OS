@@ -12,6 +12,28 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
   )
     return;
   (async () => {
+    if(message.command?.startsWith("INBOX_")) {
+      const {inboxJob:job}=await chrome.storage.session.get("inboxJob");
+      if(message.command==="INBOX_STATUS") {
+        if(job?.runnerId&&["running","starting"].includes(job.status)&&!(await chrome.tabs.get(job.runnerId).catch(()=>null))) {
+          const next={...job,status:"interrupted",message:"Reader closed. Press Sync to resume."};await chrome.storage.session.set({inboxJob:next});return {connected:true,job:next};
+        }
+        return {connected:true,job:job??null};
+      }
+      if(message.command==="INBOX_CANCEL"){if(job)await chrome.storage.session.set({inboxJob:{...job,cancelRequested:true}});return {connected:true};}
+      if(message.command==="INBOX_START") {
+        if(starting)return {connected:true};starting=true;
+        try {
+          if(job?.runnerId&&["running","starting"].includes(job.status)&&await chrome.tabs.get(job.runnerId).catch(()=>null))return {connected:true,job};
+          const next={status:"starting",ccosTab:sender.tab.id,runId:job?.status==="interrupted"?job.runId:null,done:0,total:0,message:"Discovering all coaches…",cancelRequested:false};
+          await chrome.storage.session.set({inboxJob:next});
+          const tab=await chrome.tabs.create({url:chrome.runtime.getURL("inbox-runner.html"),active:false});
+          const fresh=(await chrome.storage.session.get("inboxJob")).inboxJob;
+          await chrome.storage.session.set({inboxJob:{...fresh,runnerId:tab.id}});return {connected:true};
+        }finally{starting=false;}
+      }
+      return {error:"Unknown inbox command."};
+    }
     const { job } = await chrome.storage.session.get("job");
     if (message.command === "PING")
       return { connected: true, version: chrome.runtime.getManifest().version };

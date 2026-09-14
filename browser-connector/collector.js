@@ -144,7 +144,9 @@
     );
   }
   function selectedCoach() {
-    return text(coachControl()?.querySelector("p"));
+    const selected=text(coachControl()?.querySelector("p"));
+    if(selected==="Your Inbox")return text(document.querySelector(".client-detail-avatar-wrap"))||selected;
+    return selected;
   }
   function room(id) {
     return [...document.querySelectorAll(".inbox-item")].find((el) =>
@@ -258,6 +260,8 @@
       "Conversation identity could not be verified.",
     );
     await sleep(700);
+    const newestReached=container.scrollHeight-container.clientHeight-container.scrollTop<16;
+    let historyStartReached=false;
     const messages = new Map();
     let stable = 0,
       previous = "",
@@ -272,7 +276,7 @@
         throw new Error("Everfit page changed during capture.");
       const rows = messageRows(container);
       for (const m of rows) messages.set(m.id, m);
-      boundary = rows.some(
+      boundary = client.inbox ? !!client.checkpoint && rows.some(m=>m.id===client.checkpoint) : rows.some(
         (m) =>
           /^\w+,/.test(m.date) &&
           Number.isFinite(Date.parse(m.date)) &&
@@ -281,7 +285,10 @@
       if (boundary) break;
       const signature = rows.map((m) => m.id).join(",");
       stable = signature === previous ? stable + 1 : 0;
-      if (stable >= 4) break;
+      if (stable >= 4) {
+        historyStartReached=!!client.inbox && container.scrollTop===0 && !container.querySelector('[role="progressbar"],.loading,.spinner');
+        break;
+      }
       previous = signature;
       container.scrollTop = 0;
       await sleep(1000);
@@ -296,13 +303,23 @@
         a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
       ),
       historyComplete: boundary,
+      newestReached,
+      historyStartReached,
       notes: [
-        boundary
+        client.inbox ? (historyStartReached?"Reached the oldest loaded messages after repeated top-of-history checks.":boundary?"Reached the saved checkpoint.":"History limit reached; older messages remain.") : boundary
           ? "Captured messages reach before the weekly review window."
           : "Start of history could not be verified; do not conclude no retention outreach.",
         "Everfit display dates may use the viewer or client timezone; attachments were not transcribed.",
       ],
     };
+  }
+  async function inboxCapture(client) {
+    // Recent messages for every client first; later runs overlap the saved checkpoint.
+    const conversationResult=await conversation({...client,inbox:true});
+    const panel=document.querySelector(".update-panel .panel-body");
+    if(!panel)throw new Error("Recent activity panel did not load; retry this client.");
+    const updates=updateRows();
+    return {...conversationResult,updates,activityCaptured:!!panel,email:document.querySelector('a[href^="mailto:"]')?.getAttribute("href")?.slice(7).split("?")[0]||null,newestReached:conversationResult.newestReached,historyStartReached:conversationResult.historyStartReached,notes:conversationResult.notes};
   }
   if (typeof module !== "undefined")
     module.exports = { messageRows, rosterRows, roster };
@@ -310,7 +327,7 @@
   chrome.runtime.onMessage.addListener((message, sender, reply) => {
     if (
       sender.id !== chrome.runtime.id ||
-      !sender.url?.startsWith(chrome.runtime.getURL("runner.html")) ||
+      !["runner.html","inbox-runner.html"].some(p=>sender.url?.startsWith(chrome.runtime.getURL(p))) ||
       message.type !== "EVERFIT_READ"
     )
       return;
@@ -318,7 +335,7 @@
       reply({ error: "Everfit reader is busy." });
       return;
     }
-    if (!["roster", "profile", "conversation", "ping"].includes(message.action))
+    if (!["roster", "profile", "conversation", "inbox", "ping"].includes(message.action))
       return;
     busy = true;
     (async () => {
@@ -329,6 +346,7 @@
         typeof message.client?.owner !== "string"
       )
         throw new Error("Invalid client identity.");
+      if(message.action === "inbox")return await inboxCapture(message.client);
       return message.action === "profile"
         ? await profile(message.client)
         : await conversation(message.client);

@@ -1,11 +1,19 @@
+import { auth } from "@/auth";
+import { hasInboxAccess } from "@/lib/inbox/access";
 import { getServiceSupabase } from "@/lib/supabase";
-import { requireAccess, requireSameOrigin, HttpError } from "@/lib/everfit/server";
+import { requireSameOrigin, HttpError } from "@/lib/everfit/server";
 import { parseInboxCapture, parseInboxBatch, MAX_INBOX_BYTES, parseSyncPlan } from "@/lib/inbox/validation";
 import { record } from "@/lib/everfit/validation";
 import { everfitCoach } from "@/lib/everfit/owners";
 import type { InboxConversation } from "@/lib/inbox/types";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+async function requireAccess() {
+  const session=await auth();
+  if(!session?.user?.email)throw new HttpError("Please sign in to CCOS.",401);
+  if(!hasInboxAccess(session.user))throw new HttpError("Coaching access is required.",403);
+  return {email:session.user.email.trim().toLowerCase(),admin:session.user.role==="admin"};
+}
 function fail(error: unknown) {
   return Response.json({ error: error instanceof HttpError ? error.message : "Inbox storage is unavailable. Connect the CCOS Supabase project and apply the inbox migration." }, { status: error instanceof HttpError ? error.status : 503 });
 }
@@ -30,19 +38,11 @@ export async function GET(request: Request) {
     }
     let query = db.from("everfit_inbox_conversations").select("*").order("everfit_id");
     if (id) query = query.eq("everfit_id",id);
-    if (!access.admin) query = query.in("coach_name",access.coaches);
     const offset = Number(params.get("offset") ?? 0);
     if (!Number.isSafeInteger(offset) || offset<0) throw new HttpError("Invalid offset.",400);
     const result = await query.range(id?0:offset,id?0:offset+99);
     if (result.error) throw result.error;
-    let conversations = result.data as InboxConversation[];
-    if (!access.admin) {
-      const ids = conversations.flatMap(c=>c.client_id===null?[]:[c.client_id]);
-      const current = ids.length ? await db.from("clients").select("id,coach_name").in("id",ids) : {data:[],error:null};
-      if (current.error) throw current.error;
-      // Unlinked records are management-only. Recheck transfers against the current roster.
-      conversations = conversations.filter(c=>current.data?.some(l=>l.id===c.client_id && l.coach_name===c.coach_name));
-    }
+    const conversations = result.data as InboxConversation[];
     if (id) {
       if (!conversations.length) throw new HttpError("Conversation not found.",404);
       let messages = db.from("everfit_inbox_messages").select("message_id,sender,text,date,time,attachments,observed_at").eq("everfit_id",id).order("message_id",{ascending:false}).limit(100);
@@ -66,12 +66,25 @@ export async function POST(request: Request) {
     let body: Record<string,unknown>;
     try { body=record(JSON.parse(raw)); } catch { throw new HttpError("Invalid JSON.",400); }
     const db=getServiceSupabase();
+    if(body.action==="preflight") return reply({ok:true});
+    if(body.action==="status") {
+      if(typeof body.runId!=="string")throw new HttpError("Invalid sync ID.",400);
+      const run=await db.from("everfit_inbox_runs").select("*").eq("id",body.runId).eq("actor",access.email).single();
+      if(run.error)throw run.error;
+      const items=await db.from("everfit_inbox_items").select("everfit_id,complete,captured_at").eq("run_id",body.runId).limit(2000);
+      if(items.error)throw items.error;
+      const checkpoints=await db.from("everfit_inbox_conversations").select("everfit_id,checkpoint_id,history_complete").limit(2000);
+      if(checkpoints.error)throw checkpoints.error;
+      return reply({run:run.data,items:items.data,checkpoints:checkpoints.data});
+    }
     if(body.action==="start") {
       let plan;
       try { plan=parseSyncPlan(body.plan); } catch(e) { throw new HttpError((e as Error).message,400); }
       if(typeof body.rosterComplete!=="boolean") throw new HttpError("Confirm whether the entire Everfit roster was enumerated.",400);
       const saved=await db.from("everfit_inbox_runs").insert({actor:access.email,plan,roster_complete:body.rosterComplete}).select("id").single();
       if(saved.error) throw saved.error;
+      const seeded=await db.from("everfit_inbox_conversations").upsert(plan.map(c=>({everfit_id:c.id,name:c.name,owner:c.owner,coach_name:everfitCoach(c.owner)})),{onConflict:"everfit_id"});
+      if(seeded.error)throw seeded.error;
       return reply({runId:saved.data.id});
     }
     if(typeof body.runId!=="string" || !/^[a-f0-9-]{36}$/.test(body.runId)) throw new HttpError("Invalid sync ID.",400);

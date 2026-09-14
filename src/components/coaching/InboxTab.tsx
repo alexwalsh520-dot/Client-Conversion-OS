@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, MessageSquare, Search } from "lucide-react";
+import InboxSync from "./InboxSync";
 import styles from "./inbox.module.css";
 import type { InboxConversation, InboxMessage } from "@/lib/inbox/types";
 async function read(url: string, init?: RequestInit) {
@@ -26,6 +27,7 @@ export default function InboxTab() {
   const [search,setSearch]=useState("");
   const [error,setError]=useState("");
   const [busy,setBusy]=useState(false);
+  const [admin,setAdmin]=useState(false);
   const version=useRef(0);
   const load=useCallback(async()=>{
     setBusy(true);setError("");
@@ -33,7 +35,7 @@ export default function InboxTab() {
       const all: InboxConversation[]=[];let offset: number|null=0;
       while(offset!==null) {
         const page=await read(`/api/coaching/inbox?offset=${offset}`);
-        all.push(...page.conversations);offset=page.nextOffset;
+        all.push(...page.conversations);offset=page.nextOffset;setAdmin(page.admin);
       }
       setConversations(all);
     } catch(e) {setError((e as Error).message);} finally {setBusy(false);}
@@ -62,6 +64,7 @@ export default function InboxTab() {
           <option value="">All coaches</option>{coaches.map(c=><option key={c}>{c}</option>)}
         </select>
       </header>
+      <InboxSync onSaved={load} admin={admin}/>
       <label className={styles.search}><Search size={15}/><input aria-label="Search conversations" placeholder="Search" value={search} onChange={e=>setSearch(e.target.value)}/></label>
       {error&&<p role="alert" className={styles.error}>{error}</p>}
       <div className={styles.conversations}>
@@ -69,7 +72,7 @@ export default function InboxTab() {
         {!busy&&!filtered.length&&<p className={styles.empty}>{search||coach?"No matches":"No conversations yet"}</p>}
         {filtered.map(c=><button key={c.everfit_id} onClick={()=>void open(c)} aria-pressed={selected?.everfit_id===c.everfit_id} className={styles.conversation}>
           <span className={styles.avatar}>{c.name.split(" ").map(n=>n[0]).slice(0,2).join("")}</span>
-          <span className={styles.conversationText}><span className={styles.row}><strong>{c.name}</strong></span><span className={styles.preview}>{c.coach_name||c.owner}</span></span>
+          <span className={styles.conversationText}><span className={styles.row}><strong>{c.name}</strong></span><span className={styles.preview}>{c.coach_name||c.owner}{!c.last_captured_at?" · Not synced yet":""}</span></span>
         </button>)}
       </div>
     </aside>
@@ -77,6 +80,7 @@ export default function InboxTab() {
       {!selected?<div className={styles.blank}><MessageSquare size={28} strokeWidth={1.3}/><p>Select a conversation</p></div>:<>
         <header className={styles.chatHeader}><button aria-label="Back to conversations" className={styles.back} onClick={()=>{setSelected(null);version.current++;}}><ArrowLeft size={18}/></button><div><h3>{selected.name}</h3><span>{selected.coach_name||selected.owner}</span></div></header>
         <div className={styles.messages}>
+          {!messages.length&&<p className={styles.empty}>{selected.last_captured_at?"No messages captured":"Waiting for sync"}</p>}
           {before&&<button className={styles.older} onClick={()=>void open(selected,true)}>Earlier messages</button>}
           {messages.map((m,i)=><div key={m.message_id}>
             {(i===0||messageDate(messages[i-1])!==messageDate(m))&&<div className={styles.date}>{messageDate(m)}</div>}
@@ -89,5 +93,6 @@ export default function InboxTab() {
         </div>
       </>}
     </div>
+    {selected&&<aside className={styles.activity}><h3>Recent activity</h3>{selected.activity_captured_at&&<p className={styles.activityStamp}>As of {new Date(selected.activity_captured_at).toLocaleString()}</p>}{!selected.activity_captured_at?<p className={styles.empty}>Waiting for sync</p>:!selected.recent_activity?.length?<p className={styles.empty}>No recent activity</p>:<ul>{selected.recent_activity.map((a,i)=><li key={i}><p>{a.text}</p><time>{a.age} at sync</time></li>)}</ul>}</aside>}
   </section>;
 }
