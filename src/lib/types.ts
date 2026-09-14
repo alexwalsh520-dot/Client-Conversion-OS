@@ -129,6 +129,13 @@ export interface CoachMeeting {
   meetingDate: string;
   durationMinutes: number;
   notes: string;
+  /** Fathom recording URL. Optional but highly encouraged; qualifies the
+   *  meeting for the +5-per-meeting Sunday-report score. Unique across all
+   *  meetings — the API returns a 409 if a duplicate is submitted. */
+  fathomLink?: string | null;
+  /** When the Fathom link was first set on this row. Only meetings whose
+   *  link was set inside the report's week window contribute to the score. */
+  fathomLinkAddedAt?: string | null;
   createdAt?: string;
 }
 

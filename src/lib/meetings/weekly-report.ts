@@ -20,6 +20,10 @@ import { openDmChannel, postBlocks, ADMIN_SLACK_USER_ID } from "@/lib/slack/coac
 const PKT_OFFSET_MS = 5 * 60 * 60 * 1000; // UTC+5
 const DAY_MS = 24 * 60 * 60 * 1000;
 const LAST_SENT_KEY = "meetings_report_last_week_start";
+/** Score awarded per qualifying meeting (has a Fathom link that was added
+ *  inside this report's week window). Was mentally +3, formalized to +5
+ *  per MAS on 2026-09-14 alongside the Fathom-link-required rule. */
+const SCORE_PER_QUALIFYING_MEETING = 5;
 
 // Calendar date (YYYY-MM-DD) in Pakistan time for a UTC instant (ms).
 function pktDateStr(instantMs: number): string {
@@ -32,7 +36,19 @@ export interface MeetingsWeek {
   startDate: string; // PKT YYYY-MM-DD (Monday)
   endDate: string; // PKT YYYY-MM-DD (Sunday)
   total: number;
-  perCoach: { coach: string; count: number }[];
+  /** Number of meetings this week whose Fathom link was set within the
+   *  window — these are the ones that contribute to the score. Total ≥
+   *  scored, since coaches can log a meeting without a Fathom link and
+   *  it still shows in the total. */
+  scored: number;
+  perCoach: {
+    coach: string;
+    count: number;
+    /** Meetings by this coach with a Fathom link added inside the week. */
+    scoredCount: number;
+    /** scoredCount × SCORE_PER_QUALIFYING_MEETING. */
+    score: number;
+  }[];
 }
 
 // The most recently COMPLETED Mon–Sun week, in PKT, relative to `now`.
@@ -64,29 +80,95 @@ export async function gatherMeetingsWeek(now: Date = new Date()): Promise<Meetin
   const { startMs, endMs, startDate, endDate } = getReportWindow(now);
   const db = getServiceSupabase();
 
-  const { data, error } = await db
-    .from("coach_meetings")
-    .select("coach_name, created_at")
-    .gte("created_at", new Date(startMs).toISOString())
-    .lt("created_at", new Date(endMs).toISOString());
+  // Pull every meeting whose row was CREATED inside the window (unchanged
+  // from before — this is the "total meetings logged this week" number)
+  // plus every meeting whose fathom_link was ADDED inside the window
+  // (these earn the +5 score, even if the meeting itself was logged in
+  // a previous week). Union client-side so a meeting logged AND
+  // fathom-linked in the same week is only counted once.
+  const startIso = new Date(startMs).toISOString();
+  const endIso = new Date(endMs).toISOString();
 
-  if (error) {
-    console.error("[meetings/weekly-report] query failed:", error.message);
-    return { startMs, endMs, startDate, endDate, total: 0, perCoach: [] };
+  const [createdRes, fathomRes] = await Promise.all([
+    db
+      .from("coach_meetings")
+      .select("id, coach_name, created_at, fathom_link, fathom_link_added_at")
+      .gte("created_at", startIso)
+      .lt("created_at", endIso),
+    db
+      .from("coach_meetings")
+      .select("id, coach_name, created_at, fathom_link, fathom_link_added_at")
+      .not("fathom_link", "is", null)
+      .gte("fathom_link_added_at", startIso)
+      .lt("fathom_link_added_at", endIso),
+  ]);
+
+  if (createdRes.error || fathomRes.error) {
+    console.error(
+      "[meetings/weekly-report] query failed:",
+      (createdRes.error ?? fathomRes.error)?.message,
+    );
+    return { startMs, endMs, startDate, endDate, total: 0, scored: 0, perCoach: [] };
   }
 
-  const rows = data ?? [];
-  const counts = new Map<string, number>();
-  for (const r of rows) {
-    const coach = (r.coach_name as string | null)?.trim() || "Unassigned";
-    counts.set(coach, (counts.get(coach) ?? 0) + 1);
+  type Row = {
+    id: number;
+    coach_name: string | null;
+    created_at: string;
+    fathom_link: string | null;
+    fathom_link_added_at: string | null;
+  };
+  const byId = new Map<number, Row>();
+  for (const r of (createdRes.data ?? []) as Row[]) byId.set(r.id, r);
+  for (const r of (fathomRes.data ?? []) as Row[]) byId.set(r.id, r);
+
+  const perCoachAgg = new Map<
+    string,
+    { count: number; scoredCount: number }
+  >();
+  let total = 0;
+  let scored = 0;
+
+  for (const r of byId.values()) {
+    const coach = (r.coach_name ?? "").trim() || "Unassigned";
+    const bucket = perCoachAgg.get(coach) ?? { count: 0, scoredCount: 0 };
+
+    // "Logged this week" — counts toward the total headline.
+    const loggedThisWeek =
+      new Date(r.created_at).getTime() >= startMs &&
+      new Date(r.created_at).getTime() < endMs;
+    if (loggedThisWeek) {
+      bucket.count += 1;
+      total += 1;
+    }
+
+    // "Fathom-linked within this week" — earns the +5 score.
+    const fathomStampedThisWeek =
+      !!r.fathom_link &&
+      !!r.fathom_link_added_at &&
+      new Date(r.fathom_link_added_at).getTime() >= startMs &&
+      new Date(r.fathom_link_added_at).getTime() < endMs;
+    if (fathomStampedThisWeek) {
+      bucket.scoredCount += 1;
+      scored += 1;
+    }
+
+    perCoachAgg.set(coach, bucket);
   }
 
-  const perCoach = [...counts.entries()]
-    .map(([coach, count]) => ({ coach, count }))
-    .sort((a, b) => b.count - a.count || a.coach.localeCompare(b.coach));
+  const perCoach = [...perCoachAgg.entries()]
+    .map(([coach, agg]) => ({
+      coach,
+      count: agg.count,
+      scoredCount: agg.scoredCount,
+      score: agg.scoredCount * SCORE_PER_QUALIFYING_MEETING,
+    }))
+    // Rank by score desc, then raw count desc, then name for stability.
+    .sort(
+      (a, b) => b.score - a.score || b.count - a.count || a.coach.localeCompare(b.coach),
+    );
 
-  return { startMs, endMs, startDate, endDate, total: rows.length, perCoach };
+  return { startMs, endMs, startDate, endDate, total, scored, perCoach };
 }
 
 // Render a "Jun 15 – Jun 21, 2026" style range from two YYYY-MM-DD strings.
@@ -103,6 +185,7 @@ function formatRange(startDate: string, endDate: string): string {
 
 export function buildMeetingsReportBlocks(week: MeetingsWeek): unknown[] {
   const range = formatRange(week.startDate, week.endDate);
+  const totalPossibleScore = week.scored * SCORE_PER_QUALIFYING_MEETING;
 
   const blocks: unknown[] = [
     {
@@ -111,16 +194,27 @@ export function buildMeetingsReportBlocks(week: MeetingsWeek): unknown[] {
     },
     {
       type: "context",
-      elements: [{ type: "mrkdwn", text: `${range}  ·  counted by date logged` }],
+      elements: [{ type: "mrkdwn", text: `${range}  ·  score = ${SCORE_PER_QUALIFYING_MEETING} per Fathom-linked meeting` }],
     },
     {
       type: "section",
-      text: { type: "mrkdwn", text: `*Total meetings logged this week:* ${week.total}` },
+      fields: [
+        { type: "mrkdwn", text: `*Meetings logged*\n${week.total}` },
+        { type: "mrkdwn", text: `*Fathom-scored*\n${week.scored}  (${totalPossibleScore} pts)` },
+      ],
     },
   ];
 
   if (week.perCoach.length > 0) {
-    const lines = week.perCoach.map((c) => `• *${c.coach}* — ${c.count}`).join("\n");
+    // Show each coach: score in bold, meetings logged + how many had Fathom
+    // links added this week in the smaller context line.
+    const lines = week.perCoach
+      .map((c) => {
+        const scoreStr = `*${c.score} pts*`;
+        const detail = `${c.count} logged · ${c.scoredCount} with Fathom this week`;
+        return `• *${c.coach}* — ${scoreStr}\n   _${detail}_`;
+      })
+      .join("\n");
     blocks.push({ type: "divider" });
     blocks.push({
       type: "section",

@@ -422,6 +422,8 @@ export async function getMeetings(): Promise<CoachMeeting[]> {
       meetingDate: row.meeting_date || "",
       durationMinutes: row.duration_minutes || 0,
       notes: row.notes || "",
+      fathomLink: row.fathom_link || null,
+      fathomLinkAddedAt: row.fathom_link_added_at || null,
       createdAt: row.created_at,
     }));
   } catch {

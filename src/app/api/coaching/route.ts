@@ -417,6 +417,38 @@ export async function POST(req: NextRequest) {
 
       // ---- Coach Meetings ----
       case "upsert_meeting": {
+        // Normalize the incoming Fathom link once. Empty string is treated
+        // the same as absent (so a coach clearing the field means "remove
+        // the link" and won't clash with the unique constraint).
+        const incomingFathomRaw = (payload.fathomLink ?? "").toString().trim();
+        const incomingFathom = incomingFathomRaw.length > 0 ? incomingFathomRaw : null;
+
+        // For updates, look up the prior row so we know whether the fathom
+        // link is actually changing. The added_at timestamp should stamp
+        // only on transition NULL -> value or value -> different value,
+        // never on a no-op re-save (which would otherwise let coaches
+        // "refresh" a stale link into the current week).
+        let prevFathomLink: string | null = null;
+        let prevFathomAddedAt: string | null = null;
+        if (payload.id) {
+          const { data: prev } = await db
+            .from("coach_meetings")
+            .select("fathom_link, fathom_link_added_at")
+            .eq("id", payload.id)
+            .maybeSingle();
+          if (prev) {
+            prevFathomLink = (prev as { fathom_link: string | null }).fathom_link ?? null;
+            prevFathomAddedAt = (prev as { fathom_link_added_at: string | null }).fathom_link_added_at ?? null;
+          }
+        }
+
+        const linkChanged = incomingFathom !== prevFathomLink;
+        const fathomAddedAt = incomingFathom == null
+          ? null
+          : linkChanged
+            ? new Date().toISOString()
+            : prevFathomAddedAt;
+
         const row = {
           client_id: payload.clientId,
           client_name: payload.clientName,
@@ -424,6 +456,8 @@ export async function POST(req: NextRequest) {
           meeting_date: payload.meetingDate,
           duration_minutes: payload.durationMinutes || 0,
           notes: payload.notes || "",
+          fathom_link: incomingFathom,
+          fathom_link_added_at: fathomAddedAt,
         };
         if (payload.id) Object.assign(row, { id: payload.id });
 
@@ -433,7 +467,20 @@ export async function POST(req: NextRequest) {
           .select()
           .single();
 
-        if (error) throw error;
+        if (error) {
+          // Postgres unique-violation on the partial fathom_link index.
+          // Surface a friendly, actionable error instead of a raw dump.
+          if (error.code === "23505" && (error.message || "").includes("fathom_link")) {
+            return NextResponse.json(
+              {
+                error:
+                  "This Fathom link is already logged on another meeting. Each Fathom recording can only be attached to one meeting.",
+              },
+              { status: 409 },
+            );
+          }
+          throw error;
+        }
         return NextResponse.json({ success: true, data });
       }
 
