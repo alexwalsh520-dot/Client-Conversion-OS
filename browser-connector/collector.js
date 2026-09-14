@@ -318,6 +318,7 @@
     const conversationResult=await conversation({...client,inbox:true});
     const panel=document.querySelector(".update-panel .panel-body");
     if(!panel)throw new Error("Recent activity panel did not load; retry this client.");
+    await wait(()=>updateRows().some(u=>u.text.includes(client.name)) || /No (?:recent )?(?:activity|updates)/i.test(text(panel)), "Recent activity is still loading; retry this client.");
     const updates=updateRows();
     return {...conversationResult,updates,activityCaptured:!!panel,email:document.querySelector('a[href^="mailto:"]')?.getAttribute("href")?.slice(7).split("?")[0]||null,newestReached:conversationResult.newestReached,historyStartReached:conversationResult.historyStartReached,notes:conversationResult.notes};
   }
