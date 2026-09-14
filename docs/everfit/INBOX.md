@@ -4,7 +4,7 @@ Coaching → Inbox reads durable one-to-one conversation messages. This is separ
 
 ## Storage and access
 
-Migration `20260914092850_everfit_inbox.sql` adds conversations, messages, sync runs and per-run items. It was applied to CCOS project `bostjayrguulwaltnbgt`. All tables have RLS and revoke PUBLIC/anon/authenticated access. NextAuth protects the `/api/coaching/inbox` route, which uses the existing server-only Supabase client. Administrators import; coaches read only explicitly mapped coach identities with a verified client link and matching current roster assignment. Unlinked/unknown-owner conversations stay admin-only. Client matches require a unique normalized exact email, never a name. Identity changes fail closed.
+Migration `20260914092850_everfit_inbox.sql` (followed by `20260914094103_everfit_inbox_source_order.sql`) adds conversations, messages, sync runs and per-run items. It was applied to CCOS project `bostjayrguulwaltnbgt`. All tables have RLS and revoke PUBLIC/anon/authenticated access. NextAuth protects the `/api/coaching/inbox` route, which uses the existing server-only Supabase client. Administrators import; coaches read only explicitly mapped coach identities with a verified client link and matching current roster assignment. Unlinked/unknown-owner conversations stay admin-only. Client matches require a unique normalized exact email, never a name. Identity changes fail closed.
 
 Messages are keyed by `(everfit_id,message_id)`. Repeated captures update the same observed message rather than append duplicates. Conversation metadata, message upserts and capture status are committed in one transaction. Missing messages are never treated as deletions. Captures from older than the last observation are rejected. Exact historical revisions and deletion detection are not implemented.
 
@@ -22,7 +22,7 @@ Messages are keyed by `(everfit_id,message_id)`. Repeated captures update the sa
 
 ## Current limits
 
-The initial UI supports coach filtering, client/coach search and paginated messages. Messages are ordered by source message ID; verify native IDs preserve chronological order before production collection. Displayed relative dates are stored as observed, not parsed into invented absolute times. Attachment presence is retained but attachment files, reactions, read receipts, sender display names and transcripts are not copied yet. This is a text inbox foundation, not full Everfit visual parity. The existing browser extension still targets weekly summaries; it does not automatically route its captures to Inbox. Codex can import reviewed captures using the same-origin JSON control. No scheduled/cloud scraper is enabled.
+The initial UI supports coach filtering, client/coach search and paginated messages. Messages are ordered by native message ID using the C collation. Everfit’s rendered inbox was checked against its visible chronology; mixed-case keys must not use locale collation. Displayed relative dates are stored as observed, not parsed into invented absolute times. Attachment presence is retained but attachment files, reactions, read receipts, sender display names and transcripts are not copied yet. This is a text inbox foundation, not full Everfit visual parity. The existing browser extension still targets weekly summaries; it does not automatically route its captures to Inbox. Codex can import reviewed captures using the same-origin JSON control. No scheduled/cloud scraper is enabled.
 
 ## Checks
 
@@ -31,3 +31,5 @@ The initial UI supports coach filtering, client/coach search and paginated messa
 - `node --max-old-space-size=4096 node_modules/typescript/bin/tsc --noEmit`
 
 An isolated Postgres/PGlite check exercised the schema, atomic imports, idempotent retries, gap handling, completion calculation and denied browser-role reads/calls. Live table/RLS/grant introspection passed. The Supabase connector's direct SQL endpoint is read-only, so DML verification through it is unavailable; deployed authenticated API verification is separate.
+
+Focused production build passed for both routes. Unauthenticated GET and POST returned 401. Local browser verification passed for conversation opening and coach filtering.
