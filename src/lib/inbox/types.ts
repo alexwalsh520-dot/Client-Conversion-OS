@@ -17,4 +17,5 @@ export interface InboxMessage {
   date: string;
   time: string;
   attachments: boolean;
+  observed_at?: string;
 }

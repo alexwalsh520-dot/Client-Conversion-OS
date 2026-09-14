@@ -45,7 +45,7 @@ export async function GET(request: Request) {
     }
     if (id) {
       if (!conversations.length) throw new HttpError("Conversation not found.",404);
-      let messages = db.from("everfit_inbox_messages").select("message_id,sender,text,date,time,attachments").eq("everfit_id",id).order("message_id",{ascending:false}).limit(100);
+      let messages = db.from("everfit_inbox_messages").select("message_id,sender,text,date,time,attachments,observed_at").eq("everfit_id",id).order("message_id",{ascending:false}).limit(100);
       const before = params.get("before");
       if (before) messages=messages.lt("message_id",before);
       const page=await messages;
