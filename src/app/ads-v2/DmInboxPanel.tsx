@@ -36,6 +36,13 @@ function initialOf(c: DmConversation): string {
   return s ? s[0].toUpperCase() : "?";
 }
 
+// Setter names are stored lowercase ("amara"); show them as a name.
+function setterLabel(s: string | null | undefined): string | null {
+  const t = (s || "").trim();
+  if (!t) return null;
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
 function shortDay(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -236,6 +243,7 @@ export default function DmInboxPanel({ target, onClose }: { target: DmTarget | n
           subscriberId: item.subscriberId,
           name: item.name,
           handle: item.handle,
+          setter: item.setter,
           dmEtDay: etDayOf(item.at),
           hasThread: true,
           messageCount: 0,
@@ -268,6 +276,7 @@ export default function DmInboxPanel({ target, onClose }: { target: DmTarget | n
   const multiGroup = target.groups.length > 1;
   const groupLabel = new Map(target.groups.map((g) => [g.keyword, g.adName]));
   const activeName = active ? active.name || (active.handle ? `@${active.handle}` : "Unknown lead") : "";
+  const activeSetter = active ? setterLabel(active.setter) : null;
 
   return createPortal(
     <div className="dm-overlay" onClick={onClose}>
@@ -278,7 +287,14 @@ export default function DmInboxPanel({ target, onClose }: { target: DmTarget | n
               ←
             </button>
             <div className="dm-head-text">
-              <div className="dm-head-title">{activeName}</div>
+              <div className="dm-head-title">
+                {activeName}
+                {activeSetter && (
+                  <span className="dm-setter-tag" title={`Assigned setter: ${activeSetter}`}>
+                    {activeSetter}
+                  </span>
+                )}
+              </div>
               {active.handle && (
                 <a
                   className="dm-head-sub dm-handle-link"
@@ -450,6 +466,11 @@ export default function DmInboxPanel({ target, onClose }: { target: DmTarget | n
                           <span className="dm-row-top">
                             <span className="dm-row-name">
                               {c.name || (c.handle ? `@${c.handle}` : "Unknown lead")}
+                              {setterLabel(c.setter) && (
+                                <span className="dm-setter-tag" title={`Assigned setter: ${setterLabel(c.setter)}`}>
+                                  {setterLabel(c.setter)}
+                                </span>
+                              )}
                             </span>
                             <span className="dm-row-date">
                               {c.hasThread ? shortDay(c.lastMessageAt) : shortDay(`${c.dmEtDay}T12:00:00Z`)}

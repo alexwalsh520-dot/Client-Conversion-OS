@@ -42,6 +42,10 @@ export interface DmConversation {
   name: string | null;
   handle: string | null;
   dmEtDay: string; // the ET day the keyword fired (facts row)
+  /** The setter this lead is assigned to, from the keyword event that
+   *  brought them in (ads_keyword_events.setter_name via adsv2_dm_facts).
+   *  Null when the event carried no setter. */
+  setter: string | null;
   hasThread: boolean;
   messageCount: number;
   lastMessageAt: string | null;
@@ -93,7 +97,7 @@ async function factsFor(
   keywords: string[],
   from: string | null,
   to: string | null,
-): Promise<Map<string, Map<string, { name: string | null; day: string }>>> {
+): Promise<Map<string, Map<string, { name: string | null; day: string; setter: string | null }>>> {
   // PostgREST caps every request at 1000 rows regardless of .limit(), so a
   // big campaign scope must be PAGED, never single-shot. Null dates = the
   // keyword's whole history (the words feed's "all activity" scope).
@@ -102,7 +106,7 @@ async function factsFor(
   for (let page = 0; page < 20; page++) {
     let q = db
       .from("adsv2_dm_facts")
-      .select("subscriber_id,subscriber_name,et_day,keyword_normalized")
+      .select("subscriber_id,subscriber_name,et_day,keyword_normalized,setter_name")
       .eq("client_key", clientKey)
       .in("keyword_normalized", keywords)
       .eq("is_organic", false)
@@ -118,14 +122,18 @@ async function factsFor(
     all.push(...rows);
     if (rows.length < PAGE) break;
   }
-  const byKw = new Map<string, Map<string, { name: string | null; day: string }>>();
+  const byKw = new Map<string, Map<string, { name: string | null; day: string; setter: string | null }>>();
   for (const kw of keywords) byKw.set(kw, new Map());
   for (const f of all) {
     const kw = String(f.keyword_normalized ?? "");
     const id = String(f.subscriber_id ?? "");
     const m = byKw.get(kw);
     if (!m || !id || m.has(id)) continue;
-    m.set(id, { name: f.subscriber_name ? String(f.subscriber_name) : null, day: String(f.et_day) });
+    m.set(id, {
+      name: f.subscriber_name ? String(f.subscriber_name) : null,
+      day: String(f.et_day),
+      setter: f.setter_name ? String(f.setter_name).trim() || null : null,
+    });
   }
   return byKw;
 }
@@ -205,6 +213,7 @@ export async function dmInboxGrouped(
         name: link?.name || fact.name,
         handle: link?.handle ?? null,
         dmEtDay: fact.day,
+        setter: fact.setter,
         hasThread: !!st,
         messageCount: st?.count ?? 0,
         lastMessageAt: st?.lastAt ?? null,
@@ -279,6 +288,7 @@ export interface DmFeedItem {
   subscriberId: string;
   name: string | null;
   handle: string | null;
+  setter: string | null;
   text: string;
   at: string;
 }
@@ -317,8 +327,12 @@ export async function dmWordsFeed(
   const db = getServiceSupabase();
   const byKw = await factsFor(db, clientKey, keywords, scope === "window" ? from : null, scope === "window" ? to : null);
   const nameByMc = new Map<string, string | null>();
+  const setterByMc = new Map<string, string | null>();
   for (const m of byKw.values())
-    for (const [id, fact] of m.entries()) if (!nameByMc.has(id)) nameByMc.set(id, fact.name);
+    for (const [id, fact] of m.entries()) {
+      if (!nameByMc.has(id)) nameByMc.set(id, fact.name);
+      if (!setterByMc.has(id)) setterByMc.set(id, fact.setter);
+    }
   const mcIds = [...nameByMc.keys()];
   if (!mcIds.length) return { scope, items: [], buyersTrimmed: 0, truncated: false };
 
@@ -377,6 +391,7 @@ export async function dmWordsFeed(
         subscriberId: mc,
         name: link.name || nameByMc.get(mc) || null,
         handle: link.handle,
+        setter: setterByMc.get(mc) ?? null,
         text: text.slice(0, MSG_TEXT_CAP),
         at: m.a,
       });

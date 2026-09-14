@@ -2281,6 +2281,24 @@ td.num.dm-click:hover {
   color: var(--gold, #c9a96e);
   letter-spacing: 0.04em;
 }
+/* The assigned setter's name, as a small neutral tag beside the lead's name
+   (thread header and list rows). Lightness only, no hue: color-blind safe. */
+.dm-setter-tag {
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2, var(--line, #2a2a30));
+  background: var(--bg-3, rgba(255, 255, 255, 0.05));
+  color: var(--text-2, #b8b8c0);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.5;
+  white-space: nowrap;
+}
 .dm-head-sub {
   font-size: 11.5px;
   color: var(--text-3, #8a8a93);
