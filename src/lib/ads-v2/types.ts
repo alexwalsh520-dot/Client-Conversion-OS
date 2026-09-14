@@ -60,6 +60,12 @@ export interface BaseMetrics {
   // Optional-with-?? at read time: snapshots written before the lane lack them.
   subs: number;
   subCents: number;
+  // Sales cycle (2026-09-14): the sum of days from each new client's FIRST
+  // keyword DM to the day their sale was logged, and how many new clients had
+  // a hard-key-matched DM. Average at any level = sum / n over children, like
+  // Lead Score. Optional-with-?? at read time: older snapshots lack them.
+  cycleDaysSum?: number;
+  cycleN?: number;
 }
 
 export interface BudgetInfo {
@@ -186,6 +192,10 @@ export interface LaneRow {
   taken: number | null;
   wins: number | null;
   collectedCents: number | null;
+  /** Sales cycle: sum of days from first keyword DM to sale, and the count of
+   *  wins that had a hard-key-matched DM (optional on old snapshots). */
+  cycleDaysSum?: number | null;
+  cycleN?: number | null;
 }
 
 export interface AdsV2MetricsPayload {
@@ -222,6 +232,8 @@ export const EMPTY_BASE: BaseMetrics = {
   leadScoreN: 0,
   subs: 0,
   subCents: 0,
+  cycleDaysSum: 0,
+  cycleN: 0,
 };
 
 export function addBase(a: BaseMetrics, b: BaseMetrics): BaseMetrics {
@@ -242,5 +254,7 @@ export function addBase(a: BaseMetrics, b: BaseMetrics): BaseMetrics {
     leadScoreN: (a.leadScoreN ?? 0) + (b.leadScoreN ?? 0),
     subs: (a.subs ?? 0) + (b.subs ?? 0),
     subCents: (a.subCents ?? 0) + (b.subCents ?? 0),
+    cycleDaysSum: (a.cycleDaysSum ?? 0) + (b.cycleDaysSum ?? 0),
+    cycleN: (a.cycleN ?? 0) + (b.cycleN ?? 0),
   };
 }

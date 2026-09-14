@@ -17,7 +17,8 @@ export type ColumnFormat =
   | "cpm"
   | "ratio2"
   | "pct"
-  | "budget";
+  | "budget"
+  | "days";
 
 export interface ColumnDef {
   /** Stable key used by the row payload and by column sorting. */
@@ -250,6 +251,16 @@ export const COLUMNS: readonly ColumnDef[] = [
     sentence: "The cash collected for every dollar of ad spend, shown as a multiple.",
     source: "Collected revenue divided by ad spend.",
     format: "ratio2",
+    calc: true,
+  },
+  {
+    key: "salesCycle",
+    label: "Sales cycle",
+    sentence:
+      "The average number of days between a new client's first DM and the day their sale was logged. Only new clients whose DM we can tie to the sale by hard key are averaged; the rest are left out, not counted as zero.",
+    source:
+      "For each new client in this window, the day of their sale in the sales tracker minus the day of their first keyword DM in ManyChat, matched by the ManyChat subscriber id only, never by name. Averaged over those clients. A dash means no new client in this window has a matched DM.",
+    format: "days",
     calc: true,
   },
 ];

@@ -74,6 +74,7 @@ const DEFAULT_WIDTHS: Record<string, number> = {
   collected: 150,
   costPerClient: 130,
   collectedRoi: 140,
+  salesCycle: 120,
 };
 const ALL_COL_KEYS: string[] = ["name", ...METRIC_COLUMNS.map((c) => c.key)];
 const MIN_COL_WIDTH = 60;

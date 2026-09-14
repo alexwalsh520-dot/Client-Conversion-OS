@@ -209,6 +209,9 @@ export function formatCell(key: string, node: AdsV2Node): Cell {
     case "collectedRoi":
       text = d.collectedRoi == null ? DASH : `${d.collectedRoi.toFixed(2)}x`;
       break;
+    case "salesCycle":
+      text = d.salesCycleDays == null ? DASH : `${d.salesCycleDays.toFixed(1)} days`;
+      break;
     default:
       text = DASH;
   }
@@ -269,6 +272,8 @@ export function sortValue(key: string, node: AdsV2Node): number {
       return d.costPerClientCents ?? -1;
     case "collectedRoi":
       return d.collectedRoi ?? -1;
+    case "salesCycle":
+      return d.salesCycleDays ?? -1;
     default:
       return 0;
   }

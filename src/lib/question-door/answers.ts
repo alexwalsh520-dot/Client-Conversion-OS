@@ -170,6 +170,8 @@ function baseOf(n: AdsV2Node): BaseMetrics {
     leadScoreN: n.leadScoreN ?? 0,
     subs: n.subs ?? 0,
     subCents: n.subCents ?? 0,
+    cycleDaysSum: n.cycleDaysSum ?? 0,
+    cycleN: n.cycleN ?? 0,
   };
 }
 

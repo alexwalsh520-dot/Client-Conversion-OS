@@ -38,6 +38,7 @@ const RENDERED_COLUMN_KEYS = [
   "collected",
   "costPerClient",
   "collectedRoi",
+  "salesCycle",
 ];
 
 test("every displayed column has a registry entry", () => {

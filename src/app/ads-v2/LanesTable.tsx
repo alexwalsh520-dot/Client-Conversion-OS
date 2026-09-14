@@ -50,6 +50,17 @@ function usd(cents: number | null): string {
   return `$${Math.round(cents / 100).toLocaleString("en-US")}`;
 }
 
+// Average days from a new client's first keyword DM to their sale. Null count
+// = not measurable for this lane; zero matched clients = nothing to average.
+// Both read as a dash, never as zero days.
+function cycle(sum: number | null | undefined, n: number | null | undefined): string {
+  if (sum == null || n == null || n <= 0) return "–";
+  return `${(sum / n).toFixed(1)} days`;
+}
+
+const CYCLE_HINT =
+  "Average days between a new client's first DM and the day their sale was logged. Only new clients whose DM is tied to the sale by ManyChat subscriber id are averaged.";
+
 export default function LanesTable({ lanes }: { lanes: LaneRow[] }) {
   const rows = [...lanes]
     .filter((r) => !(r.clientKey === "team" && !r.taken && !r.wins && !r.collectedCents && !r.booked && !r.upcoming))
@@ -80,6 +91,7 @@ export default function LanesTable({ lanes }: { lanes: LaneRow[] }) {
               <th>Calls taken</th>
               <th>New clients</th>
               <th>Collected revenue</th>
+              <th title={CYCLE_HINT}>Sales cycle</th>
             </tr>
           </thead>
           <tbody>
@@ -99,6 +111,7 @@ export default function LanesTable({ lanes }: { lanes: LaneRow[] }) {
                 <td className="logged-cell">{num(r.taken)}</td>
                 <td className="logged-cell">{num(r.wins)}</td>
                 <td className="logged-cell">{usd(r.collectedCents)}</td>
+                <td className="logged-cell" title={CYCLE_HINT}>{cycle(r.cycleDaysSum, r.cycleN)}</td>
               </tr>
             ))}
           </tbody>

@@ -61,6 +61,8 @@ interface LeafRow {
   sub_collected_usd_cents: number | null;
   has_spend: boolean;
   last_spend_day: string | null;
+  cycle_days_sum: number | null;
+  cycle_n: number | null;
 }
 
 interface BudgetRow {
@@ -183,6 +185,8 @@ interface LaneRowSql {
   taken: number | null;
   wins: number | null;
   collected_usd_cents: number | null;
+  cycle_days_sum: number | null;
+  cycle_n: number | null;
 }
 
 // The Metrics-card day series. Same account/window/status filters and the same
@@ -264,6 +268,8 @@ export async function buildDaySeries(
       taken: r.taken,
       wins: r.wins,
       collectedCents: r.collected_usd_cents,
+      cycleDaysSum: r.cycle_days_sum ?? null,
+      cycleN: r.cycle_n ?? null,
     }));
   }
   // Total over the union of days (base sums), so the cards' big numbers derive
@@ -320,6 +326,8 @@ function leafBase(l: LeafRow): BaseMetrics {
     leadScoreN: l.lead_score_n ?? 0,
     subs: l.subs ?? 0,
     subCents: l.sub_collected_usd_cents ?? 0,
+    cycleDaysSum: l.cycle_days_sum ?? 0,
+    cycleN: l.cycle_n ?? 0,
   };
 }
 
@@ -476,6 +484,8 @@ function baseOf(n: AdsV2Node): BaseMetrics {
     leadScoreN: n.leadScoreN ?? 0,
     subs: n.subs ?? 0,
     subCents: n.subCents ?? 0,
+    cycleDaysSum: n.cycleDaysSum ?? 0,
+    cycleN: n.cycleN ?? 0,
   };
 }
 
@@ -496,6 +506,8 @@ function assignBase(n: AdsV2Node, b: BaseMetrics): void {
   n.leadScoreN = b.leadScoreN ?? 0;
   n.subs = b.subs ?? 0;
   n.subCents = b.subCents ?? 0;
+  n.cycleDaysSum = b.cycleDaysSum ?? 0;
+  n.cycleN = b.cycleN ?? 0;
 }
 
 function makeNode(input: {

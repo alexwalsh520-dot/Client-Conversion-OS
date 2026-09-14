@@ -19,6 +19,7 @@ export interface DerivedMetrics {
   costPerClientCents: number | null;
   collectedRoi: number | null; // dollars collected per dollar spent
   leadScore: number | null; // average AI lead score (0-100) of scored leads
+  salesCycleDays: number | null; // average days from first keyword DM to sale
 }
 
 function div(n: number, d: number): number | null {
@@ -49,5 +50,7 @@ export function derive(b: BaseMetrics): DerivedMetrics {
     // Guarded like showedPeople: snapshots written before the Lead Score pilot
     // carry no fields, and 0 scored leads means "no read", never a zero score.
     leadScore: (b.leadScoreN ?? 0) > 0 ? (b.leadScoreSum ?? 0) / (b.leadScoreN ?? 1) : null,
+    // Same guard: no matched new clients means "no read", never zero days.
+    salesCycleDays: (b.cycleN ?? 0) > 0 ? (b.cycleDaysSum ?? 0) / (b.cycleN ?? 1) : null,
   };
 }
