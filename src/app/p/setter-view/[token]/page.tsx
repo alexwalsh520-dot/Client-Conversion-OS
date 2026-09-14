@@ -1,9 +1,11 @@
-// Public, no-login per-setter view of the Sales Hub.
+// Public, no-login setter team view of the Sales Hub.
 //
-// A setter opens https://client-conversion-os.vercel.app/p/setter-view/<token>.
-// The token is validated SERVER-SIDE (kind = 'setter-view', not revoked, and a
-// setter named in settings); the view then polls /api/public/setter-view/<token>
-// — the actual data boundary. Ranges are Today / Yesterday only.
+// One link for the whole team: everybody sees everybody's numbers
+// (owner, 2026-09-14). The token is validated SERVER-SIDE (kind =
+// 'setter-view', not revoked); the view then polls
+// /api/public/setter-view/<token> — the actual data boundary. The date
+// picker is the hub's own DateDropdown, clamped so data only starts from
+// yesterday (ET).
 import type { Metadata } from "next";
 import { getServiceSupabase } from "@/lib/supabase";
 import SetterViewView from "./SetterViewView";
@@ -13,24 +15,22 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export const metadata: Metadata = {
-  title: "My Setter Stats",
+  title: "Setter Stats",
   robots: { index: false, follow: false },
 };
 
-async function tokenSetterLabel(token: string): Promise<string | null> {
+async function tokenIsLive(token: string): Promise<boolean> {
   try {
     const sb = getServiceSupabase();
     const { data, error } = await sb
       .from("public_share_links")
-      .select("kind, revoked, settings, label")
+      .select("kind, revoked")
       .eq("token", token)
       .maybeSingle();
-    if (error || !data || data.revoked || data.kind !== "setter-view") return null;
-    const settings = (data.settings || {}) as { setter?: string; label?: string };
-    if (!settings.setter) return null;
-    return settings.label || settings.setter.charAt(0).toUpperCase() + settings.setter.slice(1);
+    if (error || !data) return false;
+    return !data.revoked && data.kind === "setter-view";
   } catch {
-    return null;
+    return false;
   }
 }
 
@@ -51,7 +51,6 @@ export default async function PublicSetterViewPage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  const label = await tokenSetterLabel(token);
-  if (!label) return <NotAvailable />;
-  return <SetterViewView token={token} initialLabel={label} />;
+  if (!(await tokenIsLive(token))) return <NotAvailable />;
+  return <SetterViewView token={token} />;
 }

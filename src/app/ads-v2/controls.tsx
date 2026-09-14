@@ -98,10 +98,14 @@ export function DateDropdown({
   preset,
   range,
   onApply,
+  minDay,
 }: {
   preset: PresetId;
   range: DayRange;
   onApply: (preset: PresetId, range: DayRange) => void;
+  /** Earliest selectable ET day (inclusive). Presets clamp to it; earlier
+      calendar days render disabled. Omit for unrestricted (hub/ads-v2). */
+  minDay?: string;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -123,18 +127,26 @@ export function DateDropdown({
 
   const presetLabel = PRESETS.find((p) => p.id === preset)?.label || "Custom";
 
+  const clampRange = (r: DayRange): DayRange => {
+    if (!minDay) return r;
+    const from = r.from < minDay ? minDay : r.from;
+    const to = r.to < from ? from : r.to;
+    return { from, to };
+  };
+
   const pickPreset = (id: PresetId) => {
     if (id === "custom") {
       setDraftPreset("custom");
       setSelectingEnd(false);
       return;
     }
-    const r = rangeForPreset(id, todayEt());
+    const r = clampRange(rangeForPreset(id, todayEt()));
     onApply(id, r);
     setOpen(false);
   };
 
   const pickDay = (day: string) => {
+    if (minDay && day < minDay) return;
     setDraftPreset("custom");
     if (!selectingEnd) {
       setDraft({ from: day, to: day });
@@ -203,8 +215,9 @@ export function DateDropdown({
                 ) : (
                   <button
                     key={i}
-                    className={`cal-day${c.endpoint ? " endpoint" : c.inRange ? " in-range" : ""}${c.today ? " today" : ""}`}
+                    className={`cal-day${c.endpoint ? " endpoint" : c.inRange ? " in-range" : ""}${c.today ? " today" : ""}${minDay && c.iso < minDay ? " muted" : ""}`}
                     onClick={() => pickDay(c.iso)}
+                    disabled={Boolean(minDay && c.iso < minDay)}
                   >
                     {c.day}
                   </button>
@@ -228,7 +241,7 @@ export function DateDropdown({
               <button
                 className="apply-btn"
                 onClick={() => {
-                  onApply(draftPreset, draft);
+                  onApply(draftPreset, clampRange(draft));
                   setOpen(false);
                 }}
               >
