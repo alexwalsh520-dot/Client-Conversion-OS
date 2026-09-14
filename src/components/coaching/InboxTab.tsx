@@ -17,6 +17,7 @@ export default function InboxTab() {
   const [search,setSearch]=useState("");
   const [error,setError]=useState("");
   const [notice,setNotice]=useState("");
+  const [pasted,setPasted]=useState("");
   const [busy,setBusy]=useState(false);
   const [admin,setAdmin]=useState(false);
   const version=useRef(0);
@@ -45,9 +46,9 @@ export default function InboxTab() {
   async function importFile(file: File) {
     setBusy(true);setError("");setNotice("");
     try {
-      if(file.size>2000000) throw new Error("Import exceeds 2 MB. Split captures into smaller files.");
+      if(file.size>3000000) throw new Error("Import exceeds 3 MB. Split captures into smaller files.");
       const response=await read("/api/coaching/inbox",{method:"POST",headers:{"Content-Type":"application/json"},body:await file.text()});
-      setNotice(response.runId?`Sync started. Run ID: ${response.runId}`:response.status?`Sync ${response.status}: ${response.complete}/${response.total} conversations verified.`:response.complete?"Messages saved; conversation coverage verified.":"Messages saved; more history or boundary verification is needed.");
+      setNotice(typeof response.saved==="number"?`Batch saved: ${response.saved} conversations; ${response.verified} verified; ${response.needsMore.length} need more history; ${response.failed.length} failed.${response.failed.length?` Retry: ${response.failed.map((f: {id: string})=>f.id).join(", ")}`:""}`:response.runId?`Sync started. Run ID: ${response.runId}`:response.status?`Sync ${response.status}: ${response.complete}/${response.total} conversations verified.`:response.complete?"Messages saved; conversation coverage verified.":"Messages saved; more history or boundary verification is needed.");
       await load();
     }catch(e){setError((e as Error).message);}finally{setBusy(false);}
   }
@@ -62,6 +63,7 @@ export default function InboxTab() {
       </div>
     </div>
     <p style={{fontSize:12,color:"var(--text-secondary)"}}>Ask Codex to sync Everfit to collect new messages. Refresh reloads saved data. Each conversation shows its own verified coverage.</p>
+    {admin&&<details><summary style={{cursor:"pointer",fontSize:12}}>Paste a captured batch</summary><div style={{display:"grid",gap:8,marginTop:8}}><textarea aria-label="Captured inbox batch" value={pasted} maxLength={3000000} onChange={e=>setPasted(e.target.value)} rows={5} className="form-input" placeholder="Paste the batch prepared by Codex"/><button className="btn btn-secondary" disabled={busy||!pasted.trim()} onClick={()=>void importFile(new File([pasted],"inbox-batch.json",{type:"application/json"}))}>Save captured batch</button></div></details>}
     {error&&<div role="alert" style={{padding:14,border:"1px solid var(--danger)",borderRadius:10}}>{error}</div>}
     {notice&&<div role="status" style={{padding:12}}>{notice}</div>}
     <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>

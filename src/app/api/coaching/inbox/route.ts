@@ -1,6 +1,6 @@
 import { getServiceSupabase } from "@/lib/supabase";
 import { requireAccess, requireSameOrigin, HttpError } from "@/lib/everfit/server";
-import { parseInboxCapture, parseSyncPlan } from "@/lib/inbox/validation";
+import { parseInboxCapture, parseInboxBatch, MAX_INBOX_BYTES, parseSyncPlan } from "@/lib/inbox/validation";
 import { record } from "@/lib/everfit/validation";
 import { everfitCoach } from "@/lib/everfit/owners";
 import type { InboxConversation } from "@/lib/inbox/types";
@@ -60,9 +60,9 @@ export async function POST(request: Request) {
     const access=await requireAccess();
     if (!access.admin) throw new HttpError("Only administrators can import inbox messages.",403);
     requireSameOrigin(request);
-    if(Number(request.headers.get("content-length"))>2000000) throw new HttpError("Import exceeds 2 MB.",413);
+    if(Number(request.headers.get("content-length"))>MAX_INBOX_BYTES) throw new HttpError("Import exceeds 3 MB.",413);
     const raw=await request.text();
-    if(Buffer.byteLength(raw)>2000000) throw new HttpError("Import exceeds 2 MB.",413);
+    if(Buffer.byteLength(raw)>MAX_INBOX_BYTES) throw new HttpError("Import exceeds 3 MB.",413);
     let body: Record<string,unknown>;
     try { body=record(JSON.parse(raw)); } catch { throw new HttpError("Invalid JSON.",400); }
     const db=getServiceSupabase();
@@ -86,22 +86,32 @@ export async function POST(request: Request) {
       if(result.error) throw result.error;
       return reply(result.data);
     }
-    if(body.action!=="capture") throw new HttpError("Unknown inbox action.",400);
-    let capture;
-    try { capture=parseInboxCapture(body.capture); } catch(e) { throw new HttpError((e as Error).message,400); }
-    // Exact, unique email only. Never invent a client ID from a name match.
-    let clientId: number|null=null;
-    if(capture.email) {
-      const matches: number[]=[];
-      for(let offset=0; ; offset+=1000) {
-        const page=await db.from("clients").select("id,email").order("id").range(offset,offset+999);
-        if(page.error) throw page.error;
-        for(const client of page.data) if(client.email?.trim().toLowerCase()===capture.email) matches.push(client.id);
-        if(page.data.length<1000) break;
+    if(body.action!=="capture" && body.action!=="batch") throw new HttpError("Unknown inbox action.",400);
+    let captures;
+    try { captures=body.action==="batch" ? parseInboxBatch(body.captures) : [parseInboxCapture(body.capture)]; }
+    catch(e) { throw new HttpError((e as Error).message,400); }
+    // Read the roster once for the whole batch; normalized duplicate emails stay unlinked.
+    const byEmail=new Map<string,number[]>();
+    for(let offset=0; ; offset+=1000) {
+      const page=await db.from("clients").select("id,email").order("id").range(offset,offset+999);
+      if(page.error) throw page.error;
+      for(const client of page.data) {
+        const email=client.email?.trim().toLowerCase();
+        if(email) byEmail.set(email,[...(byEmail.get(email)??[]),client.id]);
       }
-      if(matches.length===1) clientId=matches[0];
+      if(page.data.length<1000) break;
     }
-    const saved=await db.rpc("capture_everfit_inbox",{p_run:body.runId,p_actor:access.email,p_capture:capture,p_coach:everfitCoach(capture.owner),p_client:clientId});
+    const items=captures.map(capture=>{
+      const matches=capture.email ? byEmail.get(capture.email)??[] : [];
+      return {capture,coach:everfitCoach(capture.owner),client:matches.length===1?matches[0]:null};
+    });
+    if(body.action==="batch") {
+      const saved=await db.rpc("capture_everfit_inbox_batch",{p_run:body.runId,p_actor:access.email,p_items:items});
+      if(saved.error) throw saved.error;
+      return reply(saved.data);
+    }
+    const item=items[0];
+    const saved=await db.rpc("capture_everfit_inbox",{p_run:body.runId,p_actor:access.email,p_capture:item.capture,p_coach:item.coach,p_client:item.client});
     if(saved.error) throw saved.error;
     return reply(saved.data);
   } catch(error) { return fail(error); }
