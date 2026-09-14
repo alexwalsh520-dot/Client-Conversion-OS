@@ -1186,57 +1186,62 @@ select.form-input option {
   margin-bottom: 6px;
 }
 
-/* Buttons — lift on hover, press on click */
+/* Buttons. Solid, quiet, no gradient, no lift. */
 .btn-primary {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 10px 24px;
-  border-radius: 10px;
-  border: none;
-  background: linear-gradient(135deg, var(--accent) 0%, #b89550 100%);
-  color: #0c0c0c;
-  font-size: 12px;
-  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 500;
   font-family: inherit;
+  line-height: 1.2;
   cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  letter-spacing: 0.4px;
-  text-transform: uppercase;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
 }
 
 .btn-primary:hover {
-  box-shadow: 0 4px 24px rgba(58, 123, 234, 0.25), 0 0 0 1px rgba(58, 123, 234, 0.15);
-  transform: translateY(-2px);
+  background: color-mix(in srgb, var(--accent) 88%, #000);
 }
 
 .btn-primary:active {
-  transform: translateY(0px) scale(0.98);
-  box-shadow: 0 1px 8px rgba(58, 123, 234, 0.15);
+  background: color-mix(in srgb, var(--accent) 78%, #000);
+}
+
+.btn-primary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--shell-card), 0 0 0 4px var(--accent);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .btn-secondary {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 10px 24px;
-  border-radius: 10px;
+  padding: 8px 14px;
+  border-radius: 8px;
   border: 1px solid var(--border-primary);
   background: var(--bg-glass);
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   font-family: inherit;
+  line-height: 1.2;
   cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  letter-spacing: 0.3px;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .btn-secondary:hover {
   border-color: var(--border-hover);
   background: var(--bg-glass-hover);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
-  transform: translateY(-1px);
 }
 
 .btn-secondary:active {
