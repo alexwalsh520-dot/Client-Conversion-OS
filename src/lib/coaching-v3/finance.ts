@@ -12,9 +12,18 @@
  */
 
 import { fetchFinancials, isRealRefund, type RefundRow, type RetentionRow } from "@/lib/coaching-v2/financials";
+import { canonicalCoachName } from "./coach-aliases";
 
 const norm = (s: string | null | undefined) =>
   (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+
+/** Sales Tracker sheet writes "Shaun" / "Mark" for CCOS's "Shiraad" / "Farrukh".
+ *  Route every coach name through the alias map so retention $ lands on the
+ *  right CCOS coach row on the Coaches tab. Unknown names pass through. */
+function canonCoach(raw: string | null | undefined): string {
+  if (!raw || !raw.trim()) return "Unassigned";
+  return canonicalCoachName(raw) ?? raw.trim();
+}
 
 export interface CoachFinance {
   coach: string;
@@ -44,12 +53,16 @@ export interface FinanceMonthView {
  *  MAS can reconcile in the sheet. */
 export async function loadFinanceMonth(monthIndex: number): Promise<FinanceMonthView> {
   const f = await fetchFinancials(monthIndex);
-  const retentions = f.retentions ?? [];
-  const realRefunds = (f.refunds ?? []).filter(isRealRefund);
+  // Canonicalize coach names on the way in so every downstream consumer
+  // (aggregate + detail tables + hub KPIs) sees the CCOS spelling.
+  const retentions = (f.retentions ?? []).map((r) => ({ ...r, coach: canonCoach(r.coach) }));
+  const realRefunds = (f.refunds ?? [])
+    .filter(isRealRefund)
+    .map((r) => ({ ...r, salesPerson: canonCoach(r.salesPerson) }));
 
   const byCoachMap = new Map<string, CoachFinance>();
-  const bump = (coach: string, updater: (row: CoachFinance) => void) => {
-    const k = coach.trim() || "Unassigned";
+  const bump = (rawCoach: string, updater: (row: CoachFinance) => void) => {
+    const k = canonCoach(rawCoach);
     const row =
       byCoachMap.get(k) ??
       { coach: k, retentionCount: 0, retentionRevenue: 0, refundCount: 0, refundAmount: 0 };
@@ -63,6 +76,8 @@ export async function loadFinanceMonth(monthIndex: number): Promise<FinanceMonth
     });
   }
   for (const r of realRefunds) {
+    // Refund sheet writes the salesPerson (which is the coach for CCOS)
+    // through the same alias so refunds land next to retentions.
     bump(r.salesPerson, (row) => {
       row.refundCount += 1;
       row.refundAmount += Number(r.amount) || 0;

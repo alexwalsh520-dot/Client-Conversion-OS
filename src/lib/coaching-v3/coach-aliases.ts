@@ -22,8 +22,12 @@ const CANONICAL: Record<string, string> = {
   "waleed ahmed":                "Waleed",
   "ahmad saeed":                 "Ahmad",
   // Confirmed by MAS 2026-09-15: two Everfit owner names that don't share
-  // a first name with their CCOS coach.
+  // a first name with their CCOS coach. Also confirmed the Sales Tracker
+  // sheet uses the short forms "Mark" / "Shaun" for the same people, so
+  // both spellings resolve to CCOS's canonical name.
+  "mark":                        "Farrukh",
   "mark smith":                  "Farrukh",
+  "shaun":                       "Shiraad",
   "shaun lundall":               "Shiraad",
   // Sheet tab uses "STEPH" for CCOS's "Stef".
   "steph":                       "Stef",

@@ -1,7 +1,6 @@
 import "./hub.css";
-import Link from "next/link";
-import { headers } from "next/headers";
 import { auth } from "@/auth";
+import TabBar from "./components/TabBar";
 
 export const dynamic = "force-dynamic";
 
@@ -18,11 +17,9 @@ const TABS = [
 ];
 
 export default async function CoachingV3Layout({ children }: { children: React.ReactNode }) {
-  const h = await headers();
-  const path = h.get("x-invoke-path") ?? h.get("next-url") ?? "";
   const session = await auth();
   const isAdmin = session?.user?.role === "admin";
-  const visibleTabs = TABS.filter((t) => !t.adminOnly || isAdmin);
+  const visibleTabs = TABS.filter((t) => !t.adminOnly || isAdmin).map(({ href, label }) => ({ href, label }));
   return (
     <div className="h3">
       <div className="h3-head">
@@ -31,13 +28,7 @@ export default async function CoachingV3Layout({ children }: { children: React.R
           <p className="h3-sub">Question-first coaching hub. Trial phase.</p>
         </div>
       </div>
-      <nav className="h3-tabs">
-        {visibleTabs.map((t) => (
-          <Link key={t.href} href={t.href} className={path.endsWith(t.href) ? "on" : ""}>
-            {t.label}
-          </Link>
-        ))}
-      </nav>
+      <TabBar tabs={visibleTabs} />
       {children}
     </div>
   );
