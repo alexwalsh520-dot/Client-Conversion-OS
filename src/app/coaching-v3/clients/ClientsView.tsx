@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { RetentionScore } from "@/lib/coaching-v3/types";
-import { Search, X, Filter, Loader2, ClipboardList, Calendar, Video, Pencil, Plus } from "lucide-react";
+import { Search, X, Filter, Loader2, ClipboardList, Calendar, Video, Pencil, Plus, Link2, Check } from "lucide-react";
 import CheckinModal, { type CheckInSubmission } from "../components/CheckinModal";
 
 type MeetingRow = {
@@ -15,6 +15,20 @@ type MeetingRow = {
   fathomLink: string | null;
   fathomLinkAddedAt: string | null;
   createdAt: string | null;
+};
+
+type MilestoneRow = {
+  id: number;
+  videoTestimonial: {
+    promptedDate: string | null;
+    completed: boolean;
+    completionDate: string | null;
+  };
+  writtenTestimonial: {
+    promptedDate: string | null;
+    completed: boolean;
+    completionDate: string | null;
+  };
 };
 
 export type Row = {
@@ -411,9 +425,12 @@ function ClientDrawer({ row, onClose }: { row: Row; onClose: () => void }) {
   // Lazy-load client detail — check-in history + meeting history.
   const [checkIns, setCheckIns] = useState<CheckInSubmission[]>([]);
   const [meetings, setMeetings] = useState<MeetingRow[]>([]);
+  const [milestone, setMilestone] = useState<MilestoneRow | null>(null);
   const [detailLoading, setDetailLoading] = useState(true);
   const [detailErr, setDetailErr] = useState<string | null>(null);
   const [openCheckin, setOpenCheckin] = useState<CheckInSubmission | null>(null);
+  const [videoBusy, setVideoBusy] = useState<"copy" | "done" | null>(null);
+  const [videoMsg, setVideoMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
 
   // Meeting-form state. Draft is the row being edited or created;
   // `mode` says which. formErr surfaces the API's friendly errors
@@ -432,6 +449,7 @@ function ClientDrawer({ row, onClose }: { row: Row; onClose: () => void }) {
       if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
       setCheckIns((body.checkIns ?? []) as CheckInSubmission[]);
       setMeetings((body.meetings ?? []) as MeetingRow[]);
+      setMilestone((body.milestone ?? null) as MilestoneRow | null);
     } catch (e) {
       setDetailErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -451,6 +469,7 @@ function ClientDrawer({ row, onClose }: { row: Row; onClose: () => void }) {
         if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
         setCheckIns((body.checkIns ?? []) as CheckInSubmission[]);
         setMeetings((body.meetings ?? []) as MeetingRow[]);
+        setMilestone((body.milestone ?? null) as MilestoneRow | null);
       } catch (e) {
         if (!cancelled) setDetailErr(e instanceof Error ? e.message : String(e));
       } finally {
@@ -461,6 +480,60 @@ function ClientDrawer({ row, onClose }: { row: Row; onClose: () => void }) {
       cancelled = true;
     };
   }, [row.id]);
+
+  const copyVideoLink = async () => {
+    setVideoBusy("copy");
+    setVideoMsg(null);
+    try {
+      const res = await fetch("/api/testimonials/video/request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId: row.id }),
+      });
+      const body = await res.json();
+      if (!res.ok || !body.url) throw new Error(body.error ?? "Could not get link");
+      await navigator.clipboard.writeText(body.url as string);
+      setVideoMsg({ tone: "ok", text: "Link copied to clipboard" });
+      setTimeout(() => setVideoMsg(null), 2500);
+    } catch (e) {
+      setVideoMsg({ tone: "err", text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setVideoBusy(null);
+    }
+  };
+
+  const markVideoDone = async () => {
+    if (!confirm(`Mark video testimonial as completed for ${row.name}?`)) return;
+    setVideoBusy("done");
+    setVideoMsg(null);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const res = await fetch("/api/coaching", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "upsert_milestone",
+          payload: {
+            id: milestone?.id,
+            clientId: row.id,
+            clientName: row.name,
+            coachName: row.coach || "Unassigned",
+            videoTestimonialCompleted: true,
+            videoTestimonialCompletionDate: today,
+          },
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+      setVideoMsg({ tone: "ok", text: "Marked done." });
+      await reloadDetail();
+      setTimeout(() => setVideoMsg(null), 2500);
+    } catch (e) {
+      setVideoMsg({ tone: "err", text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setVideoBusy(null);
+    }
+  };
 
   const openNewMeetingForm = () => {
     setMeetingMode("new");
@@ -916,6 +989,86 @@ function ClientDrawer({ row, onClose }: { row: Row; onClose: () => void }) {
                   </button>
                 </div>
               ))}
+          </div>
+        </section>
+
+        {/* Video Testimonial — lives right after Meetings per MAS spec.
+            Shows status, copy-link button (per-client recording URL),
+            and Mark Done. When completed the video ends up in the
+            separate Video Testimonials tab. */}
+        <section className="h3-sec">
+          <h2>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+              <Video size={12} /> Video testimonial
+            </span>
+            {milestone?.videoTestimonial.completed && (
+              <span
+                className="bucket g"
+                style={{ marginLeft: 6, display: "inline-flex", alignItems: "center", gap: 4 }}
+              >
+                <Check size={10} /> completed{milestone.videoTestimonial.completionDate ? ` · ${milestone.videoTestimonial.completionDate}` : ""}
+              </span>
+            )}
+            {!milestone?.videoTestimonial.completed && milestone?.videoTestimonial.promptedDate && (
+              <span className="bucket a" style={{ marginLeft: 6 }}>
+                asked · {new Date(milestone.videoTestimonial.promptedDate).toLocaleDateString()}
+              </span>
+            )}
+            {!milestone?.videoTestimonial.completed && !milestone?.videoTestimonial.promptedDate && (
+              <span className="bucket u" style={{ marginLeft: 6 }}>not asked yet</span>
+            )}
+          </h2>
+          <div
+            className="h3-list"
+            style={{
+              padding: "10px 14px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}
+          >
+            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+              A unique recording link opens the CCOS recorder for this client. Their
+              submission lands in the Video Testimonials tab, tagged to them.
+            </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+              <button
+                className="h3-btn s p"
+                onClick={copyVideoLink}
+                disabled={videoBusy !== null}
+              >
+                {videoBusy === "copy" ? (
+                  <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} />
+                ) : (
+                  <Link2 size={11} />
+                )}
+                Copy recording link
+              </button>
+              {!milestone?.videoTestimonial.completed && (
+                <button
+                  className="h3-btn s"
+                  onClick={markVideoDone}
+                  disabled={videoBusy !== null}
+                >
+                  {videoBusy === "done" ? (
+                    <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} />
+                  ) : (
+                    <Check size={11} />
+                  )}
+                  Mark done
+                </button>
+              )}
+              {videoMsg && (
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: videoMsg.tone === "err" ? "var(--danger)" : "var(--success)",
+                  }}
+                >
+                  {videoMsg.text}
+                </span>
+              )}
+            </div>
           </div>
         </section>
 

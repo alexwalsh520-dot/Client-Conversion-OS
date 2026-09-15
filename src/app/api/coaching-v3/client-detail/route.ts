@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
 
   const clientNameNorm = (client.name as string).trim();
 
-  const [clientNotesQ, cyclesQ, checkInsQ, meetingsQ] = await Promise.all([
+  const [clientNotesQ, cyclesQ, checkInsQ, meetingsQ, milestoneQ] = await Promise.all([
     db
       .from("client_notes")
       .select("note, coach_name, created_at")
@@ -60,6 +60,13 @@ export async function GET(req: NextRequest) {
       .eq("client_id", clientId)
       .order("meeting_date", { ascending: false })
       .limit(100),
+    db
+      .from("coach_milestones")
+      .select(
+        "id, video_testimonial_prompted_date, video_testimonial_completed, video_testimonial_completion_date, trust_pilot_prompted_date, trust_pilot_completed, trust_pilot_completion_date",
+      )
+      .eq("client_id", clientId)
+      .maybeSingle(),
   ]);
 
   const cycleIds = (cyclesQ.data ?? []).map((c) => c.id as number);
@@ -125,5 +132,20 @@ export async function GET(req: NextRequest) {
       fathomLinkAddedAt: (r.fathom_link_added_at as string) ?? null,
       createdAt: (r.created_at as string) ?? null,
     })),
+    milestone: milestoneQ.data
+      ? {
+          id: milestoneQ.data.id as number,
+          videoTestimonial: {
+            promptedDate: (milestoneQ.data.video_testimonial_prompted_date as string) ?? null,
+            completed: !!milestoneQ.data.video_testimonial_completed,
+            completionDate: (milestoneQ.data.video_testimonial_completion_date as string) ?? null,
+          },
+          writtenTestimonial: {
+            promptedDate: (milestoneQ.data.trust_pilot_prompted_date as string) ?? null,
+            completed: !!milestoneQ.data.trust_pilot_completed,
+            completionDate: (milestoneQ.data.trust_pilot_completion_date as string) ?? null,
+          },
+        }
+      : null,
   });
 }
