@@ -163,7 +163,7 @@ export default function Sidebar() {
         key={item.href}
         href={item.href}
         className={`sidebar-link ${nested ? "sidebar-link-nested" : ""} ${active ? "sidebar-link-active" : ""}`}
-        onClick={() => setMobileOpen(false)}
+        onClick={() => { setMobileOpen(false); setPeekPath(null); }}
         onContextMenu={(e) => { e.preventDefault(); setMenu({ href: item.href, label: item.label, x: e.clientX, y: e.clientY, hidden: isHidden(item.href) }); }}
       >
         <span className="sidebar-link-icon">

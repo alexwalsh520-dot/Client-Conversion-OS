@@ -214,3 +214,10 @@ details.h2-dd .in { padding: 0 0 12px 18px; }
 .h2-seg .on .n { color: var(--text-secondary); }
 .h2-sel { background: var(--bg-secondary); border: 1px solid var(--border-hover); color: var(--text-primary); border-radius: 8px; padding: 6px 28px 6px 10px; font-family: inherit; font-size: 12.5px; outline: none; cursor: pointer; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.5'/></svg>"); background-repeat: no-repeat; background-position: right 10px center; }
 .h2-sel:focus { border-color: var(--accent); }
+
+/* Route loading state */
+.h2-loading { display: flex; flex-direction: column; gap: 12px; padding-top: 4px; }
+.h2-loading-bar { height: 14px; width: 220px; border-radius: 6px; background: var(--border-primary); animation: h2-pulse 1.2s ease-in-out infinite; }
+.h2-loading-block { height: 320px; border-radius: 10px; border: 1px solid var(--border-primary); margin-top: 12px; animation: h2-pulse 1.2s ease-in-out infinite; }
+@keyframes h2-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .h2-loading-bar, .h2-loading-block { animation: none; } }
