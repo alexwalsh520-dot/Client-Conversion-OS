@@ -16,15 +16,15 @@
 
 const CANONICAL: Record<string, string> = {
   // Everfit owner name       -> CCOS coach_name (internal)
-  "stephanie hughes":            "Stef",     // 46 on Everfit / 51 active in CCOS
+  "stephanie hughes":            "Stef",
   "martin iliev":                "Martin",
   "kevin khalid":                "Kevin",
   "waleed ahmed":                "Waleed",
   "ahmad saeed":                 "Ahmad",
-  // Left intentionally without a map (owner name doesn't cleanly map to a
-  // single CCOS coach — the sync will still link most rows via unique-name):
-  //   "mark smith"    (67 rows) — verify with MAS which CCOS coach owns these
-  //   "shaun lundall" (42 rows) — verify with MAS which CCOS coach owns these
+  // Confirmed by MAS 2026-09-15: two Everfit owner names that don't share
+  // a first name with their CCOS coach.
+  "mark smith":                  "Farrukh",
+  "shaun lundall":               "Shiraad",
 };
 
 const HAY = new Set(Object.keys(CANONICAL));
