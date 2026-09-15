@@ -44,7 +44,7 @@ type Props = {
   checkIns: CheckInSubmission[];
   latestSheetSync: {
     pulledAt: string | null;
-    clientsCount: number;
+    clientsSeen: number;
     isStale: boolean;
   } | null;
   monthRetention: {
@@ -140,7 +140,7 @@ export default function TodayView({ clients, checkIns, latestSheetSync, monthRet
           label="Sheet sync freshness"
           value={!latestSheetSync ? "None" : latestSheetSync.isStale ? "Stale" : "Fresh"}
           tone={!latestSheetSync ? "r" : latestSheetSync.isStale ? "a" : "g"}
-          sub={latestSheetSync ? `${latestSheetSync.clientsCount} clients` : "Pull to start"}
+          sub={latestSheetSync ? `${latestSheetSync.clientsSeen} clients` : "Pull to start"}
         />
       </div>
 
