@@ -16,7 +16,7 @@ export default async function ClientsPage() {
   const [extraQ, completedQ] = await Promise.all([
     db
       .from("clients")
-      .select("id, nutrition_status, nutrition_assigned_at, start_date")
+      .select("id, start_date")
       .in("status", ["active"]),
     db
       .from("clients")
@@ -24,10 +24,9 @@ export default async function ClientsPage() {
       .eq("status", "completed"),
   ]);
 
-  const byId = new Map<number, { nutritionStatus: string; startDate: string | null }>();
+  const byId = new Map<number, { startDate: string | null }>();
   for (const r of extraQ.data ?? [])
     byId.set(r.id as number, {
-      nutritionStatus: (r.nutrition_status as string) ?? "",
       startDate: (r.start_date as string) ?? null,
     });
 
@@ -55,17 +54,12 @@ export default async function ClientsPage() {
       score: c.score,
       workoutsCompleted7d: c.everfit?.workoutsCompleted7d ?? null,
       workoutsAssigned7d: c.everfit?.workoutsAssigned7d ?? null,
-      lastClientMessageAt: c.everfit?.lastClientMessageAt ?? null,
-      lastCoachMessageDaysAgo: c.lastCoachMessageDaysAgo,
       latestCheckInScore: c.latestCheckInScore,
       latestCheckInDaysAgo: c.latestCheckInDaysAgo,
       retentionCycleOpen: c.retentionCycleOpen,
-      nutritionStatus: x?.nutritionStatus ?? "",
-      everfitReplies7d: c.everfit?.clientReplies7d ?? null,
-      everfitActivity7d: c.everfit?.activity7d ?? null,
-      everfitStale: c.everfit?.isStale ?? false,
-      everfitSummary: c.everfit?.summary ?? null,
       todayBuckets: c.todayBuckets,
+      isGhosting: c.isGhosting,
+      zeroWorkoutStreakWeeks: c.zeroWorkoutStreakWeeks,
       weeklyReports: c.weeklyReports.slice(0, 4).map((w) => ({
         weekLabel: w.weekLabel,
         weekEndingAt: w.weekEndingAt,
@@ -92,17 +86,12 @@ export default async function ClientsPage() {
     score: { score: 0, bucket: "unknown" as const, reasons: [] as string[] },
     workoutsCompleted7d: null,
     workoutsAssigned7d: null,
-    lastClientMessageAt: null,
-    lastCoachMessageDaysAgo: null,
     latestCheckInScore: null,
     latestCheckInDaysAgo: null,
     retentionCycleOpen: false,
-    nutritionStatus: "",
-    everfitReplies7d: null,
-    everfitActivity7d: null,
-    everfitStale: false,
-    everfitSummary: null,
     todayBuckets: [] as string[],
+    isGhosting: false,
+    zeroWorkoutStreakWeeks: 0,
     weeklyReports: [] as {
       weekLabel: string;
       weekEndingAt: string;

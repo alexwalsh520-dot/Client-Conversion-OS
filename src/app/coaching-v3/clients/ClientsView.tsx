@@ -16,17 +16,12 @@ export type Row = {
   score: RetentionScore;
   workoutsCompleted7d: number | null;
   workoutsAssigned7d: number | null;
-  lastClientMessageAt: string | null;
-  lastCoachMessageDaysAgo: number | null;
   latestCheckInScore: number | null;
   latestCheckInDaysAgo: number | null;
   retentionCycleOpen: boolean;
-  nutritionStatus: string;
-  everfitReplies7d: number | null;
-  everfitActivity7d: number | null;
-  everfitStale: boolean;
-  everfitSummary: string | null;
   todayBuckets: string[];
+  isGhosting: boolean;
+  zeroWorkoutStreakWeeks: number;
   weeklyReports: {
     weekLabel: string;
     weekEndingAt: string;
@@ -37,27 +32,18 @@ export type Row = {
   }[];
 };
 
-type Preset = "all" | "retention" | "reply_owed" | "ghost" | "nutrition" | "recent" | "completed";
+type Preset = "all" | "retention" | "ghost" | "recent" | "completed";
 
 const PRESET_LABEL: Record<Preset, string> = {
   all: "All active",
   retention: "Retention window",
-  reply_owed: "Owed a reply ≥ 2d",
   ghost: "Ghost",
-  nutrition: "Nutrition pending",
-  recent: "Onboarded ≤ 7d",
+  recent: "Onboarded ≤ 14d",
   completed: "Completed",
 };
 
 type SortKey = "score" | "days" | "checkin" | "workouts" | "name" | "coach";
 type SortDir = "asc" | "desc";
-
-function daysAgo(iso: string | null): number | null {
-  if (!iso) return null;
-  const t = Date.parse(iso);
-  if (!Number.isFinite(t)) return null;
-  return Math.max(0, Math.floor((Date.now() - t) / 86_400_000));
-}
 
 function daysToStart(startDate: string | null): number | null {
   if (!startDate) return null;
@@ -76,16 +62,6 @@ function scoreColor(b: RetentionScore["bucket"]): "g" | "a" | "r" | "u" {
   return "u";
 }
 
-function replyOwed(r: Row): number | null {
-  if (!r.lastClientMessageAt) return null;
-  const clientDays = daysAgo(r.lastClientMessageAt);
-  if (clientDays === null) return null;
-  // Coach msg age >= client msg age means the coach hasn't replied since.
-  const coachDays = r.lastCoachMessageDaysAgo;
-  if (coachDays !== null && coachDays < clientDays) return null; // coach replied more recently
-  return clientDays;
-}
-
 function matchesPreset(r: Row, p: Preset): boolean {
   // Every preset except "completed" hides completed clients by default —
   // the "completed" chip is the single place a coach or MAS surfaces them.
@@ -95,21 +71,13 @@ function matchesPreset(r: Row, p: Preset): boolean {
       return true;
     case "retention":
       return r.retentionCycleOpen;
-    case "reply_owed": {
-      const d = replyOwed(r);
-      return d !== null && d >= 2;
-    }
     case "ghost":
-      return (
-        (r.everfitReplies7d ?? 0) === 0 &&
-        (r.everfitActivity7d ?? 0) === 0 &&
-        r.lastClientMessageAt !== null
-      );
-    case "nutrition":
-      return r.nutritionStatus === "pending" || r.nutritionStatus === "assigned";
+      // Ghost = active client with 2+ consecutive weeks of zero-workout
+      // reports on the assistant's sheet (MAS 2026-09-16).
+      return r.isGhosting;
     case "recent": {
       const d = daysToStart(r.startDate);
-      return d !== null && d >= 0 && d <= 7;
+      return d !== null && d >= 0 && d <= 14;
     }
     case "completed":
       return r.status === "completed";
@@ -278,21 +246,19 @@ export default function ClientsView({ rows }: { rows: Row[] }) {
               <Th onClick={() => toggleSort("days")}>Days left{arrow("days")}</Th>
               <Th onClick={() => toggleSort("workouts")}>Workouts 7d{arrow("workouts")}</Th>
               <Th onClick={() => toggleSort("checkin")}>Check-in{arrow("checkin")}</Th>
-              <Th>Reply owed</Th>
               <Th onClick={() => toggleSort("score")}>Retain %{arrow("score")}</Th>
             </tr>
           </thead>
           <tbody>
             {sorted.length === 0 && (
               <tr>
-                <td colSpan={7} className="h3-empty">
+                <td colSpan={6} className="h3-empty">
                   No clients match.
                 </td>
               </tr>
             )}
             {sorted.map((r) => {
               const cls = scoreColor(r.score.bucket);
-              const owed = replyOwed(r);
               const wo =
                 r.workoutsAssigned7d != null && r.workoutsAssigned7d > 0
                   ? r.workoutsAssigned7d === 100
@@ -360,15 +326,6 @@ export default function ClientsView({ rows }: { rows: Row[] }) {
                     >
                       {r.latestCheckInScore != null ? `${r.latestCheckInScore}` : "—"}
                     </span>
-                  </Td>
-                  <Td>
-                    {owed != null && owed >= 2 ? (
-                      <span style={{ color: "var(--danger)", fontWeight: 600 }}>{owed}d</span>
-                    ) : owed != null ? (
-                      <span style={{ color: "var(--warning)" }}>{owed}d</span>
-                    ) : (
-                      "—"
-                    )}
                   </Td>
                   <Td>
                     <span className={`pct ${cls}`} style={{ fontWeight: 700, color: pctColor(cls) }}>
@@ -508,10 +465,10 @@ function ClientDrawer({ row, onClose }: { row: Row; onClose: () => void }) {
         </section>
 
         <section className="h3-sec">
-          <h2>Everfit V3 sync {row.everfitStale ? "· stale" : ""}</h2>
+          <h2>Latest week</h2>
           <div className="h3-list" style={{ padding: "10px 14px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
             <div>
-              <div style={{ color: "var(--text-muted)", fontSize: 11 }}>Workouts 7d</div>
+              <div style={{ color: "var(--text-muted)", fontSize: 11 }}>Workouts (last 7d)</div>
               <div>
                 {row.workoutsAssigned7d != null && row.workoutsAssigned7d > 0
                   ? row.workoutsAssigned7d === 100
@@ -521,27 +478,20 @@ function ClientDrawer({ row, onClose }: { row: Row; onClose: () => void }) {
               </div>
             </div>
             <div>
-              <div style={{ color: "var(--text-muted)", fontSize: 11 }}>Client replies 7d</div>
-              <div>{row.everfitReplies7d ?? "—"}</div>
-            </div>
-            <div>
-              <div style={{ color: "var(--text-muted)", fontSize: 11 }}>Activity 7d</div>
-              <div>{row.everfitActivity7d ?? "—"}</div>
-            </div>
-            <div>
-              <div style={{ color: "var(--text-muted)", fontSize: 11 }}>Last client msg</div>
-              <div>
-                {row.lastClientMessageAt
-                  ? `${daysAgo(row.lastClientMessageAt)}d ago`
-                  : "—"}
+              <div style={{ color: "var(--text-muted)", fontSize: 11 }}>Zero-workout streak</div>
+              <div
+                style={{
+                  color: row.isGhosting ? "var(--danger)" : row.zeroWorkoutStreakWeeks > 0 ? "var(--warning)" : "inherit",
+                  fontWeight: row.isGhosting ? 700 : 400,
+                }}
+              >
+                {row.zeroWorkoutStreakWeeks === 0
+                  ? "0 weeks"
+                  : `${row.zeroWorkoutStreakWeeks} week${row.zeroWorkoutStreakWeeks === 1 ? "" : "s"}`}
+                {row.isGhosting && <span style={{ marginLeft: 6 }}>· ghosting</span>}
               </div>
             </div>
           </div>
-          {row.everfitSummary && (
-            <div style={{ marginTop: 8, fontStyle: "italic", color: "var(--text-secondary)" }}>
-              &ldquo;{row.everfitSummary}&rdquo;
-            </div>
-          )}
         </section>
 
         <section className="h3-sec">
