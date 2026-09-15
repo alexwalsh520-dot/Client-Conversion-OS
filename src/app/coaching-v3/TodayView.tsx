@@ -463,10 +463,11 @@ function CheckinModal({
   submission: CheckInSubmission;
   onClose: () => void;
 }) {
+  // Each subscore is 0-10. The 0-100 composite is round(avg(q1..q4) * 10).
   const rows = [
-    { label: "Overall", val: submission.q1 },
+    { label: "Coaching", val: submission.q1 },
     { label: "Strength", val: submission.q2 },
-    { label: "Lifestyle", val: submission.q3 },
+    { label: "Nutrition + sleep", val: submission.q3 },
     { label: "Progress", val: submission.q4 },
   ];
   return (
@@ -488,8 +489,8 @@ function CheckinModal({
             }}
           >
             <div style={{ color: "var(--text-muted)", fontSize: 11 }}>{r.label}</div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: r.val < 3 ? "var(--danger)" : r.val < 4 ? "var(--warning)" : "var(--text-primary)" }}>
-              {r.val}/5
+            <div style={{ fontSize: 20, fontWeight: 700, color: r.val < 5 ? "var(--danger)" : r.val < 7 ? "var(--warning)" : "var(--text-primary)" }}>
+              {r.val}/10
             </div>
           </div>
         ))}
@@ -505,6 +506,9 @@ function CheckinModal({
         <div style={{ color: "var(--text-muted)", fontSize: 11 }}>Score</div>
         <div style={{ fontSize: 22, fontWeight: 700, color: submission.score < 40 ? "var(--danger)" : submission.score < 55 ? "var(--warning)" : "var(--text-primary)" }}>
           {submission.score}/100
+        </div>
+        <div style={{ fontSize: 10.5, color: "var(--text-muted)", marginTop: 2 }}>
+          avg of the four subscores × 10
         </div>
       </div>
       {submission.text ? (
