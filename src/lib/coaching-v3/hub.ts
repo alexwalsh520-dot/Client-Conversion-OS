@@ -32,9 +32,38 @@ function daysFromToday(dateStr: string | null | undefined): number | null {
 export type TodayBucket =
   | "past_end"
   | "retention_ask"
-  | "reply_owed"
-  | "checkin_needs_reply"
-  | "ghost";
+  | "zero_workouts"
+  | "concerning_note"
+  | "silent_2wk";
+
+/** Words in an assistant note that flag "MAS should look" (case-insensitive
+ *  substring match on latest note). Kept intentionally short — false positives
+ *  are more costly than false negatives here, since a coach chat can also
+ *  trigger buckets. */
+const CONCERNING_TERMS = [
+  "cancel",
+  "cancell",       // "cancelled" / "cancellation"
+  "quit",
+  "refund",
+  "dispute",
+  "unhappy",
+  "frustrat",
+  "leaving",
+  "not happy",
+  "considering",
+  "chargeback",
+  "ghost",
+  "no response",
+  "no reply",
+  "unresponsive",
+];
+
+export interface WeeklyReport {
+  weekLabel: string;
+  weekEndingAt: string;
+  workoutPct: number | null;
+  note: string | null;
+}
 
 export interface HubClientV3 {
   id: number;
@@ -58,6 +87,8 @@ export interface HubClientV3 {
   // Coach contact recency
   lastCoachMessageDaysAgo: number | null;
   lastMeetingDaysAgo: number | null;
+  // Sheet-derived weekly reports (most recent first)
+  weeklyReports: WeeklyReport[];
   // Derived
   score: RetentionScore;
   todayBuckets: TodayBucket[];
@@ -76,6 +107,14 @@ export interface HubV3 {
     clientsCount: number;
     matchedCount: number;
     isStale: boolean;
+  } | null;
+  latestSheetSync: {
+    pulledAt: string | null;
+    pulledBy: string | null;
+    tabsRead: string[];
+    rowsIngested: number;
+    clientsSeen: number;
+    isStale: boolean; // pulled_at older than 8 days
   } | null;
   monthRetention: {
     windowStart: string;
@@ -110,6 +149,8 @@ export async function loadHubV3(): Promise<HubV3 | null> {
     clientsQ,
     everfitQ,
     latestSnapQ,
+    latestSheetSnapQ,
+    weeklyReportsQ,
     milestonesQ,
     cyclesQ,
     monthCyclesQ,
@@ -133,6 +174,16 @@ export async function loadHubV3(): Promise<HubV3 | null> {
       .order("uploaded_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    db
+      .from("everfit_v3_sheet_snapshots")
+      .select("pulled_at, pulled_by, tabs_read, rows_ingested, clients_seen")
+      .order("pulled_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    db
+      .from("everfit_v3_weekly_reports")
+      .select("client_id, client_name, coach_name, week_label, week_ending_at, workout_pct, note")
+      .order("week_ending_at", { ascending: false }),
     db
       .from("coach_milestones")
       .select(
@@ -242,6 +293,21 @@ export async function loadHubV3(): Promise<HubV3 | null> {
     lastCoachMsgAtByEverfit.set(id, m.observed_at as string);
   }
 
+  // Weekly reports (from the Google Sheet) indexed by client name.
+  // Rows are already ordered week_ending_at DESC by the query.
+  const weeklyByName = new Map<string, WeeklyReport[]>();
+  for (const r of weeklyReportsQ.data ?? []) {
+    const k = norm(r.client_name as string);
+    const arr = weeklyByName.get(k) ?? [];
+    arr.push({
+      weekLabel: r.week_label as string,
+      weekEndingAt: r.week_ending_at as string,
+      workoutPct: r.workout_pct == null ? null : Number(r.workout_pct),
+      note: (r.note as string) ?? null,
+    });
+    weeklyByName.set(k, arr);
+  }
+
   // ---- Compose per-client rows ----
   const clientsRaw = (clientsQ.data ?? []) as {
     id: number;
@@ -283,7 +349,9 @@ export async function loadHubV3(): Promise<HubV3 | null> {
     const lastCoachContactDaysAgo = contactCandidates.length
       ? Math.min(...contactCandidates)
       : null;
-    const lastClientMsgDaysAgo = isoToDaysAgo(everfit?.lastClientMessageAt ?? null);
+    const weeklyReports = weeklyByName.get(k) ?? [];
+    const latestWeek = weeklyReports[0] ?? null;
+    const priorWeek = weeklyReports[1] ?? null;
 
     const daysRemaining = daysFromToday(row.end_date);
     const score = computeRetentionScore({
@@ -291,13 +359,14 @@ export async function loadHubV3(): Promise<HubV3 | null> {
       workoutsCompleted7d: everfit?.workoutsCompleted7d ?? null,
       workoutsAssigned7d: everfit?.workoutsAssigned7d ?? null,
       lastCoachContactDaysAgo,
-      lastClientMessageDaysAgo: lastClientMsgDaysAgo,
       daysRemaining,
       hasBeenRetainedBefore: retainedBefore,
       hasOpenExtendedCycle: !!ms?.retentionCompleted,
     });
 
-    // ---- Today buckets. Order: past_end > retention_ask > reply_owed > checkin_needs_reply > ghost.
+    // ---- Today buckets (post sheet-sync redesign, 2026-09-15). Order:
+    //      past_end > retention_ask > zero_workouts > concerning_note >
+    //      silent_2wk. Bucketed off the sheet weekly reports + DB state.
     const todayBuckets: TodayBucket[] = [];
     if (daysRemaining !== null && daysRemaining < 0 && cycleOpen) {
       todayBuckets.push("past_end");
@@ -312,28 +381,26 @@ export async function loadHubV3(): Promise<HubV3 | null> {
       todayBuckets.push("retention_ask");
     }
     if (
-      everfit?.lastClientMessageAt &&
-      (!lastCoachMsgAt || everfit.lastClientMessageAt > lastCoachMsgAt) &&
-      lastClientMsgDaysAgo !== null &&
-      lastClientMsgDaysAgo >= 2
+      latestWeek &&
+      latestWeek.workoutPct !== null &&
+      latestWeek.workoutPct === 0
     ) {
-      todayBuckets.push("reply_owed");
+      todayBuckets.push("zero_workouts");
     }
-    if (checkin && checkin.score < 60) {
-      // Coach hasn't replied since the check-in? Use last coach msg vs check-in daysAgo.
-      const daysBetween =
-        checkin.daysAgo !== null && lastCoachMsgDaysAgo !== null
-          ? lastCoachMsgDaysAgo - checkin.daysAgo // positive => coach msg older than checkin
-          : null;
-      const notAnswered = daysBetween === null || daysBetween > 0;
-      if (notAnswered) todayBuckets.push("checkin_needs_reply");
+    const noteBody = (latestWeek?.note ?? "").toLowerCase();
+    if (noteBody && CONCERNING_TERMS.some((t) => noteBody.includes(t))) {
+      todayBuckets.push("concerning_note");
     }
+    // Silent = last two weekly reports both have empty notes AND client is
+    // active. Only fires when we have at least 2 weeks of history for them
+    // (otherwise it's just a new client, not a signal).
     if (
-      everfit &&
-      (everfit.clientReplies7d ?? 0) === 0 &&
-      (everfit.activity7d ?? 0) === 0
+      row.status === "active" &&
+      priorWeek &&
+      !latestWeek?.note &&
+      !priorWeek.note
     ) {
-      todayBuckets.push("ghost");
+      todayBuckets.push("silent_2wk");
     }
 
     return {
@@ -354,6 +421,7 @@ export async function loadHubV3(): Promise<HubV3 | null> {
       latestCheckInDaysAgo: checkin?.daysAgo ?? null,
       lastCoachMessageDaysAgo: lastCoachMsgDaysAgo,
       lastMeetingDaysAgo: meetingDaysAgo,
+      weeklyReports,
       score,
       todayBuckets,
     };
@@ -414,10 +482,25 @@ export async function loadHubV3(): Promise<HubV3 | null> {
       }
     : null;
 
+  const SHEET_STALE_HOURS = 8 * 24; // 8 days = weekly + a day of slack
+  const latestSheetSync = latestSheetSnapQ.data
+    ? {
+        pulledAt: latestSheetSnapQ.data.pulled_at as string,
+        pulledBy: latestSheetSnapQ.data.pulled_by as string,
+        tabsRead: (latestSheetSnapQ.data.tabs_read as string[]) ?? [],
+        rowsIngested: latestSheetSnapQ.data.rows_ingested as number,
+        clientsSeen: latestSheetSnapQ.data.clients_seen as number,
+        isStale:
+          Date.now() - Date.parse(latestSheetSnapQ.data.pulled_at as string) >
+          SHEET_STALE_HOURS * 60 * 60 * 1000,
+      }
+    : null;
+
   return {
     viewer: { email: viewerEmail, isAdmin, coach: visibleCoach },
     clients: visible,
     latestSync,
+    latestSheetSync,
     monthRetention: {
       windowStart: monthStart.slice(0, 10),
       total: totalAll,

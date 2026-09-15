@@ -7,17 +7,17 @@ export const dynamic = "force-dynamic";
 const BUCKET_TITLE: Record<TodayBucket, string> = {
   past_end: "Past end date, no decision",
   retention_ask: "Retention window, not asked",
-  reply_owed: "Owed a reply ≥ 2 days",
-  checkin_needs_reply: "Low check-in not answered",
-  ghost: "Ghost, still active",
+  zero_workouts: "Zero workouts last week",
+  concerning_note: "Assistant flagged concern in latest note",
+  silent_2wk: "Silent for two weeks straight",
 };
 
 const BUCKET_ORDER: TodayBucket[] = [
   "past_end",
   "retention_ask",
-  "reply_owed",
-  "checkin_needs_reply",
-  "ghost",
+  "concerning_note",
+  "zero_workouts",
+  "silent_2wk",
 ];
 
 function healthDot(c: HubClientV3): "r" | "a" | "g" | "u" {
@@ -31,6 +31,9 @@ function workoutsCell(c: HubClientV3): string {
   const done = c.everfit?.workoutsCompleted7d;
   const assigned = c.everfit?.workoutsAssigned7d;
   if (assigned == null || assigned === 0) return "—";
+  // Sheet-fed rows store workout completion as pct out of 100. Show as "80%"
+  // instead of "80/100" to match how MAS's assistant reports it.
+  if (assigned === 100) return `${done ?? 0}%`;
   return `${done ?? 0}/${assigned}`;
 }
 
@@ -58,7 +61,7 @@ export default async function TodayPage() {
 
   return (
     <>
-      <SyncBar latest={hub.latestSync} />
+      <SyncBar latest={hub.latestSheetSync} />
 
       <div className="h3-kpis">
         <div className="h3-kpi">
@@ -81,11 +84,15 @@ export default async function TodayPage() {
           </div>
         </div>
         <div className="h3-kpi">
-          <div className="l">V3 sync freshness</div>
-          <div className={`v ${!hub.latestSync ? "r" : hub.latestSync.isStale ? "a" : "g"}`}>
-            {!hub.latestSync ? "None" : hub.latestSync.isStale ? "Stale" : "Fresh"}
+          <div className="l">Sheet sync freshness</div>
+          <div className={`v ${!hub.latestSheetSync ? "r" : hub.latestSheetSync.isStale ? "a" : "g"}`}>
+            {!hub.latestSheetSync ? "None" : hub.latestSheetSync.isStale ? "Stale" : "Fresh"}
           </div>
-          <div className="d">{hub.latestSync ? `${hub.latestSync.matchedCount}/${hub.latestSync.clientsCount} matched` : "Upload a JSON to start"}</div>
+          <div className="d">
+            {hub.latestSheetSync
+              ? `${hub.latestSheetSync.clientsSeen} clients from ${hub.latestSheetSync.tabsRead.length} coaches`
+              : "Pull from sheet to start"}
+          </div>
         </div>
       </div>
 
@@ -117,27 +124,29 @@ export default async function TodayPage() {
                         </span>
                       )}
                       <span>Workouts {workoutsCell(c)}</span>
-                      {c.everfit?.lastClientMessageAt && (
-                        <span>
-                          Client last msg{" "}
-                          {c.everfit.lastClientMessageAt
-                            ? Math.max(
-                                0,
-                                Math.floor(
-                                  (Date.now() - Date.parse(c.everfit.lastClientMessageAt)) /
-                                    86_400_000,
-                                ),
-                              )
-                            : "?"}
-                          d ago
-                        </span>
-                      )}
                       {c.latestCheckInScore != null && (
                         <span className={c.latestCheckInScore < 60 ? "r" : c.latestCheckInScore < 75 ? "a" : ""}>
                           Check-in {c.latestCheckInScore}/100
                         </span>
                       )}
                     </div>
+                    {c.weeklyReports[0]?.note && (
+                      <div
+                        style={{
+                          marginTop: 4,
+                          fontSize: 11.5,
+                          color: "var(--text-muted)",
+                          fontStyle: "italic",
+                          maxWidth: 720,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                        title={c.weeklyReports[0].note}
+                      >
+                        {c.weeklyReports[0].weekLabel}: &ldquo;{c.weeklyReports[0].note}&rdquo;
+                      </div>
+                    )}
                   </div>
                   <div className="aside">
                     <div className={`pct ${healthDot(c)}`}>

@@ -26,6 +26,12 @@ export type Row = {
   everfitStale: boolean;
   everfitSummary: string | null;
   todayBuckets: string[];
+  weeklyReports: {
+    weekLabel: string;
+    weekEndingAt: string;
+    workoutPct: number | null;
+    note: string | null;
+  }[];
 };
 
 type Preset = "all" | "retention" | "reply_owed" | "ghost" | "nutrition" | "recent";
@@ -278,7 +284,9 @@ export default function ClientsView({ rows }: { rows: Row[] }) {
               const owed = replyOwed(r);
               const wo =
                 r.workoutsAssigned7d != null && r.workoutsAssigned7d > 0
-                  ? `${r.workoutsCompleted7d ?? 0}/${r.workoutsAssigned7d}`
+                  ? r.workoutsAssigned7d === 100
+                    ? `${r.workoutsCompleted7d ?? 0}%`
+                    : `${r.workoutsCompleted7d ?? 0}/${r.workoutsAssigned7d}`
                   : "—";
               return (
                 <tr
@@ -478,7 +486,9 @@ function ClientDrawer({ row, onClose }: { row: Row; onClose: () => void }) {
               <div style={{ color: "var(--text-muted)", fontSize: 11 }}>Workouts 7d</div>
               <div>
                 {row.workoutsAssigned7d != null && row.workoutsAssigned7d > 0
-                  ? `${row.workoutsCompleted7d ?? 0}/${row.workoutsAssigned7d}`
+                  ? row.workoutsAssigned7d === 100
+                    ? `${row.workoutsCompleted7d ?? 0}%`
+                    : `${row.workoutsCompleted7d ?? 0}/${row.workoutsAssigned7d}`
                   : "—"}
               </div>
             </div>
@@ -533,6 +543,41 @@ function ClientDrawer({ row, onClose }: { row: Row; onClose: () => void }) {
             )}
           </div>
         </section>
+
+        {row.weeklyReports.length > 0 && (
+          <section className="h3-sec">
+            <h2>Weekly reports (from Assistant Sheet)</h2>
+            <div className="h3-list" style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+              {row.weeklyReports.map((w) => (
+                <div key={w.weekEndingAt} style={{ borderTop: "1px solid var(--border-primary)", paddingTop: 6 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                    <b>{w.weekLabel}</b>
+                    <span
+                      style={{
+                        color:
+                          w.workoutPct == null
+                            ? "var(--text-muted)"
+                            : w.workoutPct >= 70
+                              ? "var(--success)"
+                              : w.workoutPct >= 40
+                                ? "var(--warning)"
+                                : "var(--danger)",
+                        fontVariantNumeric: "tabular-nums",
+                      }}
+                    >
+                      {w.workoutPct == null ? "—" : `${Math.round(w.workoutPct)}%`}
+                    </span>
+                  </div>
+                  {w.note && (
+                    <div style={{ marginTop: 4, fontStyle: "italic", color: "var(--text-secondary)", whiteSpace: "pre-wrap" }}>
+                      &ldquo;{w.note}&rdquo;
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {row.todayBuckets.length > 0 && (
           <section className="h3-sec">

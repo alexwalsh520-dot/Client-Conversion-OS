@@ -47,6 +47,12 @@ export default async function ClientsPage() {
       everfitStale: c.everfit?.isStale ?? false,
       everfitSummary: c.everfit?.summary ?? null,
       todayBuckets: c.todayBuckets,
+      weeklyReports: c.weeklyReports.slice(0, 4).map((w) => ({
+        weekLabel: w.weekLabel,
+        weekEndingAt: w.weekEndingAt,
+        workoutPct: w.workoutPct,
+        note: w.note,
+      })),
     };
   });
 

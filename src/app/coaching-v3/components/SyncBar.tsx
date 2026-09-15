@@ -1,13 +1,14 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { Upload, Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
+import { useState } from "react";
+import { RefreshCw, Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
 
 type Latest = {
-  capturedAt: string | null;
-  uploadedAt: string | null;
-  clientsCount: number;
-  matchedCount: number;
+  pulledAt: string | null;
+  pulledBy: string | null;
+  tabsRead: string[];
+  rowsIngested: number;
+  clientsSeen: number;
   isStale: boolean;
 } | null;
 
@@ -21,45 +22,40 @@ function fmt(iso: string | null): string {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-/** Renders the current V3 sync freshness + a hidden file input for uploading. */
+/**
+ * V3 sync bar. Pulls "Admin Everfit Client Reports" via the server-side
+ * Google Sheets API when the button is clicked. The JSON upload path is
+ * retired — the sheet is now the source of truth for weekly Everfit numbers.
+ */
 export default function SyncBar({ latest }: { latest: Latest }) {
-  const [uploading, setUploading] = useState(false);
+  const [pulling, setPulling] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageKind, setMessageKind] = useState<"ok" | "err">("ok");
-  const fileRef = useRef<HTMLInputElement>(null);
 
-  async function upload(file: File) {
-    setUploading(true);
+  async function pull() {
+    setPulling(true);
     setMessage(null);
     try {
-      const text = await file.text();
-      // Validate JSON client-side for a friendlier error than the server 400.
-      JSON.parse(text);
-      const res = await fetch("/api/coaching-v3/everfit-sync", {
+      const res = await fetch("/api/coaching-v3/sheet-sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: text,
+        body: "{}",
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
-      if (body.alreadyUploaded) {
-        setMessage("Same payload already on file — no changes.");
-        setMessageKind("ok");
-      } else {
-        setMessage(
-          `Uploaded ${body.clientsUploaded} clients (${body.matched} matched, ${body.unmatched} unmatched${
-            body.droppedRows ? `, ${body.droppedRows} malformed rows dropped` : ""
-          }).`,
-        );
-        setMessageKind("ok");
-      }
-      setTimeout(() => window.location.reload(), 800);
+      const parts: string[] = [];
+      parts.push(`${body.clientsSeen} clients across ${body.tabsRead?.length ?? 0} coach tabs`);
+      parts.push(`${body.matched} matched, ${body.unmatched} unmatched`);
+      parts.push(`${body.weekRowsIngested} weekly rows`);
+      if (body.errors?.length) parts.push(`${body.errors.length} tab warnings`);
+      setMessage(`Pulled: ${parts.join(" · ")}.`);
+      setMessageKind("ok");
+      setTimeout(() => window.location.reload(), 900);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : String(err));
       setMessageKind("err");
     } finally {
-      setUploading(false);
-      if (fileRef.current) fileRef.current.value = "";
+      setPulling(false);
     }
   }
 
@@ -74,10 +70,10 @@ export default function SyncBar({ latest }: { latest: Latest }) {
       <i />
       <div className="meta" style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
         <div>
-          <strong>Everfit V3 sync</strong>{" "}
+          <strong>Assistant Sheet sync</strong>{" "}
           {latest
-            ? `— captured ${fmt(latest.capturedAt)}, ${latest.matchedCount}/${latest.clientsCount} matched`
-            : "— never uploaded"}
+            ? `— pulled ${fmt(latest.pulledAt)} by ${latest.pulledBy?.split("@")[0] ?? "?"}, ${latest.clientsSeen} clients across ${latest.tabsRead?.length ?? 0} coach tabs`
+            : "— never pulled"}
         </div>
         {message && (
           <div style={{ color: messageKind === "err" ? "var(--danger)" : "var(--text-muted)" }}>
@@ -86,43 +82,30 @@ export default function SyncBar({ latest }: { latest: Latest }) {
         )}
         {!message && latest?.isStale && (
           <div style={{ color: "var(--text-muted)" }}>
-            More than 36h since capture — refresh recommended.
+            More than 8 days since last pull — refresh recommended.
           </div>
         )}
       </div>
-      <input
-        ref={fileRef}
-        type="file"
-        accept=".json,application/json"
-        hidden
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) void upload(f);
-        }}
-      />
       <a
-        href="/coaching-v3-sync-prompt.md"
-        download
+        href="https://docs.google.com/spreadsheets/d/1BqpCkDPEWLBmStK_VQJwGe0ju8BwHWi8VzsPz39ufgY/edit"
+        target="_blank"
+        rel="noreferrer"
         className="h3-btn s"
         style={{ textDecoration: "none" }}
       >
-        Prompt
+        Open sheet
       </a>
-      <button
-        className="h3-btn p"
-        onClick={() => fileRef.current?.click()}
-        disabled={uploading}
-      >
-        {uploading ? (
+      <button className="h3-btn p" onClick={pull} disabled={pulling}>
+        {pulling ? (
           <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />
         ) : latest?.isStale ? (
           <AlertTriangle size={12} />
         ) : latest ? (
           <CheckCircle2 size={12} />
         ) : (
-          <Upload size={12} />
+          <RefreshCw size={12} />
         )}
-        {uploading ? "Uploading…" : "Upload sync JSON"}
+        {pulling ? "Pulling…" : "Pull from sheet"}
       </button>
     </div>
   );

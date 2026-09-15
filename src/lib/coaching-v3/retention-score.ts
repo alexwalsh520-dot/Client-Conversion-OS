@@ -1,16 +1,20 @@
 // Retention probability heuristic (MAS-signed-off weighting, 2026-09-15).
 //
-// A pure 0-100 score from six signals we already have. Not ML — no labeled
+// A pure 0-100 score from signals we already have. Not ML — no labeled
 // training data yet — so this is deliberately explicit: every point can be
 // traced to a signal, and the top-weighted reasons come back out for the UI.
 //
-// Weighting (must sum to 100):
-//   30  latest check-in score (0-100 direct)
-//   25  workout completion last 7 days (completed / assigned)
-//   15  coach contact recency (last coach msg OR last meeting)
-//   15  client message activity in last 14 days
-//   10  days remaining sentiment (positive good, extended a boost)
-//    5  prior retention on file (been retained before -> more likely again)
+// Weighting (must sum to 100). Rebalanced after the sync source moved from
+// Codex JSON to MAS's assistant's weekly Google Sheet: we no longer have
+// client-message activity or Everfit-side coach reply timestamps in the
+// sync feed, so those weights are redistributed onto the signals the sheet
+// does carry (workouts + notes) plus what CCOS already knows internally.
+//
+//   35  latest check-in score       (was 30)
+//   30  workout completion last 7d  (was 25)
+//   15  coach contact recency       (unchanged — from meetings + everfit_inbox_messages when available)
+//   10  days remaining sentiment    (unchanged)
+//   10  prior retention on file     (was 5)
 //
 // Missing signals contribute 0 to their slot and are called out in reasons.
 // The composite score is bucketed for display:
@@ -29,7 +33,6 @@ export interface ScoreInputs {
   workoutsCompleted7d: number | null;
   workoutsAssigned7d: number | null;
   lastCoachContactDaysAgo: number | null; // min(last coach msg, last meeting)
-  lastClientMessageDaysAgo: number | null;
   daysRemaining: number | null;
   hasBeenRetainedBefore: boolean;
   hasOpenExtendedCycle: boolean; // client already got a +4/+12 recorded this cycle
@@ -39,9 +42,9 @@ export function computeRetentionScore(i: ScoreInputs): RetentionScore {
   let total = 0;
   const reasons: { weight: number; text: string }[] = [];
 
-  // 30 — check-in score
+  // 35 — check-in score
   if (i.latestCheckInScore !== null) {
-    const pts = 30 * (i.latestCheckInScore / 100);
+    const pts = 35 * (i.latestCheckInScore / 100);
     total += pts;
     reasons.push({
       weight: pts,
@@ -51,17 +54,17 @@ export function computeRetentionScore(i: ScoreInputs): RetentionScore {
     reasons.push({ weight: 0, text: "No check-in on file (+0)" });
   }
 
-  // 25 — workout completion
+  // 30 — workout completion
   if (i.workoutsAssigned7d !== null && i.workoutsAssigned7d > 0) {
     const pct = Math.min(1, (i.workoutsCompleted7d ?? 0) / i.workoutsAssigned7d);
-    const pts = 25 * pct;
+    const pts = 30 * pct;
     total += pts;
     reasons.push({
       weight: pts,
       text: `Workouts ${i.workoutsCompleted7d ?? 0}/${i.workoutsAssigned7d} last 7d (+${Math.round(pts)})`,
     });
   } else {
-    reasons.push({ weight: 0, text: "No workouts assigned this week (+0)" });
+    reasons.push({ weight: 0, text: "No workouts logged this week (+0)" });
   }
 
   // 15 — coach contact recency
@@ -78,20 +81,6 @@ export function computeRetentionScore(i: ScoreInputs): RetentionScore {
     });
   } else {
     reasons.push({ weight: 0, text: "No coach contact recorded (+0)" });
-  }
-
-  // 15 — client message activity
-  if (i.lastClientMessageDaysAgo !== null) {
-    const days = i.lastClientMessageDaysAgo;
-    const pctRaw = days <= 3 ? 1 : days >= 14 ? 0 : (14 - days) / 11;
-    const pts = 15 * pctRaw;
-    total += pts;
-    reasons.push({
-      weight: pts,
-      text: `Client message ${days}d ago (+${Math.round(pts)})`,
-    });
-  } else {
-    reasons.push({ weight: 0, text: "Client silent (+0)" });
   }
 
   // 10 — days remaining sentiment
@@ -117,10 +106,10 @@ export function computeRetentionScore(i: ScoreInputs): RetentionScore {
     reasons.push({ weight: 0, text: "End date unknown (+0)" });
   }
 
-  // 5 — prior retention on file
+  // 10 — prior retention on file
   if (i.hasBeenRetainedBefore) {
-    total += 5;
-    reasons.push({ weight: 5, text: "Retained before (+5)" });
+    total += 10;
+    reasons.push({ weight: 10, text: "Retained before (+10)" });
   } else {
     reasons.push({ weight: 0, text: "No prior retention (+0)" });
   }
@@ -129,7 +118,7 @@ export function computeRetentionScore(i: ScoreInputs): RetentionScore {
   const unknownData =
     i.latestCheckInScore === null &&
     i.workoutsAssigned7d === null &&
-    i.lastClientMessageDaysAgo === null;
+    i.lastCoachContactDaysAgo === null;
 
   let bucket: RetentionBucket;
   if (unknownData) bucket = "unknown";

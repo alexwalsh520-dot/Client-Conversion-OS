@@ -46,6 +46,11 @@ export default async function RetentionsPageV3() {
         retentionCycleOpen: c.retentionCycleOpen,
         hasExtensionRecordedThisCycle: c.hasExtensionRecordedThisCycle,
         score: c.score,
+        weeklyReports: c.weeklyReports.slice(0, 3).map((w) => ({
+          weekLabel: w.weekLabel,
+          workoutPct: w.workoutPct,
+          note: w.note,
+        })),
       }))}
       openCycles={(openCycles ?? []).map((c) => ({
         id: c.id as number,

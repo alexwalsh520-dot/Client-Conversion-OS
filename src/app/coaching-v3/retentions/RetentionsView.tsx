@@ -22,6 +22,7 @@ type HubClient = {
   retentionCycleOpen: boolean;
   hasExtensionRecordedThisCycle: boolean;
   score: RetentionScore;
+  weeklyReports: { weekLabel: string; workoutPct: number | null; note: string | null }[];
 };
 
 type OpenCycle = {
@@ -357,7 +358,10 @@ export default function RetentionsView({ hubClients, openCycles, notes, monthRet
                         <span>{client.program}</span>
                         {client.workoutsAssigned7d != null && client.workoutsAssigned7d > 0 && (
                           <span>
-                            Workouts {client.workoutsCompleted7d ?? 0}/{client.workoutsAssigned7d}
+                            Workouts{" "}
+                            {client.workoutsAssigned7d === 100
+                              ? `${client.workoutsCompleted7d ?? 0}%`
+                              : `${client.workoutsCompleted7d ?? 0}/${client.workoutsAssigned7d}`}
                           </span>
                         )}
                         {client.latestCheckInScore != null && (
@@ -366,11 +370,31 @@ export default function RetentionsView({ hubClients, openCycles, notes, monthRet
                           </span>
                         )}
                         {client.hasExtensionRecordedThisCycle && <span>Already extended</span>}
-                        {client.everfitStale && <span className="a">V3 sync stale</span>}
                       </div>
-                      {client.everfitSummary && (
-                        <div style={{ marginTop: 8, color: "var(--text-secondary)", fontSize: 12.5, fontStyle: "italic" }}>
-                          &ldquo;{client.everfitSummary}&rdquo;
+                      {client.weeklyReports.length > 0 && (
+                        <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+                          {client.weeklyReports.map((w, i) => (
+                            <div
+                              key={i}
+                              style={{
+                                fontSize: 12,
+                                color: "var(--text-secondary)",
+                                padding: "6px 10px",
+                                background: "var(--hover-bg-subtle, rgba(148,163,184,0.06))",
+                                borderRadius: 6,
+                              }}
+                            >
+                              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--text-muted)" }}>
+                                <span>Week {w.weekLabel}</span>
+                                <span>{w.workoutPct == null ? "—" : `${Math.round(w.workoutPct)}%`}</span>
+                              </div>
+                              {w.note && (
+                                <div style={{ marginTop: 3, whiteSpace: "pre-wrap", fontStyle: "italic" }}>
+                                  &ldquo;{w.note}&rdquo;
+                                </div>
+                              )}
+                            </div>
+                          ))}
                         </div>
                       )}
                       <div className="h3-reasons">
