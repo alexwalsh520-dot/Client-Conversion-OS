@@ -92,10 +92,6 @@
       "schedule": "0 9 1 * *"
     },
     {
-      "path": "/api/cron/daily-coacher-digest",
-      "schedule": "0 18 * * 0"
-    },
-    {
       "path": "/api/cron/testimonial-reminders",
       "schedule": "0 15 * * *"
     },
