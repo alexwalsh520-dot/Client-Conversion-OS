@@ -301,33 +301,86 @@ export async function POST(req: NextRequest) {
         .eq("id", clientId)
         .single();
       if (clientErr) throw new Error(clientErr.message);
+      if (!client?.end_date) {
+        return NextResponse.json(
+          { error: "Client has no end_date; cannot extend." },
+          { status: 400 },
+        );
+      }
 
-      // MAX(current end_date, today) + addDays. A -50-day-overdue client
-      // extending 4 weeks should end 28 days from today, not stay at -22.
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const currentEnd = client?.end_date ? new Date(client.end_date) : today;
-      const baseline = currentEnd.getTime() > today.getTime() ? currentEnd : today;
-      const newEnd = new Date(baseline);
+      // Additive on end_date. MAS's rule (2026-09-15): "the client's end date
+      // gets the appropriate amount of days ADDED to their program." A client
+      // at -139 days extending +12 weeks lands at -55, still in the retention
+      // window; they only exit when the new date pushes days_remaining past 14
+      // or they are marked opp lost. Earlier MAX-of-today logic was wrong.
+      const currentEnd = new Date(client.end_date);
+      const newEnd = new Date(currentEnd);
       newEnd.setDate(newEnd.getDate() + addDays);
       const newEndDateStr = newEnd.toISOString().slice(0, 10);
 
-      const nowIso = new Date().toISOString();
-      const outcome = weeks === 4 ? "retained_4wk" : "retained_12wk";
-      const { error: closeErr } = await db
-        .from("retention_cycles")
-        .update({ outcome, outcome_at: nowIso, outcome_by: userEmail })
-        .eq("client_id", clientId)
-        .is("outcome", null);
-      if (closeErr) throw new Error(closeErr.message);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const newDaysRemaining = Math.round(
+        (newEnd.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+      );
 
+      // Fetch the open cycle so we can log the extension as a note either way.
+      const { data: cyRow, error: cyErr } = await db
+        .from("retention_cycles")
+        .select("id")
+        .eq("client_id", clientId)
+        .is("outcome", null)
+        .maybeSingle();
+      if (cyErr) throw new Error(cyErr.message);
+      if (!cyRow) {
+        return NextResponse.json(
+          { error: "Client has no open retention cycle" },
+          { status: 404 },
+        );
+      }
+
+      // Update end_date first.
       const { error: endErr } = await db
         .from("clients")
         .update({ end_date: newEndDateStr })
         .eq("id", clientId);
       if (endErr) throw new Error(endErr.message);
 
-      return NextResponse.json({ ok: true, newEndDate: newEndDateStr });
+      // Log the extension on the cycle so the coach can see when and by whom
+      // an extension happened, even if the cycle stays open.
+      const remainingLabel =
+        newDaysRemaining >= 0 ? `+${newDaysRemaining}` : String(newDaysRemaining);
+      await db.from("retention_notes").insert({
+        cycle_id: cyRow.id,
+        note_text: `Extended +${weeks} weeks. New end date ${newEndDateStr} (${remainingLabel} days remaining).`,
+        source: "manual",
+        author_email: userEmail,
+      });
+
+      // Only close the cycle when the extension truly moves the client past
+      // the 14-day threshold. Otherwise they stay on the retention tab with
+      // their notes intact until the next action (opp lost, another
+      // extension that clears the threshold, or a further slip past that
+      // eventually forces opp_lost).
+      let cycleClosed = false;
+      if (newDaysRemaining > WINDOW_DAYS) {
+        const outcome = weeks === 4 ? "retained_4wk" : "retained_12wk";
+        const nowIso = new Date().toISOString();
+        const { error: closeErr } = await db
+          .from("retention_cycles")
+          .update({ outcome, outcome_at: nowIso, outcome_by: userEmail })
+          .eq("id", cyRow.id)
+          .is("outcome", null);
+        if (closeErr) throw new Error(closeErr.message);
+        cycleClosed = true;
+      }
+
+      return NextResponse.json({
+        ok: true,
+        newEndDate: newEndDateStr,
+        newDaysRemaining,
+        stillInWindow: !cycleClosed,
+      });
     }
 
     return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
