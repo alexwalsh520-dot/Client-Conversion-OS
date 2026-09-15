@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { loadHub, money, fmtDay, milestoneDate, norm } from "@/lib/coaching-v2/hub";
 import { fetchFinancials, isRealRefund } from "@/lib/coaching-v2/financials";
 import { getServiceSupabase } from "@/lib/supabase";
@@ -11,7 +10,7 @@ const MONTHS = ["January", "February", "March", "April", "May", "June", "July", 
 export default async function MoneyPage({ searchParams }: { searchParams: Promise<{ m?: string }> }) {
   const hub = await loadHub();
   if (!hub) return null;
-  if (!hub.viewer.isAdmin) redirect("/coaching-v2");
+  const adminView = hub.viewer.isAdmin && !hub.viewer.viewingAs;
   const { m } = await searchParams;
   const now = new Date();
   const year = now.getUTCFullYear();
@@ -19,10 +18,10 @@ export default async function MoneyPage({ searchParams }: { searchParams: Promis
   const monthKey = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
 
   const db = getServiceSupabase();
-  const [fin, expQ] = await Promise.all([
+  const [fin, expQ] = adminView ? await Promise.all([
     fetchFinancials(monthIndex),
     db.from("expenses").select("id, month, name, role, base, commissions, platform, comments, paid, payment_via, payment_cadence").eq("month", monthKey).order("name"),
-  ]);
+  ]) : [{ month: "", monthIndex, refunds: [], retentions: [] } as Awaited<ReturnType<typeof fetchFinancials>>, { data: [] as Record<string, unknown>[] }];
   const expenses: ExpenseRow[] = (expQ.data ?? []).map((r) => ({ id: r.id as number, month: r.month as string, name: (r.name as string) ?? "", role: (r.role as string) ?? "", base: Number(r.base) || 0, commissions: Number(r.commissions) || 0, platform: (r.platform as string) ?? "", comments: (r.comments as string) ?? "", paid: !!r.paid, paymentVia: (r.payment_via as string) ?? "", paymentCadence: (r.payment_cadence as string) ?? "" }));
 
   const refunds = fin.refunds.filter(isRealRefund);
@@ -47,7 +46,8 @@ export default async function MoneyPage({ searchParams }: { searchParams: Promis
     return { coach, w, v, e, r, total: w + v + e + r, owed };
   }).filter((c) => c.total > 0 || c.owed);
 
-  const rows = hub.allActive.filter((c) => c.days !== null && c.days <= 30).sort((a, b) => (a.days ?? 0) - (b.days ?? 0));
+  const rows = (adminView ? hub.allActive : hub.active).filter((c) => c.days !== null && c.days <= 30).sort((a, b) => (a.days ?? 0) - (b.days ?? 0));
+  const detected = rows.filter((c) => c.retained && c.retained.by !== "milestone").length;
   const past = rows.filter((c) => (c.days ?? 0) < 0 && !c.asks[2].done).length;
   const notAsked = rows.filter((c) => (c.days ?? 0) >= 0 && (c.days ?? 0) <= 14 && !c.asks[2].done && !c.asks[2].asked).length;
   const byCoach = new Map<string, typeof rows>();
@@ -60,17 +60,18 @@ export default async function MoneyPage({ searchParams }: { searchParams: Promis
     <>
       <div className="h2-head">
         <div>
-          <h1>Money</h1>
-          <p className="h2-sub">{MONTHS[monthIndex]} {year} · renewals in, refunds out, commissions and payroll matched</p>
+          <h1>{adminView ? "Money" : "Retentions"}</h1>
+          <p className="h2-sub">{adminView ? `${MONTHS[monthIndex]} ${year} · renewals in, refunds out, commissions and payroll matched` : "Your clients within 30 days of the end. Renewals are detected from Stripe as they land."}</p>
         </div>
-        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        {adminView && <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           {prev ? <Link className="h2-btn s" href={prev}>‹</Link> : <span className="h2-btn s" style={{ opacity: 0.4 }}>‹</span>}
           <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{MONTHS[monthIndex]}</span>
           {next ? <Link className="h2-btn s" href={next}>›</Link> : <span className="h2-btn s" style={{ opacity: 0.4 }}>›</span>}
-        </div>
+        </div>}
       </div>
       {fin.error && <div className="h2-notice"><i />The refunds and retention sheets could not be read. {fin.error}</div>}
 
+      {adminView && (<>
       <div className="h2-kpis">
         <div className="h2-kpi"><div className="l">Renewal revenue</div><div className="v" style={{ color: "var(--success)" }}>{money(retentionRevenue)}</div><div className="d">{fin.retentions.length} retention payments</div></div>
         <div className="h2-kpi"><div className="l">Refunded</div><div className="v r">{money(refunded)}</div><div className="d">{refunds.length} refunds{handled ? `, ${handled} handled` : ""}</div></div>
@@ -103,9 +104,10 @@ export default async function MoneyPage({ searchParams }: { searchParams: Promis
         </div>
         <div className="h2-panel"><h3>Payroll</h3><PayrollTable rows={expenses} /></div>
       </div>
+      </>)}
 
       <div className="h2-sec">
-        <h2 className="plain">Retentions<span className="why">{rows.length} within 30 days or past the end · <span className="h2-r">{past} past</span> · {notAsked} due and not asked</span></h2>
+        <h2 className="plain">Retentions<span className="why">{rows.length} within 30 days or past the end · <span className="h2-r">{past} past</span> · {notAsked} due and not asked · {detected} detected from Stripe or a closed cycle</span></h2>
         {[...byCoach.entries()].map(([coach, cs]) => (
           <div key={coach} style={{ margin: "0 0 14px" }}>
             <div className="h2-h" style={{ margin: "0 0 6px" }}>{coach} <span className="h2-m" style={{ fontWeight: 400 }}>{cs.length}</span></div>
@@ -118,7 +120,7 @@ export default async function MoneyPage({ searchParams }: { searchParams: Promis
                       <td><Dot lvl={c.health} /></td>
                       <td className="name"><Link href={`/coaching-v2/clients/${c.id}`}>{c.name}</Link></td>
                       <td className={`num ${(c.days ?? 0) < 0 ? "h2-r" : (c.days ?? 0) <= 7 ? "h2-a" : ""}`}>{(c.days ?? 0) < 0 ? `${-(c.days ?? 0)}d ago` : `${c.days}d · ${fmtDay(c.endDate)}`}</td>
-                      <td className={c.asks[2].done ? "h2-m" : c.asks[2].asked ? "" : (c.days ?? 0) <= 14 ? "h2-r" : ""}>{c.asks[2].done ? "Extended" : c.asks[2].asked ? "Asked" : "Not asked"}</td>
+                      <td className={c.asks[2].done ? "h2-m" : c.asks[2].asked ? "" : (c.days ?? 0) <= 14 ? "h2-r" : ""} title={c.retained?.detail}>{c.asks[2].done ? (c.retained?.by === "stripe" ? "Extended · Stripe" : c.retained?.by === "cycle" ? "Extended · cycle" : "Extended") : c.asks[2].asked ? "Asked" : "Not asked"}</td>
                       <td className="w">{c.messages.find((x) => x.sender === "client")?.text ?? <span className="h2-m">–</span>}</td>
                       <td>{c.retention.nextStep ?? <span className="h2-m">–</span>}</td>
                       <td className="w">{c.retention.note ?? <Link className="h2-lk" href={`/coaching-v2/clients/${c.id}`}>Add note</Link>}</td>

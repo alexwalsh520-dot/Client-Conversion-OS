@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { loadHub, daysSince, type HubClient } from "@/lib/coaching-v2/hub";
+import { loadHub, type HubClient } from "@/lib/coaching-v2/hub";
 import ClientRow from "./components/ClientRow";
 import ViewAs from "./components/ViewAs";
 import ReportModal from "./components/ReportModal";
@@ -45,7 +45,6 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
 
   const dateLine = new Date(hub.today + "T12:00:00Z").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" });
   const captured = hub.inboxCapturedAt ? new Date(hub.inboxCapturedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : null;
-  const eodStale = daysSince(hub.eod.lastDate);
 
   const row = (c: HubClient, g: Group) => <ClientRow key={c.id} id={c.id} name={c.name} coach={c.coach} health={c.health} text={g.text(c)} num={g.num(c)} showCoach={manager} />;
 
@@ -71,10 +70,6 @@ export default async function TodayPage({ searchParams }: { searchParams: Promis
           {hub.viewer.coach && <ReportModal coach={hub.viewer.coach} clients={mine.map((c) => ({ id: c.id, name: c.name, health: c.health }))} />}
         </div>
       </div>
-
-      {manager && eodStale !== null && eodStale > 3 && (
-        <div className="h2-notice"><i />End of day reports have not been submitted since {new Date(hub.eod.lastDate!).toLocaleDateString("en-US", { month: "long", day: "numeric" })}. The Reports column on Coaches is blind until they resume.</div>
-      )}
 
       <div className="h2-kpis">
         <div className="h2-kpi"><div className="l">At risk</div><div className="v r">{reds}</div><div className="d">of {mine.length} clients</div></div>

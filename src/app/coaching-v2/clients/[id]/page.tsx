@@ -133,6 +133,7 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
               <div className="h2-ret">
                 <span className="kk">Program ends</span>
                 <span className={`v ${c.days! < 0 ? "h2-r" : c.days! <= 14 ? "h2-a" : ""}`}>{c.days! < 0 ? `Ended ${-c.days!} days ago${c.asks[2].done ? ", extended" : ", no decision recorded"}` : `In ${c.days} days, ${fmtDay(c.endDate)}`}</span>
+                {c.retained && (<><span className="kk">Detected</span><span className="v">{c.retained.detail}</span></>)}
                 <span className="kk">Client said</span>
                 <span className="v">{c.messages.find((m) => m.sender === "client")?.text ?? <span className="h2-m">Nothing captured</span>}</span>
                 <RenewalPanel clientName={c.name} milestoneId={c.milestoneId} asked={c.asks[2].asked} done={c.asks[2].done} nextStep={c.retention.nextStep} note={c.retention.note} canMark />

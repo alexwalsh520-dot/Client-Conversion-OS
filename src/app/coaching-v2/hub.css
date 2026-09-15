@@ -203,3 +203,9 @@ details.h2-dd .in { padding: 0 0 12px 18px; }
 .h2-cal span.ok { background: var(--success-soft); color: var(--success); }
 .h2-cal span.no { background: var(--danger-soft); color: var(--danger); }
 @media (max-width: 900px) { .h2-grid2 { grid-template-columns: 1fr; } }
+
+/* overflow guards */
+.h2-panel { min-width: 0; overflow-x: auto; }
+.h2-grid2 > * { min-width: 0; }
+.h2-sec h2 { flex-wrap: wrap; }
+.h2-cp > * { min-width: 0; }

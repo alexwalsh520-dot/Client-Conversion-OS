@@ -18,7 +18,7 @@ import {
   Trophy,
   DollarSign,
   Users,
-  Sparkles,
+  Loader,
 } from "lucide-react";
 import { ThemeIconButton } from "@/components/ThemeToggle";
 import LogoWordmark from "@/components/LogoWordmark";
@@ -224,7 +224,7 @@ export default function Sidebar() {
               {renderLink({ href: "/coaching-v2", label: "Today", icon: Clock })}
               {renderLink({ href: "/coaching-v2/clients", label: "Clients", icon: Users })}
               {renderLink({ href: "/coaching-v2/coaches", label: "Coaches", icon: Trophy })}
-              {isAdmin && renderLink({ href: "/coaching-v2/money", label: "Money", icon: DollarSign })}
+              {renderLink({ href: "/coaching-v2/money", label: "Money", icon: DollarSign })}
             </>
           ) : (
             <>
@@ -265,7 +265,7 @@ export default function Sidebar() {
               onClick={() => window.dispatchEvent(new CustomEvent("ccos-v2-ask"))}
               title="Ask Ahmad"
             >
-              <span className="sidebar-link-icon"><Sparkles size={16} /></span>
+              <span className="sidebar-link-icon"><Loader size={16} /></span>
               {!collapsed && <span>Ask Ahmad</span>}
             </button>
           )}

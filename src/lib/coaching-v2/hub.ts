@@ -81,6 +81,8 @@ export interface HubClient {
   asks: Ask[];
   milestoneId: number | null;
   retention: { nextStep: string | null; note: string | null; noteAt: string | null };
+  /** Automatic retention detection. Stripe payment in the window, Ahmad's retention cycle, or the coach's milestone. */
+  retained: { by: "stripe" | "cycle" | "milestone"; at: string | null; amount: number | null; detail: string } | null;
   /** From the nutrition intake form when linked. */
   goal: { text: string; startLb: number | null; goalLb: number | null } | null;
   week: number | null;
@@ -195,8 +197,8 @@ export async function loadHub(): Promise<Hub | null> {
   if (!viewer) return null;
   const db = getServiceSupabase();
 
-  const [clientsQ, milestonesQ, meetingsQ, checkinsQ, notesQ, convosQ, msgsQ, usersQ, formsQ, eodQ] = await Promise.all([
-    db.from("clients").select("id, name, coach_name, program, status, start_date, end_date, amount_paid, sales_person, payment_platform, sales_fathom_link, onboarding_fathom_link, onboarding_date, onboarding_status, nutrition_status, nutrition_assigned_at, nutrition_form_id, created_at"),
+  const [clientsQ, milestonesQ, meetingsQ, checkinsQ, notesQ, convosQ, msgsQ, usersQ, formsQ, eodQ, payQ, cyclesQ] = await Promise.all([
+    db.from("clients").select("id, name, email, coach_name, program, status, start_date, end_date, amount_paid, sales_person, payment_platform, sales_fathom_link, onboarding_fathom_link, onboarding_date, onboarding_status, nutrition_status, nutrition_assigned_at, nutrition_form_id, created_at"),
     db.from("coach_milestones").select("*"),
     db.from("coach_meetings").select("client_id, client_name, coach_name, meeting_date, duration_minutes, notes, fathom_link").order("meeting_date", { ascending: false }),
     db.from("client_check_ins").select("id, client_id, client_name, coach_name, q1_overall, q2_strength, q3_lifestyle, q4_progress, q5_open_response, score_0_100, submitted_at").order("submitted_at", { ascending: false }),
@@ -206,6 +208,8 @@ export async function loadHub(): Promise<Hub | null> {
     viewer.coach ? Promise.resolve({ data: null }) : db.from("app_users").select("name").eq("email", viewer.email).maybeSingle(),
     db.from("nutrition_intake_forms").select("id, current_weight, goal_weight, fitness_goal"),
     db.from("eod_reports").select("submitted_by, date, role").order("date", { ascending: false }).limit(2000),
+    db.from("stripe_payments").select("email, contact_name, amount_cents, refunded_cents, paid_at, created_at, billing_reason, kind, status").order("paid_at", { ascending: false }).limit(5000),
+    db.from("retention_cycles").select("client_id, outcome, outcome_at").in("outcome", ["retained_4wk", "retained_12wk"]),
   ]);
 
   // If the roster did not know this coach, try their app_users name against coach names.
@@ -218,6 +222,23 @@ export async function loadHub(): Promise<Hub | null> {
   const viewerOut: Viewer = { ...viewer, coach: coachFilter };
   const formById = new Map<number, { cur: number | null; goal: number | null; text: string }>();
   for (const f of formsQ.data ?? []) formById.set(f.id as number, { cur: numOrNull(f.current_weight), goal: numOrNull(f.goal_weight), text: ((f.fitness_goal as string) ?? "").trim() });
+  // Stripe payments indexed by email and by contact name.
+  type Pay = { at: string; amount: number; reason: string; kind: string };
+  const payByEmail = new Map<string, Pay[]>();
+  const payByName = new Map<string, Pay[]>();
+  for (const r of payQ.data ?? []) {
+    const status = String(r.status ?? "").toLowerCase();
+    if (status && !/paid|succeeded|complete/.test(status)) continue;
+    const amount = (Number(r.amount_cents) || 0) - (Number(r.refunded_cents) || 0);
+    if (amount <= 0) continue;
+    const at = ((r.paid_at as string) ?? (r.created_at as string) ?? "").slice(0, 10);
+    if (!at) continue;
+    const pay: Pay = { at, amount: amount / 100, reason: String(r.billing_reason ?? ""), kind: String(r.kind ?? "") };
+    const e = norm(r.email as string); if (e) (payByEmail.get(e) ?? payByEmail.set(e, []).get(e)!).push(pay);
+    const n = norm(r.contact_name as string); if (n) (payByName.get(n) ?? payByName.set(n, []).get(n)!).push(pay);
+  }
+  const cycleByClient = new Map<number, { outcome: string; at: string | null }>();
+  for (const c of cyclesQ.data ?? []) cycleByClient.set(c.client_id as number, { outcome: c.outcome as string, at: (c.outcome_at as string) ?? null });
   const eodByCoach: Record<string, string[]> = {};
   let eodLast: string | null = null;
   for (const r of eodQ.data ?? []) {
@@ -302,6 +323,22 @@ export async function loadHub(): Promise<Hub | null> {
       mkAsk("referral", "Referral", "referralCompleted", ms, "referral", addDays(endDate, -7)),
     ];
     const extension = asks[2];
+
+    // ---- automatic retention detection ----
+    let retained: HubClient["retained"] = null;
+    if (endDate) {
+      const winStart = addDays(endDate, -30)!, winEnd = addDays(endDate, 60)!;
+      const seenPay = new Set<string>();
+      const pays = [...(payByEmail.get(norm(row.email as string)) ?? []), ...(payByName.get(k) ?? [])].filter((p) => { const key = p.at + ":" + p.amount; if (seenPay.has(key)) return false; seenPay.add(key); return true; });
+      const hit = pays
+        .filter((p) => p.at >= winStart && p.at <= winEnd && p.amount >= 97 && p.reason !== "subscription_cycle")
+        .sort((a, b) => a.at.localeCompare(b.at))[0];
+      if (hit) retained = { by: "stripe", at: hit.at, amount: hit.amount, detail: `Stripe payment of ${money(hit.amount)} on ${fmtDay(hit.at)}` };
+    }
+    const cycle = cycleByClient.get(row.id as number);
+    if (!retained && cycle) retained = { by: "cycle", at: cycle.at?.slice(0, 10) ?? null, amount: null, detail: `Retention cycle closed as ${cycle.outcome === "retained_12wk" ? "12 week" : "4 week"} extension${cycle.at ? " on " + fmtDay(cycle.at.slice(0, 10)) : ""}` };
+    if (!retained && extension.done) retained = { by: "milestone", at: milestoneDate(extension.doneDate), amount: null, detail: `Marked extended by the coach${extension.doneDate ? " on " + extension.doneDate : ""}` };
+    if (retained && !extension.done) { extension.done = true; extension.doneDate = retained.at; extension.asked = true; }
 
     const checkins = ciByName.get(k) ?? [];
     const latest = checkins[0] ?? null;
@@ -422,6 +459,7 @@ export async function loadHub(): Promise<Hub | null> {
       asks,
       milestoneId: (ms?.id as number) ?? null,
       retention: { nextStep, note: retNote, noteAt: ret?.at ?? null },
+      retained,
       goal,
       week,
       weeks,

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { loadHub, coachRowsWindow, byHealth, norm, eodCalendar } from "@/lib/coaching-v2/hub";
+import { loadHub, coachRowsWindow, byHealth, norm } from "@/lib/coaching-v2/hub";
 import { Dot } from "../../components/bits";
 import DigestToggle from "../../components/DigestToggle";
 
@@ -16,9 +16,6 @@ export default async function CoachPage({ params }: { params: Promise<{ coach: s
   if (!row) notFound();
 
   // last 28 days of end of day reports for this coach
-  const days = eodCalendar(hub, coach);
-  const working = days.filter((x) => !x.weekend).length;
-  const done = days.filter((x) => x.ok && !x.weekend).length;
   const withConvo = cs.filter((c) => c.convoId).length;
   const quiet = cs.filter((c) => c.convoId && (c.lastClientMsgDays ?? 0) >= 7).length;
 
@@ -40,12 +37,7 @@ export default async function CoachPage({ params }: { params: Promise<{ coach: s
         <div className="h2-kpi"><div className="l">Commissions</div><div className="v">{row.commissionsCount}</div><div className="d">milestones this month</div></div>
       </div>
 
-      <div className="h2-grid2" style={{ marginBottom: 14 }}>
-        <div className="h2-panel">
-          <h3>End of day reports · last 28 days</h3>
-          <div className="h2-cal">{days.map((x) => <span key={x.d} className={x.weekend ? "" : x.ok ? "ok" : "no"} title={x.d}>{x.label}</span>)}</div>
-          <p className="h2-quiet" style={{ margin: "8px 0 0" }}>{done} of {working} working days.{hub.eod.lastDate ? ` Last report ${hub.eod.lastDate}.` : ""}</p>
-        </div>
+      <div style={{ marginBottom: 14 }}>
         <div className="h2-panel">
           <h3>Inbox{hub.inboxCapturedAt ? ` · captured ${new Date(hub.inboxCapturedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}</h3>
           <div className="h2-kv">

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { loadHub, coachRowsWindow, norm, isoDaysAgo } from "@/lib/coaching-v2/hub";
+import { loadHub, coachRowsWindow, norm } from "@/lib/coaching-v2/hub";
 import { fetchFinancials, isRealRefund } from "@/lib/coaching-v2/financials";
 
 export default async function CoachesPage({ searchParams }: { searchParams: Promise<{ win?: string }> }) {
@@ -24,8 +24,6 @@ export default async function CoachesPage({ searchParams }: { searchParams: Prom
   const team = { clients: rows.reduce((s, r) => s + r.clients, 0), atRisk: rows.reduce((s, r) => s + r.atRisk, 0), owed: rows.reduce((s, r) => s + r.owed, 0), pastEnd: rows.reduce((s, r) => s + r.pastEnd, 0) };
   const due = hub.allActive.filter((c) => c.days !== null && c.days >= 0 && c.days <= 14);
   const asked = due.filter((c) => c.asks[2].asked || c.asks[2].done).length;
-  const weekCut = isoDaysAgo(7);
-  const reportsThisWeek = Object.values(hub.eod.byCoach).reduce((s, ds) => s + new Set(ds.filter((d) => d >= weekCut)).size, 0);
 
   return (
     <>
@@ -57,7 +55,6 @@ export default async function CoachesPage({ searchParams }: { searchParams: Prom
             <span className="k2">Clients at risk</span><span>{team.atRisk} of {team.clients}</span>
             <span className="k2">Replies owed</span><span>{team.owed} client{team.owed === 1 ? "" : "s"} waiting</span>
             <span className="k2">Renewals asked</span><span>{asked} of {due.length} due</span>
-            <span className="k2">Reports submitted</span><span className={reportsThisWeek ? "" : "h2-r"}>{reportsThisWeek} of {rows.filter((r) => r.clients > 0).length * 5} expected</span>
           </div>
         </div>
       </div>
@@ -65,7 +62,7 @@ export default async function CoachesPage({ searchParams }: { searchParams: Prom
       <div className="h2-tw">
         <table className="h2-table">
           <thead>
-            <tr><th>Coach</th><th className="num">Clients</th><th className="num">At risk</th><th className="num">Coverage</th><th className="num">Replies owed</th><th className="num">Reply time</th><th className="num">Retention</th><th className="num">Expired</th><th className="num">Refunds</th><th className="num">Asks made</th><th className="num">Calls / client</th><th className="num">Reports</th></tr>
+            <tr><th>Coach</th><th className="num">Clients</th><th className="num">At risk</th><th className="num">Coverage</th><th className="num">Replies owed</th><th className="num">Reply time</th><th className="num">Retention</th><th className="num">Expired</th><th className="num">Refunds</th><th className="num">Asks made</th><th className="num">Calls / client</th></tr>
           </thead>
           <tbody>
             {rows.map((r) => (
@@ -81,7 +78,6 @@ export default async function CoachesPage({ searchParams }: { searchParams: Prom
                 <td className="num">{r.refunds === null ? "–" : r.refunds || "–"}</td>
                 <td className="num">{r.asksPct === null ? "–" : `${r.asksPct}%`}</td>
                 <td className="num">{r.callsPerClient === null ? "–" : r.callsPerClient}</td>
-                <td className={`num ${(r.reportsPct ?? 0) === 0 ? "h2-r" : ""}`}>{r.reportsPct === null ? "–" : `${r.reportsPct}%`}</td>
               </tr>
             ))}
             <tr className="total">
@@ -94,7 +90,6 @@ export default async function CoachesPage({ searchParams }: { searchParams: Prom
               <td className="num">–</td>
               <td className="num">{team.pastEnd}</td>
               <td className="num">{Object.values(refundsByCoach).reduce((s, n) => s + n, 0) || "–"}</td>
-              <td className="num">–</td>
               <td className="num">–</td>
               <td className="num">–</td>
             </tr>
