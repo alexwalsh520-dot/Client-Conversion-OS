@@ -49,6 +49,8 @@ export default async function RetentionsPageV3() {
         weeklyReports: c.weeklyReports.slice(0, 3).map((w) => ({
           weekLabel: w.weekLabel,
           workoutPct: w.workoutPct,
+          workoutsCompleted: w.workoutsCompleted,
+          workoutsAssigned: w.workoutsAssigned,
           note: w.note,
         })),
       }))}

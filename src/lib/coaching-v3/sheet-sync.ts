@@ -38,7 +38,24 @@ export interface ParsedWeek {
   weekLabel: string;
   weekEndingAt: string; // YYYY-MM-DD
   workoutPct: number | null;
+  workoutsCompleted: number | null;
+  workoutsAssigned: number | null;
   note: string | null;
+}
+
+/** MAS's assistant writes cells like "5/5 workouts", "0/7 workout", "3/5". Pull
+ *  the fraction; return nulls if the cell has no digits. */
+function parseWorkoutFraction(raw: string): { completed: number | null; assigned: number | null } {
+  const s = (raw ?? "").trim();
+  if (!s) return { completed: null, assigned: null };
+  const m = /(\d+)\s*\/\s*(\d+)/.exec(s);
+  if (!m) return { completed: null, assigned: null };
+  const c = parseInt(m[1], 10);
+  const a = parseInt(m[2], 10);
+  if (!Number.isFinite(c) || !Number.isFinite(a) || a <= 0) {
+    return { completed: null, assigned: null };
+  }
+  return { completed: Math.min(c, a), assigned: a };
 }
 
 export interface ParsedRow {
@@ -306,9 +323,26 @@ function parseTab(grid: (string | number)[][], coach: string): TabParse {
       const weekEnding = parseWeekLabel(w.label);
       if (!weekEnding) continue;
       const pct = parsePct(String(row[w.pctCol] ?? ""));
+      const fraction = parseWorkoutFraction(String(row[w.weekCol] ?? ""));
       const note = String(row[w.noteCol] ?? "").trim() || null;
-      if (pct === null && !note) continue; // skip empty weeks
-      weeks.push({ weekLabel: w.label, weekEndingAt: weekEnding, workoutPct: pct, note });
+      const hasAnything = pct !== null || fraction.assigned !== null || note !== null;
+      if (!hasAnything) continue;
+      // If the fraction is present, prefer its pct over any manual %-cell
+      // rounding — coach types "5/5" and Google auto-fills 100 in the next
+      // column, but "3/8" + a hand-typed 37 rounds to a slightly different
+      // ratio (37.5 -> 37). The fraction is the source of truth.
+      let resolvedPct = pct;
+      if (fraction.assigned !== null && fraction.assigned > 0 && fraction.completed !== null) {
+        resolvedPct = Math.round((fraction.completed / fraction.assigned) * 10000) / 100;
+      }
+      weeks.push({
+        weekLabel: w.label,
+        weekEndingAt: weekEnding,
+        workoutPct: resolvedPct,
+        workoutsCompleted: fraction.completed,
+        workoutsAssigned: fraction.assigned,
+        note,
+      });
     }
 
     rows.push({

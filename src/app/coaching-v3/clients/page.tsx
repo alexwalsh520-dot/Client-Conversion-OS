@@ -51,6 +51,8 @@ export default async function ClientsPage() {
         weekLabel: w.weekLabel,
         weekEndingAt: w.weekEndingAt,
         workoutPct: w.workoutPct,
+        workoutsCompleted: w.workoutsCompleted,
+        workoutsAssigned: w.workoutsAssigned,
         note: w.note,
       })),
     };

@@ -62,6 +62,8 @@ export interface WeeklyReport {
   weekLabel: string;
   weekEndingAt: string;
   workoutPct: number | null;
+  workoutsCompleted: number | null;
+  workoutsAssigned: number | null;
   note: string | null;
 }
 
@@ -182,7 +184,7 @@ export async function loadHubV3(): Promise<HubV3 | null> {
       .maybeSingle(),
     db
       .from("everfit_v3_weekly_reports")
-      .select("client_id, client_name, coach_name, week_label, week_ending_at, workout_pct, note")
+      .select("client_id, client_name, coach_name, week_label, week_ending_at, workout_pct, workouts_completed, workouts_assigned, note")
       .order("week_ending_at", { ascending: false }),
     db
       .from("coach_milestones")
@@ -303,6 +305,8 @@ export async function loadHubV3(): Promise<HubV3 | null> {
       weekLabel: r.week_label as string,
       weekEndingAt: r.week_ending_at as string,
       workoutPct: r.workout_pct == null ? null : Number(r.workout_pct),
+      workoutsCompleted: r.workouts_completed == null ? null : Number(r.workouts_completed),
+      workoutsAssigned: r.workouts_assigned == null ? null : Number(r.workouts_assigned),
       note: (r.note as string) ?? null,
     });
     weeklyByName.set(k, arr);

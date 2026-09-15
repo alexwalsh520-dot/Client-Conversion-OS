@@ -30,6 +30,8 @@ export type Row = {
     weekLabel: string;
     weekEndingAt: string;
     workoutPct: number | null;
+    workoutsCompleted: number | null;
+    workoutsAssigned: number | null;
     note: string | null;
   }[];
 };
@@ -565,7 +567,11 @@ function ClientDrawer({ row, onClose }: { row: Row; onClose: () => void }) {
                         fontVariantNumeric: "tabular-nums",
                       }}
                     >
-                      {w.workoutPct == null ? "—" : `${Math.round(w.workoutPct)}%`}
+                      {w.workoutsAssigned != null && w.workoutsAssigned > 0
+                        ? `${w.workoutsCompleted ?? 0}/${w.workoutsAssigned}`
+                        : w.workoutPct == null
+                          ? "—"
+                          : `${Math.round(w.workoutPct)}%`}
                     </span>
                   </div>
                   {w.note && (

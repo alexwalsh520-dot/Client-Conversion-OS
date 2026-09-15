@@ -22,7 +22,13 @@ type HubClient = {
   retentionCycleOpen: boolean;
   hasExtensionRecordedThisCycle: boolean;
   score: RetentionScore;
-  weeklyReports: { weekLabel: string; workoutPct: number | null; note: string | null }[];
+  weeklyReports: {
+    weekLabel: string;
+    workoutPct: number | null;
+    workoutsCompleted: number | null;
+    workoutsAssigned: number | null;
+    note: string | null;
+  }[];
 };
 
 type OpenCycle = {
@@ -386,7 +392,13 @@ export default function RetentionsView({ hubClients, openCycles, notes, monthRet
                             >
                               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--text-muted)" }}>
                                 <span>Week {w.weekLabel}</span>
-                                <span>{w.workoutPct == null ? "—" : `${Math.round(w.workoutPct)}%`}</span>
+                                <span>
+                                  {w.workoutsAssigned != null && w.workoutsAssigned > 0
+                                    ? `${w.workoutsCompleted ?? 0}/${w.workoutsAssigned}`
+                                    : w.workoutPct == null
+                                      ? "—"
+                                      : `${Math.round(w.workoutPct)}%`}
+                                </span>
                               </div>
                               {w.note && (
                                 <div style={{ marginTop: 3, whiteSpace: "pre-wrap", fontStyle: "italic" }}>

@@ -163,6 +163,8 @@ export async function POST(req: NextRequest) {
         week_label: w.weekLabel,
         week_ending_at: w.weekEndingAt,
         workout_pct: w.workoutPct,
+        workouts_completed: w.workoutsCompleted,
+        workouts_assigned: w.workoutsAssigned,
         note: w.note,
         snapshot_id: snap.id,
         updated_at: nowIso,
@@ -208,27 +210,33 @@ export async function POST(req: NextRequest) {
   for (const [, entry] of latestByClient) {
     const { row, latestWeek, clientId } = entry;
     const synthId = `sheet::${norm(row.coachName)}::${norm(row.clientName)}`;
-    // Convert the % to a fraction the same way JSON sync did (out of some
-    // arbitrary "assigned" bucket). MAS's sheet doesn't ship counts, only %,
-    // so we store pct in the completed/assigned pair as "pct/100" to keep
-    // the existing hub display working ("N/M" turns into "pct/100"). Not
-    // perfect; will show as e.g. "80/100" in the UI. If MAS wants a cleaner
-    // "80%" display we adjust the render layer, not the data.
+    // Prefer real counts from the fraction cell ("5/5 workouts"). Fall back
+    // to (pct, 100) when the assistant only wrote a %.
     const pct = latestWeek.workoutPct;
+    const useCounts =
+      latestWeek.workoutsAssigned !== null && latestWeek.workoutsAssigned > 0;
     stateRows.push({
       everfit_id: synthId,
       name: row.clientName,
       coach_name: row.coachName,
       client_id: clientId,
-      workouts_completed_7d: pct != null ? Math.round(pct) : null,
-      workouts_assigned_7d: pct != null ? 100 : null,
-      client_replies_7d: null,     // sheet doesn't carry this
-      activity_7d: null,           // sheet doesn't carry this
+      workouts_completed_7d: useCounts
+        ? latestWeek.workoutsCompleted
+        : pct != null
+          ? Math.round(pct)
+          : null,
+      workouts_assigned_7d: useCounts
+        ? latestWeek.workoutsAssigned
+        : pct != null
+          ? 100
+          : null,
+      client_replies_7d: null,
+      activity_7d: null,
       last_client_message_at: null,
       last_coach_message_at: null,
       summary: latestWeek.note,
       captured_at: nowIso,
-      snapshot_id: null,           // FK is to everfit_v3_snapshots (JSON snapshots); the sheet's own snapshot lives in everfit_v3_sheet_snapshots
+      snapshot_id: null,
       updated_at: nowIso,
     });
   }

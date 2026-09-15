@@ -25,6 +25,8 @@ const CANONICAL: Record<string, string> = {
   // a first name with their CCOS coach.
   "mark smith":                  "Farrukh",
   "shaun lundall":               "Shiraad",
+  // Sheet tab uses "STEPH" for CCOS's "Stef".
+  "steph":                       "Stef",
 };
 
 const HAY = new Set(Object.keys(CANONICAL));
