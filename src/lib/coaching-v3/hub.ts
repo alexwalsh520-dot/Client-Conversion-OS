@@ -35,34 +35,10 @@ function daysFromToday(dateStr: string | null | undefined): number | null {
   return Math.round((end - today) / DAY_MS);
 }
 
-export type TodayBucket =
-  | "past_end"
-  | "retention_ask"
-  | "zero_workouts"
-  | "concerning_note"
-  | "silent_2wk";
-
-/** Words in an assistant note that flag "MAS should look" (case-insensitive
- *  substring match on latest note). Kept intentionally short — false positives
- *  are more costly than false negatives here, since a coach chat can also
- *  trigger buckets. */
-const CONCERNING_TERMS = [
-  "cancel",
-  "cancell",       // "cancelled" / "cancellation"
-  "quit",
-  "refund",
-  "dispute",
-  "unhappy",
-  "frustrat",
-  "leaving",
-  "not happy",
-  "considering",
-  "chargeback",
-  "ghost",
-  "no response",
-  "no reply",
-  "unresponsive",
-];
+// Today buckets (2026-09-15 refactor). Only two categories now — the low-
+// check-in section renders from its own data (per-submission, not per-client)
+// and doesn't participate in the bucket system.
+export type TodayBucket = "past_end" | "zero_workouts";
 
 export interface WeeklyReport {
   weekLabel: string;
@@ -101,10 +77,17 @@ export interface HubClientV3 {
   score: RetentionScore;
   todayBuckets: TodayBucket[];
   /** Behavior-only at-risk flag (MAS 2026-09-15): TRUE if the latest check-in
-   *  is below 60 OR the latest weekly workout % is below 40. Ignores contact
+   *  is below 50 OR the latest weekly workout % is below 30. Ignores contact
    *  recency and retention history. Used by the Coaches tab's "At risk"
    *  column instead of the composite retention-score bucket. */
   isAtRiskByBehavior: boolean;
+  /** Number of consecutive most-recent weeks (in weeklyReports order) whose
+   *  workout_pct is exactly 0. Doesn't count missing weeks — a gap breaks
+   *  the streak (we treat "no data" as unknown, not zero). A streak of 2 or
+   *  more marks the client as "ghosting" on Today. */
+  zeroWorkoutStreakWeeks: number;
+  /** True when zeroWorkoutStreakWeeks >= 2. */
+  isGhosting: boolean;
 }
 
 export interface HubV3 {
@@ -377,21 +360,12 @@ export async function loadHubV3(): Promise<HubV3 | null> {
       hasOpenExtendedCycle: !!ms?.retentionCompleted,
     });
 
-    // ---- Today buckets (post sheet-sync redesign, 2026-09-15). Order:
-    //      past_end > retention_ask > zero_workouts > concerning_note >
-    //      silent_2wk. Bucketed off the sheet weekly reports + DB state.
+    // ---- Today buckets (2026-09-15). Only two now: past_end from DB state,
+    // zero_workouts from the sheet. Low check-ins render as their own
+    // section in the Today page from a separate query — not a bucket.
     const todayBuckets: TodayBucket[] = [];
     if (daysRemaining !== null && daysRemaining < 0 && cycleOpen) {
       todayBuckets.push("past_end");
-    }
-    if (
-      daysRemaining !== null &&
-      daysRemaining >= 0 &&
-      daysRemaining <= 14 &&
-      !ms?.retentionCompleted &&
-      !ms?.retentionPromptedDate
-    ) {
-      todayBuckets.push("retention_ask");
     }
     if (
       latestWeek &&
@@ -400,21 +374,19 @@ export async function loadHubV3(): Promise<HubV3 | null> {
     ) {
       todayBuckets.push("zero_workouts");
     }
-    const noteBody = (latestWeek?.note ?? "").toLowerCase();
-    if (noteBody && CONCERNING_TERMS.some((t) => noteBody.includes(t))) {
-      todayBuckets.push("concerning_note");
+
+    // Zero-workout streak: count consecutive most-recent weeks whose pct is
+    // exactly 0. First non-zero (or missing) week breaks the streak.
+    let zeroStreak = 0;
+    for (const w of weeklyReports) {
+      if (w.workoutPct === 0) zeroStreak += 1;
+      else break;
     }
-    // Silent = last two weekly reports both have empty notes AND client is
-    // active. Only fires when we have at least 2 weeks of history for them
-    // (otherwise it's just a new client, not a signal).
-    if (
-      row.status === "active" &&
-      priorWeek &&
-      !latestWeek?.note &&
-      !priorWeek.note
-    ) {
-      todayBuckets.push("silent_2wk");
-    }
+    const isGhosting = zeroStreak >= 2;
+    // priorWeek was used for the retired silent_2wk bucket; keep the
+    // no-op reference alive so the linter doesn't complain if we later
+    // reference it again.
+    void priorWeek;
 
     // Behavior-only at-risk (MAS 2026-09-15). Thresholds tightened later
     // the same day: check-in below 50 OR workout % below 30. Either signal
@@ -448,6 +420,8 @@ export async function loadHubV3(): Promise<HubV3 | null> {
       score,
       todayBuckets,
       isAtRiskByBehavior,
+      zeroWorkoutStreakWeeks: zeroStreak,
+      isGhosting,
     };
   });
 
