@@ -184,8 +184,10 @@ details.h2-dd .in { padding: 0 0 12px 18px; }
 .h2-menu button, .h2-menu a { display: block; width: 100%; text-align: left; border: none; background: none; color: var(--text-primary); font-size: 12.5px; padding: 7px 10px; border-radius: 6px; cursor: pointer; font-family: inherit; }
 .h2-menu button:hover, .h2-menu a:hover { background: var(--hover-bg); }
 .h2-menu .danger { color: var(--danger); }
-.h2-split { display: inline-flex; border-radius: 8px; overflow: hidden; }
+.h2-split { display: inline-flex; }
 .h2-split .h2-btn { border-radius: 0; }
+.h2-split .h2-btn:first-child { border-radius: 8px 0 0 8px; }
+.h2-split .h2-btn:last-child { border-radius: 0 8px 8px 0; }
 .h2-split .h2-btn.chev { padding: 7px 8px; border-left: none; }
 .h2-prog { display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center; font-size: 12.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; margin: 0 0 6px; }
 .h2-prog .bar { height: 4px; border-radius: 2px; background: var(--border-hover); overflow: hidden; }
