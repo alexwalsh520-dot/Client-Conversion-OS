@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import { loadFinanceMonth } from "@/lib/coaching-v3/finance";
 import { getServiceSupabase } from "@/lib/supabase";
+import PayrollEditor, { type PayrollRow } from "./PayrollEditor";
 
 export const dynamic = "force-dynamic";
 
@@ -55,17 +56,20 @@ export default async function MoneyPage({
     .from("expenses")
     .select("id, month, name, role, base, commissions, platform, comments, paid, payment_via, payment_cadence")
     .eq("month", targetMonth);
-  const payroll = (expenses ?? []).map((e) => ({
+  const payroll: PayrollRow[] = (expenses ?? []).map((e) => ({
+    id: e.id as number,
+    month: (e.month as string) ?? targetMonth,
     name: (e.name as string) ?? "",
     role: (e.role as string) ?? "",
     base: Number(e.base) || 0,
     commissions: Number(e.commissions) || 0,
-    total: (Number(e.base) || 0) + (Number(e.commissions) || 0),
-    paid: !!e.paid,
+    platform: (e.platform as string) ?? "",
     cadence: (e.payment_cadence as string) ?? "",
+    paid: !!e.paid,
+    paymentVia: (e.payment_via as string) ?? "",
   }));
-  payroll.sort((a, b) => b.total - a.total);
-  const payrollTotal = payroll.reduce((s, r) => s + r.total, 0);
+  payroll.sort((a, b) => b.base + b.commissions - (a.base + a.commissions));
+  const payrollTotal = payroll.reduce((s, r) => s + r.base + r.commissions, 0);
 
   return (
     <>
@@ -231,52 +235,8 @@ export default async function MoneyPage({
         </div>
       </section>
 
-      {/* Payroll */}
-      <section className="h3-sec">
-        <h2>
-          <span className="n">{payroll.length}</span>
-          Payroll · {targetMonth}
-        </h2>
-        <div className="h3-list" style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
-            <thead>
-              <tr style={{ color: "var(--text-muted)", textAlign: "left" }}>
-                <Th>Name</Th>
-                <Th>Role</Th>
-                <Th style={{ textAlign: "right" }}>Base</Th>
-                <Th style={{ textAlign: "right" }}>Commissions</Th>
-                <Th style={{ textAlign: "right" }}>Total</Th>
-                <Th>Cadence</Th>
-                <Th>Paid</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {payroll.map((r) => (
-                <tr key={r.name} style={{ borderTop: "1px solid var(--border-primary)" }}>
-                  <Td>{r.name}</Td>
-                  <Td>{r.role}</Td>
-                  <Td style={{ textAlign: "right" }}>{money(r.base)}</Td>
-                  <Td style={{ textAlign: "right" }}>{money(r.commissions)}</Td>
-                  <Td style={{ textAlign: "right", fontWeight: 700 }}>{money(r.total)}</Td>
-                  <Td>{r.cadence || "—"}</Td>
-                  <Td>
-                    <span style={{ color: r.paid ? "var(--success)" : "var(--warning)" }}>
-                      {r.paid ? "paid" : "pending"}
-                    </span>
-                  </Td>
-                </tr>
-              ))}
-              {payroll.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="h3-empty">
-                    No payroll lines for {targetMonth}.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      {/* Payroll — inline add / edit / delete via /api/coaching */}
+      <PayrollEditor initialRows={payroll} month={targetMonth} />
     </>
   );
 }
