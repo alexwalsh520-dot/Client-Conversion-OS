@@ -98,6 +98,20 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Preserve prior manual reconciliations: if a row already exists in
+  // everfit_v3_client_state with a linked client_id, keep that link when the
+  // fresh (coach+name) match comes back null. Manual fixes for name-variant
+  // clients (e.g. "Zach Thomas" -> "Zachary Davis") therefore survive
+  // subsequent re-uploads.
+  const priorClientIdByEverfit = new Map<string, number>();
+  const { data: priorRows } = await db
+    .from("everfit_v3_client_state")
+    .select("everfit_id, client_id")
+    .not("client_id", "is", null);
+  for (const r of priorRows ?? []) {
+    priorClientIdByEverfit.set(r.everfit_id as string, r.client_id as number);
+  }
+
   let matched = 0;
   const stateRows: Record<string, unknown>[] = [];
   const capturedAt = report.captured_at;
@@ -151,6 +165,12 @@ export async function POST(req: NextRequest) {
       const nameHits = byNameOnly.get(nm) ?? [];
       // If exactly one client shares the name, link. Otherwise leave unmatched.
       if (nameHits.length === 1) clientId = nameHits[0];
+    }
+    // Preserve prior manual reconciliations: if we still can't resolve the
+    // link but the row was previously linked, keep that link.
+    if (clientId === null) {
+      const prior = priorClientIdByEverfit.get(r.everfit_id);
+      if (prior != null) clientId = prior;
     }
     if (clientId !== null) matched += 1;
     stateRows.push({
