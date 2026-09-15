@@ -18,13 +18,52 @@ export default async function RetentionsPageV3() {
     .select("id, client_id, entered_window_at, end_date_at_entry")
     .is("outcome", null);
   const cycleIds = (openCycles ?? []).map((c) => c.id as number);
-  const { data: notes } = cycleIds.length
-    ? await db
-        .from("retention_notes")
-        .select("id, cycle_id, note_text, source, batch_id, author_email, created_at")
-        .in("cycle_id", cycleIds)
-        .order("created_at", { ascending: false })
-    : { data: [] as unknown[] };
+  const openClientIds = (openCycles ?? [])
+    .map((c) => c.client_id as number | null)
+    .filter((v): v is number => v != null);
+
+  const [notesRes, meetingsRes] = await Promise.all([
+    cycleIds.length
+      ? db
+          .from("retention_notes")
+          .select("id, cycle_id, note_text, source, batch_id, author_email, created_at")
+          .in("cycle_id", cycleIds)
+          .order("created_at", { ascending: false })
+      : Promise.resolve({ data: [] as unknown[] }),
+    openClientIds.length
+      ? db
+          .from("coach_meetings")
+          .select("id, client_id, meeting_date, notes, fathom_link")
+          .in("client_id", openClientIds)
+          .order("meeting_date", { ascending: false })
+      : Promise.resolve({ data: [] as unknown[] }),
+  ]);
+  const notes = notesRes.data ?? [];
+
+  // Group meetings per client id, cap at 5 most recent per client (all we
+  // render on the card).
+  const meetingsByClient = new Map<
+    number,
+    { id: number; meetingDate: string; notes: string; fathomLink: string | null }[]
+  >();
+  for (const r of (meetingsRes.data ?? []) as {
+    id: number;
+    client_id: number | null;
+    meeting_date: string;
+    notes: string | null;
+    fathom_link: string | null;
+  }[]) {
+    if (r.client_id == null) continue;
+    const arr = meetingsByClient.get(r.client_id) ?? [];
+    if (arr.length >= 5) continue;
+    arr.push({
+      id: r.id,
+      meetingDate: r.meeting_date,
+      notes: r.notes ?? "",
+      fathomLink: r.fathom_link ?? null,
+    });
+    meetingsByClient.set(r.client_id, arr);
+  }
 
   return (
     <RetentionsView
@@ -53,6 +92,7 @@ export default async function RetentionsPageV3() {
           workoutsAssigned: w.workoutsAssigned,
           note: w.note,
         })),
+        meetings: meetingsByClient.get(c.id) ?? [],
       }))}
       openCycles={(openCycles ?? []).map((c) => ({
         id: c.id as number,

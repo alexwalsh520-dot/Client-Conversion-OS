@@ -266,11 +266,16 @@ export async function loadHubV3(): Promise<HubV3 | null> {
   }
 
   const lastMeetingByName = new Map<string, number | null>();
+  const meetingCountByName = new Map<string, number>();
   for (const r of meetingsQ.data ?? []) {
     const k = norm(r.client_name as string);
-    if (lastMeetingByName.has(k)) continue;
-    const d = daysFromToday(r.meeting_date as string);
-    lastMeetingByName.set(k, d !== null ? Math.max(0, -d) : null);
+    // Meetings query is ordered meeting_date desc; the first hit per client
+    // is the newest.
+    if (!lastMeetingByName.has(k)) {
+      const d = daysFromToday(r.meeting_date as string);
+      lastMeetingByName.set(k, d !== null ? Math.max(0, -d) : null);
+    }
+    meetingCountByName.set(k, (meetingCountByName.get(k) ?? 0) + 1);
   }
 
   const convoByClient = new Map<number, string>();
@@ -358,6 +363,7 @@ export async function loadHubV3(): Promise<HubV3 | null> {
       daysRemaining,
       hasBeenRetainedBefore: retainedBefore,
       hasOpenExtendedCycle: !!ms?.retentionCompleted,
+      meetingsCount: meetingCountByName.get(k) ?? 0,
     });
 
     // ---- Today buckets (2026-09-15). Only two now: past_end from DB state,

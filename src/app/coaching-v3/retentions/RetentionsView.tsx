@@ -29,6 +29,12 @@ type HubClient = {
     workoutsAssigned: number | null;
     note: string | null;
   }[];
+  meetings: {
+    id: number;
+    meetingDate: string;
+    notes: string;
+    fathomLink: string | null;
+  }[];
 };
 
 type OpenCycle = {
@@ -415,10 +421,61 @@ export default function RetentionsView({ hubClients, openCycles, notes, monthRet
                           ))}
                         </div>
                       )}
-                      <div className="h3-reasons">
-                        {client.score.reasons.slice(0, 4).map((r, i) => (
-                          <span key={i}>· {r}</span>
-                        ))}
+                      {client.meetings.length > 0 && (
+                        <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+                          <div style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.05, fontWeight: 600 }}>
+                            Meetings ({client.meetings.length})
+                          </div>
+                          {client.meetings.map((m) => (
+                            <div
+                              key={m.id}
+                              style={{
+                                fontSize: 12,
+                                color: "var(--text-secondary)",
+                                padding: "6px 10px",
+                                background: "var(--hover-bg-subtle, rgba(148,163,184,0.06))",
+                                borderRadius: 6,
+                              }}
+                            >
+                              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--text-muted)" }}>
+                                <span>
+                                  {new Date(m.meetingDate).toLocaleDateString(undefined, {
+                                    month: "short",
+                                    day: "numeric",
+                                    year: "numeric",
+                                  })}
+                                </span>
+                                {m.fathomLink ? (
+                                  <a
+                                    href={m.fathomLink}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    style={{ color: "var(--success)", textDecoration: "none" }}
+                                  >
+                                    Fathom
+                                  </a>
+                                ) : (
+                                  <span style={{ color: "var(--text-muted)" }}>no Fathom</span>
+                                )}
+                              </div>
+                              {m.notes && (
+                                <div style={{ marginTop: 3, whiteSpace: "pre-wrap" }}>
+                                  {m.notes}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.05, fontWeight: 600, marginBottom: 4 }}>
+                          Why this score
+                        </div>
+                        <div className="h3-reasons" style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px" }}>
+                          {client.score.reasons.map((r, i) => (
+                            <span key={i}>· {r}</span>
+                          ))}
+                        </div>
                       </div>
                     </div>
                     <div className="score">

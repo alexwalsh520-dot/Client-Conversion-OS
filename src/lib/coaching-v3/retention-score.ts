@@ -1,20 +1,22 @@
-// Retention probability heuristic (MAS-signed-off weighting, 2026-09-15).
+// Retention probability heuristic (MAS-signed-off weighting, 2026-09-15,
+// updated 2026-09-16 to add the meeting bonus).
 //
-// A pure 0-100 score from signals we already have. Not ML — no labeled
-// training data yet — so this is deliberately explicit: every point can be
-// traced to a signal, and the top-weighted reasons come back out for the UI.
+// A pure 0-100 score. Not ML — no labeled training data yet — so this is
+// deliberately explicit: every point can be traced to a signal, and the
+// top-weighted reasons come back out for the UI's "Why this score" panel.
 //
-// Weighting (must sum to 100). Rebalanced after the sync source moved from
-// Codex JSON to MAS's assistant's weekly Google Sheet: we no longer have
-// client-message activity or Everfit-side coach reply timestamps in the
-// sync feed, so those weights are redistributed onto the signals the sheet
-// does carry (workouts + notes) plus what CCOS already knows internally.
+// COMPOSITE (5 signals, weights sum to 100):
+//   35  latest check-in score
+//   30  workout completion last 7d
+//   15  coach contact recency (meetings + everfit_inbox_messages when avail)
+//   10  days remaining sentiment
+//   10  prior retention on file
 //
-//   35  latest check-in score       (was 30)
-//   30  workout completion last 7d  (was 25)
-//   15  coach contact recency       (unchanged — from meetings + everfit_inbox_messages when available)
-//   10  days remaining sentiment    (unchanged)
-//   10  prior retention on file     (was 5)
+// MEETING BONUS (2026-09-16, per MAS):
+//   +5  per meeting logged with the client, all-time.
+//   Applied AFTER the composite and BEFORE the final clamp, so the score
+//   ceiling stays 100 no matter how many meetings a coach has logged.
+//   Rewards coaches who actively meet with clients.
 //
 // Missing signals contribute 0 to their slot and are called out in reasons.
 // The composite score is bucketed for display:
@@ -36,6 +38,10 @@ export interface ScoreInputs {
   daysRemaining: number | null;
   hasBeenRetainedBefore: boolean;
   hasOpenExtendedCycle: boolean; // client already got a +4/+12 recorded this cycle
+  /** Total meetings logged with this client, all-time. Each one adds +5 to
+   *  the score AFTER the composite is computed. MAS 2026-09-16: rewards
+   *  coaches who actually meet with clients. Score is then clamped to 100. */
+  meetingsCount: number;
 }
 
 export function computeRetentionScore(i: ScoreInputs): RetentionScore {
@@ -112,6 +118,21 @@ export function computeRetentionScore(i: ScoreInputs): RetentionScore {
     reasons.push({ weight: 10, text: "Retained before (+10)" });
   } else {
     reasons.push({ weight: 0, text: "No prior retention (+0)" });
+  }
+
+  // Meeting bonus — +5 for every logged coach meeting, ON TOP of the 100-cap
+  // composite. Rewards coaches who actually meet with clients. Applied
+  // BEFORE the clamp so the 100 ceiling still holds.
+  const meetings = Math.max(0, Math.floor(i.meetingsCount ?? 0));
+  if (meetings > 0) {
+    const meetingBonus = meetings * 5;
+    total += meetingBonus;
+    reasons.push({
+      weight: meetingBonus,
+      text: `Meetings logged: ${meetings} (+${meetingBonus})`,
+    });
+  } else {
+    reasons.push({ weight: 0, text: "No meetings logged (+0)" });
   }
 
   const score = Math.round(Math.max(0, Math.min(100, total)));
