@@ -6,6 +6,7 @@ import { Search, X, Filter } from "lucide-react";
 
 export type Row = {
   id: number;
+  status: "active" | "completed";
   name: string;
   coach: string;
   program: string;
@@ -36,7 +37,7 @@ export type Row = {
   }[];
 };
 
-type Preset = "all" | "retention" | "reply_owed" | "ghost" | "nutrition" | "recent";
+type Preset = "all" | "retention" | "reply_owed" | "ghost" | "nutrition" | "recent" | "completed";
 
 const PRESET_LABEL: Record<Preset, string> = {
   all: "All active",
@@ -45,6 +46,7 @@ const PRESET_LABEL: Record<Preset, string> = {
   ghost: "Ghost",
   nutrition: "Nutrition pending",
   recent: "Onboarded ≤ 7d",
+  completed: "Completed",
 };
 
 type SortKey = "score" | "days" | "checkin" | "workouts" | "name" | "coach";
@@ -85,6 +87,9 @@ function replyOwed(r: Row): number | null {
 }
 
 function matchesPreset(r: Row, p: Preset): boolean {
+  // Every preset except "completed" hides completed clients by default —
+  // the "completed" chip is the single place a coach or MAS surfaces them.
+  if (p !== "completed" && r.status === "completed") return false;
   switch (p) {
     case "all":
       return true;
@@ -106,6 +111,8 @@ function matchesPreset(r: Row, p: Preset): boolean {
       const d = daysToStart(r.startDate);
       return d !== null && d >= 0 && d <= 7;
     }
+    case "completed":
+      return r.status === "completed";
   }
 }
 
@@ -125,11 +132,13 @@ export default function ClientsView({ rows }: { rows: Row[] }) {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
+    // When the user is typing a search, ignore the preset — bring completed
+    // clients into the results too, so an old client can be found by name.
+    // Preset only constrains what shows when the search box is empty.
     return rows.filter((r) => {
-      if (!matchesPreset(r, preset)) return false;
       if (coachFilter !== "__all__" && (r.coach || "Unassigned") !== coachFilter) return false;
-      if (q && !r.name.toLowerCase().includes(q)) return false;
-      return true;
+      if (q) return r.name.toLowerCase().includes(q);
+      return matchesPreset(r, preset);
     });
   }, [rows, preset, coachFilter, search]);
 
@@ -298,6 +307,23 @@ export default function ClientsView({ rows }: { rows: Row[] }) {
                 >
                   <Td>
                     <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{r.name}</span>
+                    {r.status === "completed" && (
+                      <span
+                        style={{
+                          marginLeft: 6,
+                          padding: "1px 6px",
+                          borderRadius: 6,
+                          fontSize: 10,
+                          fontWeight: 600,
+                          letterSpacing: 0.04,
+                          textTransform: "uppercase",
+                          background: "rgba(148,163,184,0.15)",
+                          color: "var(--text-muted)",
+                        }}
+                      >
+                        completed
+                      </span>
+                    )}
                   </Td>
                   <Td muted>{r.coach || "Unassigned"}</Td>
                   <Td>
