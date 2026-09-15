@@ -2,8 +2,20 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { RetentionScore } from "@/lib/coaching-v3/types";
-import { Search, X, Filter, Loader2, ClipboardList } from "lucide-react";
+import { Search, X, Filter, Loader2, ClipboardList, Calendar, Video, Pencil, Plus } from "lucide-react";
 import CheckinModal, { type CheckInSubmission } from "../components/CheckinModal";
+
+type MeetingRow = {
+  id: number;
+  clientId: number | null;
+  clientName: string;
+  coachName: string;
+  meetingDate: string;
+  notes: string;
+  fathomLink: string | null;
+  fathomLinkAddedAt: string | null;
+  createdAt: string | null;
+};
 
 export type Row = {
   id: number;
@@ -62,6 +74,16 @@ function scoreColor(b: RetentionScore["bucket"]): "g" | "a" | "r" | "u" {
   if (b === "at_risk") return "r";
   return "u";
 }
+
+const inputStyle: React.CSSProperties = {
+  flex: 1,
+  padding: "6px 8px",
+  fontSize: 12,
+  background: "var(--bg-input, var(--bg-card))",
+  color: "var(--text-primary)",
+  border: "1px solid var(--border-primary)",
+  borderRadius: 5,
+};
 
 function matchesPreset(r: Row, p: Preset): boolean {
   // Every preset except "completed" hides completed clients by default —
@@ -386,16 +408,41 @@ function pctColor(cls: string) {
 }
 
 function ClientDrawer({ row, onClose }: { row: Row; onClose: () => void }) {
-  // Lazy-load client detail — check-in history is the main payload.
+  // Lazy-load client detail — check-in history + meeting history.
   const [checkIns, setCheckIns] = useState<CheckInSubmission[]>([]);
-  const [checkinsLoading, setCheckinsLoading] = useState(true);
-  const [checkinsErr, setCheckinsErr] = useState<string | null>(null);
+  const [meetings, setMeetings] = useState<MeetingRow[]>([]);
+  const [detailLoading, setDetailLoading] = useState(true);
+  const [detailErr, setDetailErr] = useState<string | null>(null);
   const [openCheckin, setOpenCheckin] = useState<CheckInSubmission | null>(null);
+
+  // Meeting-form state. Draft is the row being edited or created;
+  // `mode` says which. formErr surfaces the API's friendly errors
+  // (e.g. duplicate Fathom link 409).
+  const [meetingMode, setMeetingMode] = useState<"idle" | "new" | "edit">("idle");
+  const [meetingDraft, setMeetingDraft] = useState<Partial<MeetingRow>>({});
+  const [meetingSaving, setMeetingSaving] = useState(false);
+  const [meetingErr, setMeetingErr] = useState<string | null>(null);
+
+  const reloadDetail = async () => {
+    setDetailLoading(true);
+    setDetailErr(null);
+    try {
+      const res = await fetch(`/api/coaching-v3/client-detail?clientId=${row.id}`);
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+      setCheckIns((body.checkIns ?? []) as CheckInSubmission[]);
+      setMeetings((body.meetings ?? []) as MeetingRow[]);
+    } catch (e) {
+      setDetailErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDetailLoading(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
-    setCheckinsLoading(true);
-    setCheckinsErr(null);
+    setDetailLoading(true);
+    setDetailErr(null);
     (async () => {
       try {
         const res = await fetch(`/api/coaching-v3/client-detail?clientId=${row.id}`);
@@ -403,14 +450,81 @@ function ClientDrawer({ row, onClose }: { row: Row; onClose: () => void }) {
         if (cancelled) return;
         if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
         setCheckIns((body.checkIns ?? []) as CheckInSubmission[]);
+        setMeetings((body.meetings ?? []) as MeetingRow[]);
       } catch (e) {
-        if (!cancelled) setCheckinsErr(e instanceof Error ? e.message : String(e));
+        if (!cancelled) setDetailErr(e instanceof Error ? e.message : String(e));
       } finally {
-        if (!cancelled) setCheckinsLoading(false);
+        if (!cancelled) setDetailLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [row.id]);
+
+  const openNewMeetingForm = () => {
+    setMeetingMode("new");
+    setMeetingErr(null);
+    setMeetingDraft({
+      meetingDate: new Date().toISOString().slice(0, 10),
+      notes: "",
+      fathomLink: "",
+    });
+  };
+  const openEditMeetingForm = (m: MeetingRow) => {
+    setMeetingMode("edit");
+    setMeetingErr(null);
+    setMeetingDraft({ ...m, fathomLink: m.fathomLink ?? "" });
+  };
+  const cancelMeetingForm = () => {
+    setMeetingMode("idle");
+    setMeetingDraft({});
+    setMeetingErr(null);
+  };
+
+  const saveMeeting = async () => {
+    setMeetingErr(null);
+    const date = (meetingDraft.meetingDate ?? "").toString().trim();
+    const notes = (meetingDraft.notes ?? "").toString().trim();
+    if (!date) {
+      setMeetingErr("Meeting date is required.");
+      return;
+    }
+    if (!notes) {
+      setMeetingErr("Notes are required.");
+      return;
+    }
+    setMeetingSaving(true);
+    try {
+      const rawFathom = (meetingDraft.fathomLink ?? "").toString().trim();
+      const res = await fetch("/api/coaching", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "upsert_meeting",
+          payload: {
+            id: meetingMode === "edit" ? meetingDraft.id : undefined,
+            clientId: row.id,
+            clientName: row.name,
+            // MAS 2026-09-16: coach is the client's assigned coach.
+            coachName: row.coach || "Unassigned",
+            meetingDate: date,
+            durationMinutes: 0,
+            notes,
+            fathomLink: rawFathom.length > 0 ? rawFathom : null,
+          },
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+      cancelMeetingForm();
+      await reloadDetail();
+    } catch (e) {
+      setMeetingErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMeetingSaving(false);
+    }
+  };
 
   return (
     <>
@@ -556,25 +670,25 @@ function ClientDrawer({ row, onClose }: { row: Row; onClose: () => void }) {
             <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
               <ClipboardList size={12} /> Check-in history
             </span>
-            {!checkinsLoading && !checkinsErr && checkIns.length > 0 && (
+            {!detailLoading && !detailErr && checkIns.length > 0 && (
               <span className="n" style={{ marginLeft: 6 }}>{checkIns.length}</span>
             )}
           </h2>
-          <div className="h3-list" style={{ padding: checkinsLoading || checkinsErr || checkIns.length === 0 ? "10px 14px" : 0 }}>
-            {checkinsLoading && (
+          <div className="h3-list" style={{ padding: detailLoading || detailErr || checkIns.length === 0 ? "10px 14px" : 0 }}>
+            {detailLoading && (
               <div style={{ color: "var(--text-muted)", textAlign: "center", padding: 6 }}>
                 <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
               </div>
             )}
-            {checkinsErr && (
-              <div style={{ color: "var(--danger)" }}>Failed to load: {checkinsErr}</div>
+            {detailErr && (
+              <div style={{ color: "var(--danger)" }}>Failed to load: {detailErr}</div>
             )}
-            {!checkinsLoading && !checkinsErr && checkIns.length === 0 && (
+            {!detailLoading && !detailErr && checkIns.length === 0 && (
               <div style={{ color: "var(--text-muted)", fontStyle: "italic" }}>
                 No check-ins on file.
               </div>
             )}
-            {!checkinsLoading && !checkinsErr && checkIns.map((ci) => {
+            {!detailLoading && !detailErr && checkIns.map((ci) => {
               const cls = ci.score < 40 ? "r" : ci.score < 55 ? "a" : ci.score < 75 ? "" : "g";
               const days = Math.max(
                 0,
@@ -641,6 +755,169 @@ function ClientDrawer({ row, onClose }: { row: Row; onClose: () => void }) {
         {openCheckin && (
           <CheckinModal submission={openCheckin} onClose={() => setOpenCheckin(null)} />
         )}
+
+        {/* Meetings — appears right after check-in history per MAS spec.
+            Log button opens an inline form. Existing meetings are
+            editable (to add a Fathom link later) but not deletable. */}
+        <section className="h3-sec">
+          <h2>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+              <Calendar size={12} /> Meetings
+            </span>
+            {!detailLoading && !detailErr && meetings.length > 0 && (
+              <span className="n" style={{ marginLeft: 6 }}>{meetings.length}</span>
+            )}
+            {meetingMode === "idle" && !detailLoading && !detailErr && (
+              <button
+                onClick={openNewMeetingForm}
+                className="h3-btn s p"
+                style={{ marginLeft: "auto" }}
+              >
+                <Plus size={11} /> Log meeting
+              </button>
+            )}
+          </h2>
+
+          {meetingMode !== "idle" && (
+            <div
+              style={{
+                padding: 12,
+                border: "1px solid var(--border-primary)",
+                borderRadius: 8,
+                background: "var(--bg-card)",
+                marginBottom: 10,
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+              }}
+            >
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <label style={{ fontSize: 11, color: "var(--text-muted)", width: 90 }}>Date</label>
+                <input
+                  type="date"
+                  value={(meetingDraft.meetingDate ?? "").slice(0, 10)}
+                  onChange={(e) =>
+                    setMeetingDraft((d) => ({ ...d, meetingDate: e.target.value }))
+                  }
+                  style={inputStyle}
+                />
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                <label style={{ fontSize: 11, color: "var(--text-muted)", width: 90, paddingTop: 6 }}>Notes</label>
+                <textarea
+                  value={meetingDraft.notes ?? ""}
+                  onChange={(e) =>
+                    setMeetingDraft((d) => ({ ...d, notes: e.target.value }))
+                  }
+                  placeholder="What happened, what you agreed on, next step…"
+                  rows={3}
+                  style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }}
+                />
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <label style={{ fontSize: 11, color: "var(--text-muted)", width: 90 }}>Fathom link</label>
+                <input
+                  type="url"
+                  value={meetingDraft.fathomLink ?? ""}
+                  onChange={(e) =>
+                    setMeetingDraft((d) => ({ ...d, fathomLink: e.target.value }))
+                  }
+                  placeholder="Optional — earns +10 in the weekly score"
+                  style={inputStyle}
+                />
+              </div>
+              {meetingErr && (
+                <div style={{ color: "var(--danger)", fontSize: 12 }}>{meetingErr}</div>
+              )}
+              <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                <button className="h3-btn s" onClick={cancelMeetingForm} disabled={meetingSaving}>
+                  Cancel
+                </button>
+                <button className="h3-btn s p" onClick={saveMeeting} disabled={meetingSaving}>
+                  {meetingSaving ? (
+                    <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} />
+                  ) : null}
+                  {meetingMode === "edit" ? "Save changes" : "Log meeting"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div
+            className="h3-list"
+            style={{
+              padding: detailLoading || detailErr || meetings.length === 0 ? "10px 14px" : 0,
+            }}
+          >
+            {detailLoading && (
+              <div style={{ color: "var(--text-muted)", textAlign: "center", padding: 6 }}>
+                <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
+              </div>
+            )}
+            {!detailLoading && !detailErr && meetings.length === 0 && meetingMode === "idle" && (
+              <div style={{ color: "var(--text-muted)", fontStyle: "italic" }}>
+                No meetings logged yet.
+              </div>
+            )}
+            {!detailLoading &&
+              !detailErr &&
+              meetings.map((m) => (
+                <div
+                  key={m.id}
+                  className="h3-li"
+                  style={{ gridTemplateColumns: "1fr auto" }}
+                >
+                  <div className="main">
+                    <div className="row1" style={{ alignItems: "center" }}>
+                      <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 12.5 }}>
+                        {new Date(m.meetingDate).toLocaleDateString(undefined, {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })}
+                      </span>
+                      <span className="coach">{m.coachName}</span>
+                      {m.fathomLink ? (
+                        <a
+                          href={m.fathomLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="bucket g"
+                          style={{ display: "inline-flex", alignItems: "center", gap: 4, textDecoration: "none" }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Video size={10} /> Fathom
+                        </a>
+                      ) : (
+                        <span className="bucket u" title="No Fathom link on this meeting">
+                          No Fathom
+                        </span>
+                      )}
+                    </div>
+                    {m.notes && (
+                      <div
+                        style={{
+                          marginTop: 4,
+                          fontSize: 12,
+                          color: "var(--text-secondary)",
+                          whiteSpace: "pre-wrap",
+                        }}
+                      >
+                        {m.notes}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => openEditMeetingForm(m)}
+                    className="h3-btn s"
+                    title="Edit — add a Fathom link, fix a typo. No delete."
+                  >
+                    <Pencil size={11} />
+                  </button>
+                </div>
+              ))}
+          </div>
+        </section>
 
         {row.weeklyReports.length > 0 && (
           <section className="h3-sec">

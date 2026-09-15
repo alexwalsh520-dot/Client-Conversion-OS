@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
 
   const clientNameNorm = (client.name as string).trim();
 
-  const [clientNotesQ, cyclesQ, checkInsQ] = await Promise.all([
+  const [clientNotesQ, cyclesQ, checkInsQ, meetingsQ] = await Promise.all([
     db
       .from("client_notes")
       .select("note, coach_name, created_at")
@@ -53,6 +53,12 @@ export async function GET(req: NextRequest) {
       .select("id, client_id, client_name, coach_name, q1_overall, q2_strength, q3_lifestyle, q4_progress, q5_open_response, score_0_100, submitted_at")
       .eq("client_id", clientId)
       .order("submitted_at", { ascending: false })
+      .limit(100),
+    db
+      .from("coach_meetings")
+      .select("id, client_id, client_name, coach_name, meeting_date, notes, fathom_link, fathom_link_added_at, created_at")
+      .eq("client_id", clientId)
+      .order("meeting_date", { ascending: false })
       .limit(100),
   ]);
 
@@ -107,6 +113,17 @@ export async function GET(req: NextRequest) {
       q4: Number(r.q4_progress) || 0,
       text: ((r.q5_open_response as string) ?? "").trim(),
       submittedAt: r.submitted_at as string,
+    })),
+    meetings: (meetingsQ.data ?? []).map((r) => ({
+      id: r.id as number,
+      clientId: (r.client_id as number) ?? null,
+      clientName: (r.client_name as string) ?? "",
+      coachName: (r.coach_name as string) ?? "",
+      meetingDate: (r.meeting_date as string) ?? "",
+      notes: (r.notes as string) ?? "",
+      fathomLink: (r.fathom_link as string) ?? null,
+      fathomLinkAddedAt: (r.fathom_link_added_at as string) ?? null,
+      createdAt: (r.created_at as string) ?? null,
     })),
   });
 }
