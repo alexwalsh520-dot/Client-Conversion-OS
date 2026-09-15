@@ -17,9 +17,11 @@
 const CANONICAL: Record<string, string> = {
   // Everfit owner name       -> CCOS coach_name (internal)
   "stephanie hughes":            "Stef",
+  "stef hughes":                 "Stef",   // EOD Tracker column header
   "martin iliev":                "Martin",
   "kevin khalid":                "Kevin",
   "waleed ahmed":                "Waleed",
+  "waleed ahm":                  "Waleed", // truncated column header safety
   "ahmad saeed":                 "Ahmad",
   // Confirmed by MAS 2026-09-15: two Everfit owner names that don't share
   // a first name with their CCOS coach. Also confirmed the Sales Tracker

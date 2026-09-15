@@ -259,6 +259,105 @@ function quoteRange(title: string): string {
   return `'${title.replace(/'/g, "''")}'`;
 }
 
+// ---------------------------------------------------------------------------
+// EOD Tracker tab
+// ---------------------------------------------------------------------------
+//
+// The Admin Everfit Client Reports sheet also has an "EOD Tracker" tab where
+// coaches log daily "Yes/No" on whether they submitted their EOD. Columns are
+// per-coach (row 1 holds their names — usually short form like "Kevin",
+// "Mark", "Waleed Ahm[ed]"). Rows below hold Day + Date + one Yes/No cell per
+// coach. We return the newest date each coach marked Yes, canonicalized
+// through the alias map (so "Mark" → "Farrukh", "STEPH" → "Stef", etc.).
+
+const EOD_TAB_NAMES = ["EOD Tracker", "EOD TRACKER", "eod tracker"];
+
+function parseDdMmYyyy(raw: string): string | null {
+  const m = /^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/.exec((raw ?? "").trim());
+  if (!m) return null;
+  let y = parseInt(m[3], 10);
+  if (y < 100) y += 2000;
+  const d = parseInt(m[1], 10);
+  const mo = parseInt(m[2], 10);
+  if (!Number.isFinite(d) || !Number.isFinite(mo) || d < 1 || d > 31 || mo < 1 || mo > 12) {
+    return null;
+  }
+  return new Date(Date.UTC(y, mo - 1, d)).toISOString().slice(0, 10);
+}
+
+/** Pull the EOD Tracker tab from the same sheet the weekly reports live in.
+ *  Returns { canonicalCoachName: "YYYY-MM-DD" } for the newest Yes per coach.
+ *  Silently returns {} when the tab is missing or the sheet is unavailable
+ *  — the Coaches page will just show "never" everywhere and MAS can decide. */
+export async function loadEodTrackerFromSheet(
+  spreadsheetId: string = process.env.COACHING_V3_SHEET_ID ??
+    "1BqpCkDPEWLBmStK_VQJwGe0ju8BwHWi8VzsPz39ufgY",
+): Promise<Record<string, string>> {
+  try {
+    const sheets = getSheets();
+    const meta = await sheets.spreadsheets.get({ spreadsheetId, includeGridData: false });
+    const titles = (meta.data.sheets ?? [])
+      .map((s) => s.properties?.title ?? "")
+      .filter(Boolean);
+    const eodTitle =
+      titles.find((t) => EOD_TAB_NAMES.some((e) => e.toLowerCase() === t.trim().toLowerCase())) ??
+      null;
+    if (!eodTitle) return {};
+    const range = `${quoteRange(eodTitle)}!A1:Z1000`;
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range,
+      valueRenderOption: "UNFORMATTED_VALUE",
+      dateTimeRenderOption: "FORMATTED_STRING",
+    });
+    const grid = (res.data.values ?? []) as (string | number)[][];
+    if (grid.length < 2) return {};
+
+    // Header row: find the row that names the coaches. Usually row 0. The
+    // date column is normally B ("Date"). Fall back to scanning if header
+    // labels differ.
+    const header = grid[0].map((c) => String(c ?? "").trim());
+    let dateColIdx = header.findIndex((c) => /^date$/i.test(c));
+    if (dateColIdx === -1) dateColIdx = 1; // fallback
+
+    // Every column after date whose header maps to a known coach is a
+    // coach column. Canonicalize the header to CCOS spelling.
+    const coachCols: { colIdx: number; coach: string }[] = [];
+    for (let c = dateColIdx + 1; c < header.length; c++) {
+      const raw = header[c];
+      if (!raw) continue;
+      const canonical = tabToCoach(raw);
+      if (!canonical) continue;
+      coachCols.push({ colIdx: c, coach: canonical });
+    }
+    if (coachCols.length === 0) return {};
+
+    const newest = new Map<string, string>();
+    for (let r = 1; r < grid.length; r++) {
+      const row = grid[r] ?? [];
+      const dateStr = String(row[dateColIdx] ?? "").trim();
+      const iso = parseDdMmYyyy(dateStr);
+      if (!iso) continue;
+      for (const { colIdx, coach } of coachCols) {
+        const cell = String(row[colIdx] ?? "").trim().toLowerCase();
+        if (cell !== "yes") continue;
+        const prior = newest.get(coach);
+        if (!prior || iso > prior) newest.set(coach, iso);
+      }
+    }
+
+    const out: Record<string, string> = {};
+    for (const [k, v] of newest.entries()) out[k] = v;
+    return out;
+  } catch (err) {
+    console.warn(
+      "[coaching-v3/eod] EOD Tracker unavailable:",
+      err instanceof Error ? err.message : String(err),
+    );
+    return {};
+  }
+}
+
 interface TabParse {
   rows: ParsedRow[];
   warning?: string;

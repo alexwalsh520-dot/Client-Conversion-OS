@@ -50,12 +50,12 @@ export default async function CoachesPage() {
         <div className="h3-kpi">
           <div className="l">At-risk clients</div>
           <div className="v r">{rows.reduce((s, r) => s + r.atRisk, 0)}</div>
-          <div className="d">Score under 40 across all coaches</div>
+          <div className="d">Check-in &lt; 60 or workout % &lt; 40</div>
         </div>
         <div className="h3-kpi">
-          <div className="l">Replies owed</div>
-          <div className="v a">{rows.reduce((s, r) => s + r.repliesOwed, 0)}</div>
-          <div className="d">Client waiting ≥ 2 days</div>
+          <div className="l">Past-end clients</div>
+          <div className="v a">{rows.reduce((s, r) => s + r.pastEnd, 0)}</div>
+          <div className="d">Program end date has passed</div>
         </div>
       </div>
 
@@ -66,8 +66,6 @@ export default async function CoachesPage() {
               <Th>Coach</Th>
               <Th>Clients</Th>
               <Th>At risk</Th>
-              <Th>Replies owed</Th>
-              <Th>Median reply</Th>
               <Th>Month retention</Th>
               <Th>Past end</Th>
               <Th>Last EOD</Th>
@@ -92,14 +90,6 @@ export default async function CoachesPage() {
                     <span style={{ color: r.atRisk > 0 ? "var(--danger)" : "inherit" }}>
                       {r.atRisk} <span style={{ color: "var(--text-muted)" }}>({atRiskPct}%)</span>
                     </span>
-                  </Td>
-                  <Td>
-                    <span style={{ color: r.repliesOwed > 0 ? "var(--warning)" : "inherit" }}>
-                      {r.repliesOwed}
-                    </span>
-                  </Td>
-                  <Td>
-                    {r.replyHoursMedian == null ? "—" : `${r.replyHoursMedian}h`}
                   </Td>
                   <Td>
                     <b style={{ color: r.monthRetentionRevenue > 0 ? "var(--success)" : "var(--text-muted)" }}>

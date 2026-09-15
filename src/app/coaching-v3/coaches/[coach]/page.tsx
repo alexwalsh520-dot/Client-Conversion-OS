@@ -14,16 +14,8 @@ export default async function CoachDetailPage({ params }: { params: Promise<{ co
 
   const mine = hub.clients.filter((c) => norm(c.coach || "Unassigned") === norm(target));
 
-  const atRisk = mine.filter((c) => c.score.bucket === "at_risk");
+  const atRisk = mine.filter((c) => c.isAtRiskByBehavior);
   const retentionWindow = mine.filter((c) => c.retentionCycleOpen);
-  const repliesOwed = mine.filter((c) => {
-    if (!c.everfit?.lastClientMessageAt) return false;
-    const days = Math.floor(
-      (Date.now() - Date.parse(c.everfit.lastClientMessageAt)) / 86_400_000,
-    );
-    if (days < 2) return false;
-    return c.lastCoachMessageDaysAgo === null || c.lastCoachMessageDaysAgo >= days;
-  });
 
   return (
     <>
@@ -43,7 +35,7 @@ export default async function CoachDetailPage({ params }: { params: Promise<{ co
         <div className="h3-kpi">
           <div className="l">At risk</div>
           <div className="v r">{atRisk.length}</div>
-          <div className="d">Score under 40</div>
+          <div className="d">Check-in &lt; 60 or workout % &lt; 40</div>
         </div>
         <div className="h3-kpi">
           <div className="l">Retention window</div>
@@ -51,17 +43,21 @@ export default async function CoachDetailPage({ params }: { params: Promise<{ co
           <div className="d">Open retention cycle</div>
         </div>
         <div className="h3-kpi">
-          <div className="l">Replies owed</div>
-          <div className="v a">{repliesOwed.length}</div>
-          <div className="d">Client waiting ≥ 2d</div>
+          <div className="l">Past end</div>
+          <div className="v a">{mine.filter((c) => c.daysRemaining !== null && c.daysRemaining < 0).length}</div>
+          <div className="d">Program end date has passed</div>
         </div>
       </div>
 
       {atRisk.length > 0 && (
         <Section title={`At-risk clients (${atRisk.length})`}>
-          {atRisk.map((c) => (
-            <ClientLine key={c.id} c={c} lead={`${c.score.score}% · ${c.score.reasons[0] ?? ""}`} />
-          ))}
+          {atRisk.map((c) => {
+            const parts: string[] = [];
+            if (c.latestCheckInScore != null) parts.push(`Check-in ${c.latestCheckInScore}/100`);
+            const wk = c.weeklyReports[0];
+            if (wk?.workoutPct != null) parts.push(`Workouts ${Math.round(wk.workoutPct)}%`);
+            return <ClientLine key={c.id} c={c} lead={parts.join(" · ") || "no recent data"} />;
+          })}
         </Section>
       )}
 
@@ -83,26 +79,7 @@ export default async function CoachDetailPage({ params }: { params: Promise<{ co
         </Section>
       )}
 
-      {repliesOwed.length > 0 && (
-        <Section title={`Owed a reply (${repliesOwed.length})`}>
-          {repliesOwed.map((c) => {
-            const days = c.everfit?.lastClientMessageAt
-              ? Math.floor(
-                  (Date.now() - Date.parse(c.everfit.lastClientMessageAt)) / 86_400_000,
-                )
-              : null;
-            return (
-              <ClientLine
-                key={c.id}
-                c={c}
-                lead={days != null ? `waiting ${days}d` : "waiting"}
-              />
-            );
-          })}
-        </Section>
-      )}
-
-      {atRisk.length === 0 && retentionWindow.length === 0 && repliesOwed.length === 0 && (
+      {atRisk.length === 0 && retentionWindow.length === 0 && (
         <div className="h3-list">
           <div className="h3-empty">No open items. This coach is caught up.</div>
         </div>
@@ -124,7 +101,11 @@ function ClientLine({
   c,
   lead,
 }: {
-  c: { name: string; program: string; latestCheckInScore: number | null; score: { bucket: string; score: number } };
+  c: {
+    name: string;
+    program: string;
+    score: { bucket: string; score: number };
+  };
   lead: string;
 }) {
   const cls =
@@ -145,11 +126,6 @@ function ClientLine({
         </div>
         <div className="row2">
           <span>{lead}</span>
-          {c.latestCheckInScore != null && (
-            <span className={c.latestCheckInScore < 60 ? "r" : c.latestCheckInScore < 75 ? "a" : ""}>
-              Check-in {c.latestCheckInScore}/100
-            </span>
-          )}
         </div>
       </div>
       <div className="aside">

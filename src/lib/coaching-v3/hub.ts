@@ -16,6 +16,11 @@ import type { RetentionScore, V3EverfitState } from "./types";
 const DAY_MS = 86_400_000;
 const V3_STALE_HOURS = 36;
 
+/** Coaches who no longer work with us. Filtered out of every V3 view.
+ *  Confirmed by MAS 2026-09-15. Case-insensitive comparison.
+ *  If either rejoins, remove from this set. */
+const INACTIVE_COACHES = new Set(["fatima", "belkys"]);
+
 function norm(s: string | null | undefined): string {
   return (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -95,6 +100,11 @@ export interface HubClientV3 {
   // Derived
   score: RetentionScore;
   todayBuckets: TodayBucket[];
+  /** Behavior-only at-risk flag (MAS 2026-09-15): TRUE if the latest check-in
+   *  is below 60 OR the latest weekly workout % is below 40. Ignores contact
+   *  recency and retention history. Used by the Coaches tab's "At risk"
+   *  column instead of the composite retention-score bucket. */
+  isAtRiskByBehavior: boolean;
 }
 
 export interface HubV3 {
@@ -406,6 +416,16 @@ export async function loadHubV3(): Promise<HubV3 | null> {
       todayBuckets.push("silent_2wk");
     }
 
+    // Behavior-only at-risk (MAS 2026-09-15): the two direct behavioral
+    // signals — most recent check-in score and the sheet's latest weekly
+    // workout %. Ignores contact recency and retention history so the
+    // "At risk" column on Coaches reflects only how the CLIENT is doing.
+    const checkInScore = checkin?.score ?? null;
+    const workoutPct = latestWeek?.workoutPct ?? null;
+    const isAtRiskByBehavior =
+      (checkInScore !== null && checkInScore < 60) ||
+      (workoutPct !== null && workoutPct < 40);
+
     return {
       id: row.id,
       name: row.name,
@@ -427,16 +447,24 @@ export async function loadHubV3(): Promise<HubV3 | null> {
       weeklyReports,
       score,
       todayBuckets,
+      isAtRiskByBehavior,
     };
   });
 
+  // Drop clients whose coach has left the team. Kept out of every V3 view.
+  const activeCoachClients = clients.filter((c) => !INACTIVE_COACHES.has(norm(c.coach)));
+
   const visible = visibleCoach
-    ? clients.filter((c) => norm(c.coach) === norm(visibleCoach))
-    : clients;
+    ? activeCoachClients.filter((c) => norm(c.coach) === norm(visibleCoach))
+    : activeCoachClients;
 
   // Month retention rollup: from the Sales Tracker sheet (matches V1). Same
   // source coaching-v1 and coaching-v2 use so V3's numbers agree with theirs.
-  const finance = await loadFinanceMonth(now.getUTCMonth());
+  const financeRaw = await loadFinanceMonth(now.getUTCMonth());
+  const finance = {
+    ...financeRaw,
+    byCoach: financeRaw.byCoach.filter((c) => !INACTIVE_COACHES.has(norm(c.coach))),
+  };
 
   const latestSync = latestSnapQ.data
     ? {
