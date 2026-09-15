@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
 
   const clientNameNorm = (client.name as string).trim();
 
-  const [clientNotesQ, cyclesQ] = await Promise.all([
+  const [clientNotesQ, cyclesQ, checkInsQ] = await Promise.all([
     db
       .from("client_notes")
       .select("note, coach_name, created_at")
@@ -48,6 +48,12 @@ export async function GET(req: NextRequest) {
       .select("id, entered_window_at, outcome, outcome_at, outcome_by")
       .eq("client_id", clientId)
       .order("entered_window_at", { ascending: false }),
+    db
+      .from("client_check_ins")
+      .select("id, client_id, client_name, coach_name, q1_overall, q2_strength, q3_lifestyle, q4_progress, q5_open_response, score_0_100, submitted_at")
+      .eq("client_id", clientId)
+      .order("submitted_at", { ascending: false })
+      .limit(100),
   ]);
 
   const cycleIds = (cyclesQ.data ?? []).map((c) => c.id as number);
@@ -88,6 +94,19 @@ export async function GET(req: NextRequest) {
       source: (n as { source: string }).source,
       author: (n as { author_email: string }).author_email,
       at: (n as { created_at: string }).created_at,
+    })),
+    checkIns: (checkInsQ.data ?? []).map((r) => ({
+      id: r.id as number,
+      clientId: (r.client_id as number) ?? null,
+      clientName: (r.client_name as string) ?? "",
+      coachName: (r.coach_name as string) ?? "",
+      score: Number(r.score_0_100) || 0,
+      q1: Number(r.q1_overall) || 0,
+      q2: Number(r.q2_strength) || 0,
+      q3: Number(r.q3_lifestyle) || 0,
+      q4: Number(r.q4_progress) || 0,
+      text: ((r.q5_open_response as string) ?? "").trim(),
+      submittedAt: r.submitted_at as string,
     })),
   });
 }

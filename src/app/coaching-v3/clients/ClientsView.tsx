@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { RetentionScore } from "@/lib/coaching-v3/types";
-import { Search, X, Filter } from "lucide-react";
+import { Search, X, Filter, Loader2, ClipboardList } from "lucide-react";
+import CheckinModal, { type CheckInSubmission } from "../components/CheckinModal";
 
 export type Row = {
   id: number;
@@ -385,6 +386,32 @@ function pctColor(cls: string) {
 }
 
 function ClientDrawer({ row, onClose }: { row: Row; onClose: () => void }) {
+  // Lazy-load client detail — check-in history is the main payload.
+  const [checkIns, setCheckIns] = useState<CheckInSubmission[]>([]);
+  const [checkinsLoading, setCheckinsLoading] = useState(true);
+  const [checkinsErr, setCheckinsErr] = useState<string | null>(null);
+  const [openCheckin, setOpenCheckin] = useState<CheckInSubmission | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setCheckinsLoading(true);
+    setCheckinsErr(null);
+    (async () => {
+      try {
+        const res = await fetch(`/api/coaching-v3/client-detail?clientId=${row.id}`);
+        const body = await res.json();
+        if (cancelled) return;
+        if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+        setCheckIns((body.checkIns ?? []) as CheckInSubmission[]);
+      } catch (e) {
+        if (!cancelled) setCheckinsErr(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setCheckinsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [row.id]);
+
   return (
     <>
       <div
@@ -521,6 +548,99 @@ function ClientDrawer({ row, onClose }: { row: Row; onClose: () => void }) {
             )}
           </div>
         </section>
+
+        {/* Full check-in history — most recent first, click a row for the
+            same full-detail modal Today uses. */}
+        <section className="h3-sec">
+          <h2>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+              <ClipboardList size={12} /> Check-in history
+            </span>
+            {!checkinsLoading && !checkinsErr && checkIns.length > 0 && (
+              <span className="n" style={{ marginLeft: 6 }}>{checkIns.length}</span>
+            )}
+          </h2>
+          <div className="h3-list" style={{ padding: checkinsLoading || checkinsErr || checkIns.length === 0 ? "10px 14px" : 0 }}>
+            {checkinsLoading && (
+              <div style={{ color: "var(--text-muted)", textAlign: "center", padding: 6 }}>
+                <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
+              </div>
+            )}
+            {checkinsErr && (
+              <div style={{ color: "var(--danger)" }}>Failed to load: {checkinsErr}</div>
+            )}
+            {!checkinsLoading && !checkinsErr && checkIns.length === 0 && (
+              <div style={{ color: "var(--text-muted)", fontStyle: "italic" }}>
+                No check-ins on file.
+              </div>
+            )}
+            {!checkinsLoading && !checkinsErr && checkIns.map((ci) => {
+              const cls = ci.score < 40 ? "r" : ci.score < 55 ? "a" : ci.score < 75 ? "" : "g";
+              const days = Math.max(
+                0,
+                Math.floor((Date.now() - Date.parse(ci.submittedAt)) / 86_400_000),
+              );
+              return (
+                <div
+                  key={ci.id}
+                  onClick={() => setOpenCheckin(ci)}
+                  className="h3-li"
+                  style={{ cursor: "pointer", gridTemplateColumns: "8px 1fr auto" }}
+                >
+                  <span className={`dot ${cls || "u"}`} />
+                  <div className="main">
+                    <div className="row1">
+                      <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 12.5 }}>
+                        {new Date(ci.submittedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                      </span>
+                      <span className="coach">{days}d ago</span>
+                    </div>
+                    {ci.text && (
+                      <div
+                        style={{
+                          marginTop: 2,
+                          fontStyle: "italic",
+                          color: "var(--text-muted)",
+                          fontSize: 11.5,
+                          maxWidth: 360,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                        title={ci.text}
+                      >
+                        &ldquo;{ci.text}&rdquo;
+                      </div>
+                    )}
+                  </div>
+                  <div className="aside">
+                    <div
+                      className="pct"
+                      style={{
+                        fontWeight: 700,
+                        color:
+                          ci.score < 40
+                            ? "var(--danger)"
+                            : ci.score < 55
+                              ? "var(--warning)"
+                              : ci.score < 75
+                                ? "var(--text-primary)"
+                                : "var(--success)",
+                      }}
+                    >
+                      {ci.score}
+                    </div>
+                    <div className="lbl">score</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        {openCheckin && (
+          <CheckinModal submission={openCheckin} onClose={() => setOpenCheckin(null)} />
+        )}
 
         {row.weeklyReports.length > 0 && (
           <section className="h3-sec">
