@@ -33,6 +33,7 @@ export default function RecordTestimonial({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [errorMsg, setErrorMsg] = useState("");
+  const [profession, setProfession] = useState("");
   const recordInputRef = useRef<HTMLInputElement>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
 
@@ -97,6 +98,12 @@ export default function RecordTestimonial({
 
   async function submit() {
     if (!file) return;
+    const professionTrimmed = profession.trim();
+    if (professionTrimmed.length < 2) {
+      setErrorMsg("Please tell us your profession or sector before submitting.");
+      setPhase("error");
+      return;
+    }
     setPhase("uploading");
     setProgress(0);
     setErrorMsg("");
@@ -119,7 +126,7 @@ export default function RecordTestimonial({
       const completeRes = await fetch("/api/testimonials/video/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, fileSize: file.size }),
+        body: JSON.stringify({ token, fileSize: file.size, profession: professionTrimmed }),
       });
       const complete = await completeRes.json();
       if (!completeRes.ok) throw new Error(complete.error || "Could not finish the upload.");
@@ -221,6 +228,55 @@ export default function RecordTestimonial({
               </ol>
             </section>
 
+            {/* Profession / sector — required. MAS 2026-09-16: captured with
+                every submission so we can segment testimonials by industry
+                for marketing. */}
+            <section
+              style={{
+                background: COLORS.card,
+                border: `1px solid ${COLORS.line}`,
+                borderRadius: 14,
+                padding: "18px",
+                marginBottom: 22,
+              }}
+            >
+              <label
+                htmlFor="profession"
+                style={{
+                  display: "block",
+                  fontSize: 13,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                  color: COLORS.accent,
+                  margin: "0 0 10px",
+                }}
+              >
+                Your profession or sector
+              </label>
+              <input
+                id="profession"
+                type="text"
+                value={profession}
+                onChange={(e) => setProfession(e.target.value)}
+                placeholder="e.g. Nurse, Lawyer, Software Engineer, Small business owner"
+                autoComplete="organization-title"
+                style={{
+                  width: "100%",
+                  boxSizing: "border-box",
+                  padding: "12px 14px",
+                  fontSize: 15,
+                  borderRadius: 10,
+                  border: `1px solid ${COLORS.line}`,
+                  background: COLORS.bg,
+                  color: COLORS.text,
+                  fontFamily: "inherit",
+                }}
+              />
+              <p style={{ color: COLORS.sub, margin: "8px 0 0", fontSize: 12.5, lineHeight: 1.5 }}>
+                Helps future clients see themselves in your story. One or two words is plenty.
+              </p>
+            </section>
+
             {previewUrl && (phase === "preview" || phase === "uploading" || phase === "error") && (
               <video
                 src={previewUrl}
@@ -265,6 +321,21 @@ export default function RecordTestimonial({
             )}
           </>
         )}
+
+        {/* Barely-visible marketing notice. Deliberately understated per MAS
+            2026-09-16 — informed consent captured with every submission but
+            not distracting on the page. */}
+        <p
+          style={{
+            marginTop: 40,
+            fontSize: 10,
+            lineHeight: 1.5,
+            color: "rgba(170, 177, 189, 0.35)",
+            textAlign: "center",
+          }}
+        >
+          By submitting, you understand your testimonial may be used for marketing purposes.
+        </p>
       </div>
     </div>
   );

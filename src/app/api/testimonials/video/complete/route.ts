@@ -15,9 +15,16 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const token = String(body.token || "");
     const fileSize = Number.isFinite(Number(body.fileSize)) ? Number(body.fileSize) : null;
+    const profession = String(body.profession || "").trim().slice(0, 200);
 
     if (!token) {
       return NextResponse.json({ error: "Missing token" }, { status: 400 });
+    }
+    if (!profession || profession.length < 2) {
+      return NextResponse.json(
+        { error: "Please tell us your profession or sector before submitting." },
+        { status: 400 },
+      );
     }
 
     const db = getServiceSupabase();
@@ -42,7 +49,12 @@ export async function POST(req: NextRequest) {
 
     const { error: updateErr } = await db
       .from("video_testimonials")
-      .update({ status: "submitted", submitted_at: new Date().toISOString(), file_size: fileSize })
+      .update({
+        status: "submitted",
+        submitted_at: new Date().toISOString(),
+        file_size: fileSize,
+        profession,
+      })
       .eq("id", row.id);
 
     if (updateErr) {
