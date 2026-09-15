@@ -1,6 +1,6 @@
 import Link from "next/link";
-import type { HubClient, Level } from "@/lib/coaching-v2/hub";
-import { LEVEL_LABEL } from "@/lib/coaching-v2/hub";
+import type { Level } from "@/lib/coaching-v2/types";
+import { LEVEL_LABEL } from "@/lib/coaching-v2/types";
 
 export function Dot({ lvl }: { lvl: Level }) {
   return <span className={`h2-dot ${lvl}`} aria-label={LEVEL_LABEL[lvl]} />;
@@ -15,8 +15,8 @@ export function StatusChip({ lvl }: { lvl: Level }) {
   );
 }
 
-export function ClientLink({ c, children }: { c: HubClient; children?: React.ReactNode }) {
-  return <Link href={`/coaching-v2/clients/${c.id}`}>{children ?? c.name}</Link>;
+export function ClientLink({ id, name, children }: { id: number; name: string; children?: React.ReactNode }) {
+  return <Link href={`/coaching-v2/clients/${id}`}>{children ?? name}</Link>;
 }
 
 export function fmtDays(n: number | null): string {

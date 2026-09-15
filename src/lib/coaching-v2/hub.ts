@@ -8,10 +8,12 @@
  */
 import { getServiceSupabase } from "@/lib/supabase";
 import { auth } from "@/auth";
+import { cookies } from "next/headers";
 import { listKnownCoaches } from "@/lib/nutrition/coach-resolver";
 
-export type Level = "r" | "a" | "g";
-export const LEVEL_LABEL: Record<Level, string> = { r: "At risk", a: "Watch", g: "On track" };
+import { LEVEL_LABEL, type Level, type Msg, type SerializedClient } from "./types";
+export { LEVEL_LABEL };
+export type { Level, Msg, SerializedClient };
 const LEVEL_ORDER: Record<Level, number> = { r: 0, a: 1, g: 2 };
 
 export interface Signal {
@@ -41,13 +43,6 @@ export interface CheckIn {
   q2: number;
   q3: number;
   q4: number;
-  text: string;
-}
-
-export interface Msg {
-  at: string; // ISO
-  daysAgo: number;
-  sender: "client" | "coach";
   text: string;
 }
 
@@ -86,6 +81,10 @@ export interface HubClient {
   asks: Ask[];
   milestoneId: number | null;
   retention: { nextStep: string | null; note: string | null; noteAt: string | null };
+  /** From the nutrition intake form when linked. */
+  goal: { text: string; startLb: number | null; goalLb: number | null } | null;
+  week: number | null;
+  weeks: number | null;
   signals: Signal[];
   health: Level;
   lead: Signal | null;
@@ -97,6 +96,8 @@ export interface Viewer {
   isAdmin: boolean;
   /** Internal coach name when the signed in person is a coach, else null (manager view). */
   coach: string | null;
+  /** True when an admin chose "view as" a coach. */
+  viewingAs: boolean;
 }
 
 export interface Hub {
@@ -106,6 +107,8 @@ export interface Hub {
   coaches: string[];
   inboxCapturedAt: string | null;
   today: string; // YYYY-MM-DD
+  eod: { lastDate: string | null; byCoach: Record<string, string[]> }; // dates submitted, newest first
+  allActive: HubClient[]; // every active client regardless of viewer (for team wide numbers)
 }
 
 // ---------- date helpers ----------
@@ -176,11 +179,14 @@ export async function getViewer(): Promise<Viewer | null> {
   if (!email) return null;
   const isAdmin = session?.user?.role === "admin";
   const name = session?.user?.name ?? email;
-  if (isAdmin) return { email, name, isAdmin, coach: null };
+  if (isAdmin) {
+    const as = (await cookies()).get("ccos-v2-as")?.value;
+    return { email, name, isAdmin, coach: as ? decodeURIComponent(as) : null, viewingAs: !!as };
+  }
   // A coach is matched by the roster email first, then by their app_users name.
   const known = listKnownCoaches().find((c) => c.email.toLowerCase() === email);
-  if (known) return { email, name, isAdmin, coach: known.internal };
-  return { email, name, isAdmin, coach: null };
+  if (known) return { email, name, isAdmin, coach: known.internal, viewingAs: false };
+  return { email, name, isAdmin, coach: null, viewingAs: false };
 }
 
 // ---------- load ----------
@@ -189,7 +195,7 @@ export async function loadHub(): Promise<Hub | null> {
   if (!viewer) return null;
   const db = getServiceSupabase();
 
-  const [clientsQ, milestonesQ, meetingsQ, checkinsQ, notesQ, convosQ, msgsQ, usersQ] = await Promise.all([
+  const [clientsQ, milestonesQ, meetingsQ, checkinsQ, notesQ, convosQ, msgsQ, usersQ, formsQ, eodQ] = await Promise.all([
     db.from("clients").select("id, name, coach_name, program, status, start_date, end_date, amount_paid, sales_person, payment_platform, sales_fathom_link, onboarding_fathom_link, onboarding_date, onboarding_status, nutrition_status, nutrition_assigned_at, nutrition_form_id, created_at"),
     db.from("coach_milestones").select("*"),
     db.from("coach_meetings").select("client_id, client_name, coach_name, meeting_date, duration_minutes, notes, fathom_link").order("meeting_date", { ascending: false }),
@@ -198,6 +204,8 @@ export async function loadHub(): Promise<Hub | null> {
     db.from("everfit_inbox_conversations").select("everfit_id, name, coach_name, client_id, last_captured_at"),
     db.from("everfit_inbox_messages").select("everfit_id, message_id, sender, text, date, time, observed_at"),
     viewer.coach ? Promise.resolve({ data: null }) : db.from("app_users").select("name").eq("email", viewer.email).maybeSingle(),
+    db.from("nutrition_intake_forms").select("id, current_weight, goal_weight, fitness_goal"),
+    db.from("eod_reports").select("submitted_by, date, role").order("date", { ascending: false }).limit(2000),
   ]);
 
   // If the roster did not know this coach, try their app_users name against coach names.
@@ -208,6 +216,16 @@ export async function loadHub(): Promise<Hub | null> {
     if (userName && coachNames.has(norm(userName))) coachFilter = userName;
   }
   const viewerOut: Viewer = { ...viewer, coach: coachFilter };
+  const formById = new Map<number, { cur: number | null; goal: number | null; text: string }>();
+  for (const f of formsQ.data ?? []) formById.set(f.id as number, { cur: numOrNull(f.current_weight), goal: numOrNull(f.goal_weight), text: ((f.fitness_goal as string) ?? "").trim() });
+  const eodByCoach: Record<string, string[]> = {};
+  let eodLast: string | null = null;
+  for (const r of eodQ.data ?? []) {
+    const who = (r.submitted_by as string) ?? ""; const d = (r.date as string) ?? "";
+    if (!who || !d) continue;
+    (eodByCoach[who] = eodByCoach[who] ?? []).push(d);
+    if (!eodLast || d > eodLast) eodLast = d;
+  }
 
   // ---- index side tables ----
   const msByName = new Map<string, Record<string, unknown>>();
@@ -315,11 +333,18 @@ export async function loadHub(): Promise<Hub | null> {
       retNote = parts.slice(2).join(" · ") || null;
     }
 
+    const form = row.nutrition_form_id ? formById.get(row.nutrition_form_id as number) ?? null : null;
+    const goal = form && (form.text || form.goal !== null) ? { text: form.text, startLb: form.cur, goalLb: form.goal } : null;
+    const totalDays = startDate && endDate ? Math.round(((dateOnlyUtc(endDate) ?? 0) - (dateOnlyUtc(startDate) ?? 0)) / DAY) : null;
+    const weeks = totalDays && totalDays > 0 ? Math.round(totalDays / 7) : null;
+    const week = startDate && weeks ? Math.min(weeks, Math.max(1, Math.ceil((-(daysFromToday(startDate) ?? 0) + 1) / 7))) : null;
+
     // ---- stage ----
     let stage: HubClient["stage"] = "Active";
     const startAgo = startDate ? -(daysFromToday(startDate) ?? 0) : null;
     if (status !== "active") stage = "Completed";
     else if (days !== null && days < 0) stage = "Needs a decision";
+    else if (extension.done && days !== null && days > 14 && extension.doneDate) stage = "Active";
     else if (days !== null && days <= 14) stage = "Ending soon";
     else if ((row.onboarding_status as string) !== "onboarded" || (startAgo !== null && startAgo <= 7)) stage = "Onboarding";
 
@@ -397,6 +422,9 @@ export async function loadHub(): Promise<Hub | null> {
       asks,
       milestoneId: (ms?.id as number) ?? null,
       retention: { nextStep, note: retNote, noteAt: ret?.at ?? null },
+      goal,
+      week,
+      weeks,
       signals,
       health,
       lead,
@@ -407,7 +435,7 @@ export async function loadHub(): Promise<Hub | null> {
   const active = visible.filter((c) => c.status === "active");
   const coaches = [...new Set(clients.filter((c) => c.status === "active" && c.coach).map((c) => c.coach))].sort();
 
-  return { viewer: viewerOut, clients: visible, active, coaches, inboxCapturedAt, today: new Date(todayUtc()).toISOString().slice(0, 10) };
+  return { viewer: viewerOut, clients: visible, active, coaches, inboxCapturedAt, today: new Date(todayUtc()).toISOString().slice(0, 10), eod: { lastDate: eodLast, byCoach: eodByCoach }, allActive: clients.filter((c) => c.status === "active") };
 }
 
 function mkAsk(
@@ -473,6 +501,102 @@ export function coachRows(active: HubClient[], coaches: string[]): CoachRow[] {
       replyHours,
       retentionPct,
       pastEnd: cs.filter((c) => c.days !== null && c.days < 0).length,
+    };
+  });
+}
+
+/** Days since a YYYY-MM-DD (or ISO) date, or null. Owns the clock so components stay pure. */
+export function daysSince(s: string | null | undefined): number | null {
+  return daysAgoIso(s);
+}
+export function isoDaysAgo(n: number): string {
+  return new Date(todayUtc() - n * DAY).toISOString().slice(0, 10);
+}
+/** The last 28 calendar days for one coach's end of day reports. */
+export function eodCalendar(hub: Hub, coach: string): { d: string; label: number; ok: boolean; weekend: boolean }[] {
+  const submitted = new Set(hub.eod.byCoach[coach] ?? []);
+  const out: { d: string; label: number; ok: boolean; weekend: boolean }[] = [];
+  for (let i = 27; i >= 0; i--) {
+    const t = new Date(todayUtc() - i * DAY);
+    const d = t.toISOString().slice(0, 10);
+    const wd = t.getUTCDay();
+    out.push({ d, label: t.getUTCDate(), ok: submitted.has(d), weekend: wd === 0 || wd === 6 });
+  }
+  return out;
+}
+function numOrNull(v: unknown): number | null {
+  const n = parseFloat(String(v ?? "").replace(/[^0-9.]/g, ""));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+export function goalSentence(c: HubClient): string | null {
+  if (!c.goal) return null;
+  const parts: string[] = [];
+  if (c.goal.startLb !== null && c.goal.goalLb !== null && c.goal.startLb > c.goal.goalLb) parts.push(`${Math.round(c.goal.startLb - c.goal.goalLb)} lb off, from ${Math.round(c.goal.startLb)} to ${Math.round(c.goal.goalLb)}`);
+  else if (c.goal.goalLb !== null) parts.push(`Goal weight ${Math.round(c.goal.goalLb)} lb`);
+  if (c.goal.text) { const t = c.goal.text.replace(/[.\s]+$/, ""); parts.push(t.length > 90 ? t.slice(0, 90) + "…" : t); }
+  if (c.week && c.weeks) parts.push(`week ${c.week} of ${c.weeks}`);
+  return parts.length ? parts.join(". ") + "." : null;
+}
+
+export function serializeClient(c: HubClient): SerializedClient {
+  const followUp = !c.latestCheckin ? null : !c.convoId ? null : c.coachRepliedAfterCheckin ? `${c.coach} messaged in Everfit after this check in.` : `No message from ${c.coach} in Everfit since this check in.`;
+  return {
+    id: c.id, name: c.name, coach: c.coach, program: c.program, stage: c.stage, health: c.health,
+    goal: goalSentence(c),
+    flags: c.signals.filter((s) => s.lvl !== "g").map((s) => ({ lvl: s.lvl, text: `${s.label}. ${s.value}.` })),
+    checkin: c.latestCheckin ? { score: c.latestCheckin.score, at: c.latestCheckin.submittedAt, daysAgo: c.latestCheckin.daysAgo, text: c.latestCheckin.text, followUp } : null,
+    messages: c.messages.slice(0, 3),
+    owedDays: c.owedDays,
+  };
+}
+
+/** "MM/DD" or "MM/DD/YYYY" or ISO -> YYYY-MM-DD, year inferred like the Milestones tab does. */
+export function milestoneDate(s: string | null): string | null {
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const m = /^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/.exec(s.trim());
+  if (!m) return null;
+  const now = new Date();
+  let y = m[3] ? +m[3] : now.getUTCFullYear();
+  if (y < 100) y += 2000;
+  let t = Date.UTC(y, +m[1] - 1, +m[2]);
+  if (!m[3] && t > todayUtc() + 30 * DAY) t = Date.UTC(y - 1, +m[1] - 1, +m[2]);
+  return new Date(t).toISOString().slice(0, 10);
+}
+
+export interface CoachRowFull extends CoachRow {
+  refunds: number | null;
+  asksPct: number | null;
+  callsPerClient: number | null;
+  reportsPct: number | null;
+  commissionsCount: number;
+}
+
+/** Scorecard over a window of N days. Refund counts come from the caller (financials sheet). */
+export function coachRowsWindow(hub: Hub, windowDays: number, refundsByCoach?: Record<string, number>): CoachRowFull[] {
+  const base = coachRows(hub.allActive, hub.coaches);
+  const cutoff = new Date(todayUtc() - windowDays * DAY).toISOString().slice(0, 10);
+  const monthStart = new Date(todayUtc()).toISOString().slice(0, 8) + "01";
+  // working days in window (Mon to Fri)
+  let working = 0;
+  for (let i = 0; i < windowDays; i++) { const d = new Date(todayUtc() - i * DAY).getUTCDay(); if (d >= 1 && d <= 5) working++; }
+  return base.map((r) => {
+    const cs = hub.allActive.filter((c) => norm(c.coach) === norm(r.coach));
+    const calls = cs.reduce((s, c) => s + c.meetings.filter((m) => m.date >= cutoff).length, 0);
+    let due = 0, made = 0;
+    for (const c of cs) for (const a of c.asks) {
+      if (a.dueDate && a.dueDate >= cutoff && a.dueDate <= hub.today) { due++; if (a.done || a.asked) made++; }
+    }
+    const dates = new Set((hub.eod.byCoach[r.coach] ?? []).filter((d) => d >= cutoff));
+    const commissionsCount = cs.reduce((s, c) => s + c.asks.filter((a) => a.done && (milestoneDate(a.doneDate) ?? "") >= monthStart).length, 0);
+    return {
+      ...r,
+      refunds: refundsByCoach ? refundsByCoach[norm(r.coach)] ?? 0 : null,
+      asksPct: due ? Math.round((100 * made) / due) : null,
+      callsPerClient: cs.length ? Math.round((10 * calls) / cs.length) / 10 : null,
+      reportsPct: working ? Math.round((100 * Math.min(dates.size, working)) / working) : null,
+      commissionsCount,
     };
   });
 }

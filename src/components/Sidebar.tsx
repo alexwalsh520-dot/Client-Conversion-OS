@@ -18,6 +18,7 @@ import {
   Trophy,
   DollarSign,
   Users,
+  Sparkles,
 } from "lucide-react";
 import { ThemeIconButton } from "@/components/ThemeToggle";
 import LogoWordmark from "@/components/LogoWordmark";
@@ -257,6 +258,17 @@ export default function Sidebar() {
 
         {/* Bottom section */}
         <div className="sidebar-bottom">
+          {inHub && (
+            <button
+              type="button"
+              className="sidebar-ask"
+              onClick={() => window.dispatchEvent(new CustomEvent("ccos-v2-ask"))}
+              title="Ask Ahmad"
+            >
+              <span className="sidebar-link-icon"><Sparkles size={16} /></span>
+              {!collapsed && <span>Ask Ahmad</span>}
+            </button>
+          )}
           {/* Settings */}
           {renderLink({ href: "/settings", label: "Settings", icon: Settings })}
 
