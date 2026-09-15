@@ -51,6 +51,13 @@ export default function ClientsTable({ rows, manager, coaches, canAdd, defaultCo
     return m;
   }, [rows]);
 
+  const viewCounts = useMemo<Record<string, number | undefined>>(() => ({
+    "Inbox": rows.filter((r) => r.owed).length,
+    "Asks due": rows.filter((r) => r.status === "active" && r.askDue).length,
+    "Nutrition queue": rows.filter((r) => r.nutritionWait !== null).length,
+    "Low check ins": rows.filter((r) => r.status === "active" && r.score !== null && r.score < 60).length,
+  }), [rows]);
+
   const shown = useMemo(() => {
     let list = rows.slice();
     if (view === null) list = stage === "All" ? list.filter((r) => r.status === "active") : stage === "Renewed" ? list.filter((r) => r.renewed) : list.filter((r) => r.stage === stage);
@@ -89,23 +96,19 @@ export default function ClientsTable({ rows, manager, coaches, canAdd, defaultCo
         </div>
         {canAdd && <AddClientModal coaches={coaches} defaultCoach={defaultCoach} />}
       </div>
-      <div className="h2-chips">
+      <div className="h2-seg" style={{ marginBottom: 12 }}>
         {STAGES.map((s) => (
-          <button key={s} className={`h2-chip ${stage === s && view === null ? "on" : ""}`} onClick={() => { setStage(s); setView(null); }}>{s}<span className="n">{counts[s]}</span></button>
-        ))}
-        <span className="div" />
-        {VIEWS.map((v) => (
-          <button key={v} className={`h2-chip ${view === v ? "on" : ""}`} onClick={() => setView(view === v ? null : v)}>
-            {v}{v === "Inbox" && <span className="n">{rows.filter((r) => r.owed).length} waiting</span>}
-          </button>
+          <button key={s} className={stage === s && view === null ? "on" : ""} onClick={() => { setStage(s); setView(null); }}>{s}<span className="n">{counts[s]}</span></button>
         ))}
       </div>
-      {!isBacklog && (
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div className="h2-search"><input placeholder="Search name or coach" value={q} onChange={(e) => setQ(e.target.value)} /></div>
-          <span className="h2-m" style={{ fontSize: 12, marginBottom: 12 }}>{shown.length} shown</span>
-        </div>
-      )}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+        <select className="h2-sel" value={view ?? ""} onChange={(e) => setView(e.target.value || null)} aria-label="View">
+          <option value="">View: {view === null ? stage : "Stages"}</option>
+          {VIEWS.map((v) => <option key={v} value={v}>{v}{viewCounts[v] !== undefined ? ` (${viewCounts[v]})` : ""}</option>)}
+        </select>
+        {!isBacklog && <div className="h2-search" style={{ margin: 0 }}><input placeholder="Search name or coach" value={q} onChange={(e) => setQ(e.target.value)} /></div>}
+        {!isBacklog && <span className="h2-m" style={{ fontSize: 12 }}>{shown.length} shown</span>}
+      </div>
 
       <div className="h2-tw">
         <table className="h2-table">

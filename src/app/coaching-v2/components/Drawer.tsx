@@ -57,7 +57,7 @@ export default function Drawer({ clientId, onClose, onAsk }: { clientId: number 
                 <div className="h2-h">Latest check in</div>
                 {c.checkin ? (
                   <div className="h2-ci" style={{ marginBottom: 18 }}>
-                    <div className="top"><b>{c.checkin.score}</b><span>out of 100</span><span>· {fmt(c.checkin.at)}, {c.checkin.daysAgo} days ago</span></div>
+                    <div className="top"><b>{c.checkin.score}/100</b><span>{fmt(c.checkin.at)}, {c.checkin.daysAgo} days ago</span></div>
                     {c.checkin.text ? <p className="q" style={{ fontSize: 14 }}>“{c.checkin.text}”</p> : <p className="q h2-m" style={{ fontSize: 13 }}>No written answer.</p>}
                     {c.checkin.followUp && <div className={`ft ${c.checkin.followUp.startsWith("No") ? "r" : ""}`}>{c.checkin.followUp}</div>}
                   </div>
@@ -66,7 +66,7 @@ export default function Drawer({ clientId, onClose, onAsk }: { clientId: number 
                 {c.messages.length ? (
                   <div className="h2-conv" style={{ marginBottom: 18 }}>
                     {c.messages.map((m, i) => (
-                      <div key={i} className={`h2-m ${m.sender}`}>
+                      <div key={i} className={`h2-msg ${m.sender}`}>
                         <span className="w">{fmt(m.at)}</span>
                         <span className="t">{m.text}<span className="who">{m.sender === "client" ? c.name : c.coach}</span></span>
                       </div>

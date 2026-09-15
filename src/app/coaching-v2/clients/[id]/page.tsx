@@ -16,7 +16,7 @@ function flag(s: Signal, c: HubClient): React.ReactNode {
     case "Messages":
       return c.owedDays ? <>Client has been waiting {em(`${c.owedDays} day${c.owedDays === 1 ? "" : "s"}`)} for a reply.</> : <>Client has been quiet for {em(`${c.lastClientMsgDays} days`)}.</>;
     case "Check in score":
-      return <>Last check in scored {em(`${c.score} out of 100`)}.</>;
+      return <>Last check in scored {em(`${c.score}/100`)}.</>;
     case "Check in":
       return <>No check in for {em(`${c.lastCheckDays} days`)}.</>;
     case "Coach contact":
@@ -54,7 +54,7 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
     ...c.messages.map((m) => ({ at: m.at, ty: "Message", who: m.sender === "client" ? c.name : c.coach, text: m.text, client: m.sender === "client" })),
     ...c.meetings.map((m) => ({ at: m.date, ty: "Call", who: c.coach, text: `${m.minutes ? m.minutes + " min. " : ""}${m.notes}`.trim(), client: false })),
     ...c.notes.map((n) => ({ at: n.at, ty: "Note", who: n.by, text: n.text, client: false })),
-    ...c.checkins.map((k) => ({ at: k.submittedAt, ty: "Check in", who: c.name, text: `${k.score} out of 100. ${k.text}`.trim(), client: true })),
+    ...c.checkins.map((k) => ({ at: k.submittedAt, ty: "Check in", who: c.name, text: `${k.score}/100. ${k.text}`.trim(), client: true })),
   ].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 60);
 
   return (
@@ -97,7 +97,7 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
             {ci ? (
               <div className="h2-ci">
                 <div className="top">
-                  <b>{ci.score}</b><span>out of 100</span><span>· {fmtDay(ci.submittedAt)}, {ci.daysAgo} day{ci.daysAgo === 1 ? "" : "s"} ago</span>
+                  <b>{ci.score}/100</b><span>{fmtDay(ci.submittedAt)}, {ci.daysAgo} day{ci.daysAgo === 1 ? "" : "s"} ago</span>
                   <span className="subs"><span>Coaching {ci.q1}</span><span>Strength {ci.q2}</span><span>Lifestyle {ci.q3}</span><span>Progress {ci.q4}</span></span>
                 </div>
                 {ci.text ? <p className="q">“{ci.text}”</p> : <p className="q h2-m" style={{ fontSize: 13 }}>No written answer.</p>}
@@ -113,7 +113,7 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
             {recent.length ? (
               <div className="h2-conv">
                 {recent.map((m, i) => (
-                  <div key={i} className={`h2-m ${m.sender}`}>
+                  <div key={i} className={`h2-msg ${m.sender}`}>
                     <span className="w">{fmtDay(m.at)}</span>
                     <span className="t">{m.text}<span className="who">{m.sender === "client" ? c.name : c.coach}</span></span>
                   </div>
@@ -170,7 +170,7 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
             <div className="h2-h">Check ins</div>
             {scores.length ? <div className="h2-sc">{scores.map((k, i) => <i key={k.id} className={i === scores.length - 1 ? "last" : ""} style={{ height: Math.max(3, Math.round((k.score / 100) * 36)) }} title={String(k.score)} />)}</div> : null}
             <div className="h2-fact">
-              <span className="kk">Last</span><span className={`v ${ci && ci.score < 60 ? "h2-r" : ci && ci.score < 75 ? "h2-a" : ""}`}>{ci ? `${ci.score} out of 100, ${ci.daysAgo} days ago` : "None yet"}</span>
+              <span className="kk">Last</span><span className={`v ${ci && ci.score < 60 ? "h2-r" : ci && ci.score < 75 ? "h2-a" : ""}`}>{ci ? `${ci.score}/100, ${ci.daysAgo} days ago` : "None yet"}</span>
               <span className="kk">Trend</span><span className="v">{scores.length >= 2 ? (scores[scores.length - 1].score < scores[0].score ? `Down ${scores[0].score - scores[scores.length - 1].score} over ${scores.length}` : scores[scores.length - 1].score > scores[0].score ? `Up ${scores[scores.length - 1].score - scores[0].score} over ${scores.length}` : "Flat") : "–"}</span>
             </div>
           </div>

@@ -401,9 +401,9 @@ export async function loadHub(): Promise<Hub | null> {
       else signals.push({ lvl: "g", label: "Messages", value: "No client messages captured" });
 
       if (latest) {
-        if (latest.score < 60) signals.push({ lvl: "r", label: "Check in score", value: `${latest.score} out of 100` });
-        else if (latest.score < 75) signals.push({ lvl: "a", label: "Check in score", value: `${latest.score} out of 100` });
-        else signals.push({ lvl: "g", label: "Check in score", value: `${latest.score} out of 100` });
+        if (latest.score < 60) signals.push({ lvl: "r", label: "Check in score", value: `${latest.score}/100` });
+        else if (latest.score < 75) signals.push({ lvl: "a", label: "Check in score", value: `${latest.score}/100` });
+        else signals.push({ lvl: "g", label: "Check in score", value: `${latest.score}/100` });
         if (latest.daysAgo > 21) signals.push({ lvl: "a", label: "Check in", value: `None for ${latest.daysAgo} days` });
         else signals.push({ lvl: "g", label: "Check in", value: `${latest.daysAgo} day${latest.daysAgo === 1 ? "" : "s"} ago` });
       } else signals.push({ lvl: "g", label: "Check in", value: "None yet" });

@@ -88,22 +88,20 @@ export default async function MoneyPage({ searchParams }: { searchParams: Promis
           </tbody></table></div>
         <div className="h2-panel"><h3>Refunds by cause</h3>
           <table className="h2-table"><thead><tr><th>Cause</th><th className="num">Count</th><th className="num">Amount</th></tr></thead><tbody>
-            {[...refundsByCause.entries()].sort((a, b) => b[1].amt - a[1].amt).map(([k, v]) => <tr key={k}><td>{k}</td><td className="num">{v.n}</td><td className="num">{money(v.amt)}</td></tr>)}
+            {[...refundsByCause.entries()].sort((a, b) => b[1].amt - a[1].amt).map(([k, v]) => <tr key={k}><td className="w">{k}</td><td className="num">{v.n}</td><td className="num">{money(v.amt)}</td></tr>)}
             {!refundsByCause.size && <tr><td colSpan={3} className="h2-empty">No refunds this month.</td></tr>}
             {refundsByCause.size > 0 && <tr className="total"><td>Total</td><td className="num">{refunds.length}</td><td className="num">{money(refunded)}</td></tr>}
           </tbody></table></div>
       </div>
-      <div className="h2-grid2" style={{ marginBottom: 24 }}>
-        <div className="h2-panel"><h3>Commissions</h3>
+      <div className="h2-panel" style={{ marginBottom: 12 }}><h3>Commissions</h3>
           <table className="h2-table"><thead><tr><th>Coach</th><th className="num">Written</th><th className="num">Video</th><th className="num">Ext</th><th className="num">Ref</th><th className="num">Owed</th></tr></thead><tbody>
             {commissions.map((c) => <tr key={c.coach}><td>{c.coach}</td><td className="num">{c.w}</td><td className="num">{c.v}</td><td className="num">{c.e}</td><td className="num">{c.r}</td><td className="num">{c.owed === null ? "–" : money(c.owed)}</td></tr>)}
             {!commissions.length && <tr><td colSpan={6} className="h2-empty">No milestones completed this month yet.</td></tr>}
             {commissions.length > 0 && <tr className="total"><td>Total</td><td className="num">{commissions.reduce((s, c) => s + c.w, 0)}</td><td className="num">{commissions.reduce((s, c) => s + c.v, 0)}</td><td className="num">{commissions.reduce((s, c) => s + c.e, 0)}</td><td className="num">{commissions.reduce((s, c) => s + c.r, 0)}</td><td className="num">{money(commissions.reduce((s, c) => s + (c.owed ?? 0), 0))}</td></tr>}
           </tbody></table>
           <p className="h2-quiet" style={{ margin: "8px 0 0" }}>Counts come from milestone completion dates. Owed comes from the payroll row for that coach.</p>
-        </div>
-        <div className="h2-panel"><h3>Payroll</h3><PayrollTable rows={expenses} /></div>
       </div>
+      <div className="h2-panel" style={{ marginBottom: 24 }}><h3>Payroll</h3><PayrollTable rows={expenses} /></div>
       </>)}
 
       <div className="h2-sec">
