@@ -6,7 +6,10 @@ export const dynamic = "force-dynamic";
 
 const TABS = [
   { href: "/coaching-v3", label: "Today" },
+  { href: "/coaching-v3/clients", label: "Clients" },
+  { href: "/coaching-v3/coaches", label: "Coaches" },
   { href: "/coaching-v3/retentions", label: "Retentions" },
+  { href: "/coaching-v3/money", label: "Money" },
 ];
 
 export default async function CoachingV3Layout({ children }: { children: React.ReactNode }) {

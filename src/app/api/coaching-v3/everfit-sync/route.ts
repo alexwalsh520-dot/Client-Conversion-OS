@@ -19,6 +19,7 @@ import { createHash } from "node:crypto";
 import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
 import { parseV3Report } from "@/lib/coaching-v3/parse";
+import { canonicalCoachName } from "@/lib/coaching-v3/coach-aliases";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -138,7 +139,11 @@ export async function POST(req: NextRequest) {
   }
 
   for (const r of report.clients) {
-    const cn = norm(r.coach);
+    // Normalize incoming coach name through the alias map so downstream
+    // reads see CCOS's internal spelling. The stored coach_name is the
+    // canonical value, not the raw Everfit owner name.
+    const canonicalCoach = canonicalCoachName(r.coach);
+    const cn = norm(canonicalCoach);
     const nm = norm(r.name);
     let clientId: number | null = null;
     if (cn && nm) clientId = byCoachName.get(`${cn}::${nm}`) ?? null;
@@ -151,7 +156,7 @@ export async function POST(req: NextRequest) {
     stateRows.push({
       everfit_id: r.everfit_id,
       name: r.name,
-      coach_name: r.coach,
+      coach_name: canonicalCoach,
       client_id: clientId,
       workouts_completed_7d: r.workouts_completed_7d,
       workouts_assigned_7d: r.workouts_assigned_7d,
