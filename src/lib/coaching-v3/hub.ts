@@ -416,15 +416,15 @@ export async function loadHubV3(): Promise<HubV3 | null> {
       todayBuckets.push("silent_2wk");
     }
 
-    // Behavior-only at-risk (MAS 2026-09-15): the two direct behavioral
-    // signals — most recent check-in score and the sheet's latest weekly
-    // workout %. Ignores contact recency and retention history so the
-    // "At risk" column on Coaches reflects only how the CLIENT is doing.
+    // Behavior-only at-risk (MAS 2026-09-15). Thresholds tightened later
+    // the same day: check-in below 50 OR workout % below 30. Either signal
+    // low is enough to flag — a client with a great check-in but zero
+    // workouts is still a problem, and vice versa.
     const checkInScore = checkin?.score ?? null;
     const workoutPct = latestWeek?.workoutPct ?? null;
     const isAtRiskByBehavior =
-      (checkInScore !== null && checkInScore < 60) ||
-      (workoutPct !== null && workoutPct < 40);
+      (checkInScore !== null && checkInScore < 50) ||
+      (workoutPct !== null && workoutPct < 30);
 
     return {
       id: row.id,

@@ -50,7 +50,7 @@ export default async function CoachesPage() {
         <div className="h3-kpi">
           <div className="l">At-risk clients</div>
           <div className="v r">{rows.reduce((s, r) => s + r.atRisk, 0)}</div>
-          <div className="d">Check-in &lt; 60 or workout % &lt; 40</div>
+          <div className="d">Check-in &lt; 50 or workout % &lt; 30</div>
         </div>
         <div className="h3-kpi">
           <div className="l">Past-end clients</div>

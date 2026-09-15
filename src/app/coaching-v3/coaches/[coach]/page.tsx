@@ -35,7 +35,7 @@ export default async function CoachDetailPage({ params }: { params: Promise<{ co
         <div className="h3-kpi">
           <div className="l">At risk</div>
           <div className="v r">{atRisk.length}</div>
-          <div className="d">Check-in &lt; 60 or workout % &lt; 40</div>
+          <div className="d">Check-in &lt; 50 or workout % &lt; 30</div>
         </div>
         <div className="h3-kpi">
           <div className="l">Retention window</div>
