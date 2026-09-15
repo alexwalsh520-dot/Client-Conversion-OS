@@ -131,21 +131,23 @@ function parseEndDate(raw: string): string | null {
   return parseWeekLabel(raw);
 }
 
-/** From a raw tab title (usually all-caps), get the canonical CCOS coach name
- *  if it matches a known coach; otherwise return null so we skip the tab. */
+/** From a raw tab title (usually all-caps, e.g. "SHIRAAD" or "STEPHANIE HUGHES"),
+ *  get the canonical CCOS coach name if it matches a known coach; otherwise
+ *  return the title-cased title for the caller to compare against KNOWN_COACHES.
+ *
+ *  Title-case FIRST, then run through the alias map. canonicalCoachName only
+ *  fires on the alias-map keys and otherwise passes through .trim() — that
+ *  means a naked "SHIRAAD" would come back as "SHIRAAD" not "Shiraad" without
+ *  the title-case step. */
 export function tabToCoach(tabTitle: string): string | null {
-  const norm = tabTitle.trim();
-  if (!norm) return null;
-  // Try alias first (converts to canonical) then title-case fallback.
-  const via = canonicalCoachName(norm);
-  if (via) return via;
-  // Manual title-case + alias re-check for "FARRUKH" -> "Farrukh" etc.
-  const title = norm
+  const raw = tabTitle.trim();
+  if (!raw) return null;
+  const titled = raw
     .toLowerCase()
     .split(/\s+/)
     .map((w) => (w.length ? w[0].toUpperCase() + w.slice(1) : w))
     .join(" ");
-  return canonicalCoachName(title) ?? title;
+  return canonicalCoachName(titled);
 }
 
 /** Which coach tab titles do we accept as "this tab is a coach's roster"?
