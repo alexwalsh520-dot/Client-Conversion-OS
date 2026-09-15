@@ -12,10 +12,11 @@ export interface CoachRow {
   atRisk: number;      // score.bucket === 'at_risk'
   repliesOwed: number; // clients waiting >= 2 days for a coach reply
   replyHoursMedian: number | null;
-  monthRetentionPct: number | null;
-  monthTotal: number;
-  monthRetained: number;
-  monthLost: number;
+  // Retention numbers come from the Sales Tracker (matches V1 exactly).
+  monthRetentionCount: number;
+  monthRetentionRevenue: number;
+  monthRefundCount: number;
+  monthRefundAmount: number;
   pastEnd: number;
   lastEodDate: string | null;
 }
@@ -138,23 +139,21 @@ export async function coachRowsV3(hub: HubV3): Promise<CoachRow[]> {
     byCoach.set(k, b);
   }
 
-  const monthByCoach = new Map<string, { total: number; retained: number; lost: number; pct: number | null }>();
-  for (const c of hub.monthRetention.byCoach) {
-    monthByCoach.set(c.coach, { total: c.total, retained: c.retained, lost: c.lost, pct: c.pct });
-  }
+  const monthByCoach = new Map<string, typeof hub.monthRetention.byCoach[number]>();
+  for (const c of hub.monthRetention.byCoach) monthByCoach.set(norm(c.coach), c);
 
   const rows: CoachRow[] = [...byCoach.entries()].map(([coach, b]) => {
-    const m = monthByCoach.get(coach) ?? { total: 0, retained: 0, lost: 0, pct: null };
+    const m = monthByCoach.get(norm(coach));
     return {
       coach,
       clients: b.clients,
       atRisk: b.atRisk,
       repliesOwed: b.repliesOwed,
       replyHoursMedian: replyMedian.get(norm(coach)) ?? null,
-      monthRetentionPct: m.pct,
-      monthTotal: m.total,
-      monthRetained: m.retained,
-      monthLost: m.lost,
+      monthRetentionCount: m?.retentionCount ?? 0,
+      monthRetentionRevenue: m?.retentionRevenue ?? 0,
+      monthRefundCount: m?.refundCount ?? 0,
+      monthRefundAmount: m?.refundAmount ?? 0,
       pastEnd: b.pastEnd,
       lastEodDate: lastEod.get(norm(coach)) ?? null,
     };

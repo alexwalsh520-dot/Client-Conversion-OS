@@ -10,6 +10,7 @@
 import { getServiceSupabase } from "@/lib/supabase";
 import { auth } from "@/auth";
 import { computeRetentionScore, isoToDaysAgo } from "./retention-score";
+import { loadFinanceMonth } from "./finance";
 import type { RetentionScore, V3EverfitState } from "./types";
 
 const DAY_MS = 86_400_000;
@@ -120,17 +121,22 @@ export interface HubV3 {
   } | null;
   monthRetention: {
     windowStart: string;
-    total: number;
-    retained: number;
-    lost: number;
-    pct: number | null;
+    // From the Sales Tracker sheet (source of truth for retention $), not from
+    // retention_cycles. retention_cycles is still the source of truth for the
+    // OPEN retention-window operational state (see /coaching-v3/retentions),
+    // but for "how much money did we retain this month" we mirror V1 exactly.
+    retentionCount: number;
+    retentionRevenue: number;
+    refundCount: number;
+    refundAmount: number;
     byCoach: {
       coach: string;
-      total: number;
-      retained: number;
-      lost: number;
-      pct: number | null;
+      retentionCount: number;
+      retentionRevenue: number;
+      refundCount: number;
+      refundAmount: number;
     }[];
+    financeError?: string;
   };
 }
 
@@ -155,7 +161,6 @@ export async function loadHubV3(): Promise<HubV3 | null> {
     weeklyReportsQ,
     milestonesQ,
     cyclesQ,
-    monthCyclesQ,
     checkinsQ,
     meetingsQ,
     convosQ,
@@ -194,12 +199,6 @@ export async function loadHubV3(): Promise<HubV3 | null> {
     db
       .from("retention_cycles")
       .select("client_id, outcome, outcome_at"),
-    db
-      .from("retention_cycles")
-      .select("client_id, outcome, outcome_at")
-      .not("outcome", "is", null)
-      .gte("outcome_at", monthStart)
-      .in("outcome", ["retained_4wk", "retained_12wk", "opp_lost"]),
     db
       .from("client_check_ins")
       .select("client_id, client_name, score_0_100, submitted_at")
@@ -435,44 +434,9 @@ export async function loadHubV3(): Promise<HubV3 | null> {
     ? clients.filter((c) => norm(c.coach) === norm(visibleCoach))
     : clients;
 
-  // Month retention rollup — from closed retention cycles this calendar month.
-  const monthRows = (monthCyclesQ.data ?? []) as {
-    client_id: number;
-    outcome: "retained_4wk" | "retained_12wk" | "opp_lost";
-  }[];
-  const clientCoachMap = new Map<number, string>();
-  for (const c of clientsRaw) clientCoachMap.set(c.id, c.coach_name ?? "");
-  const perCoach = new Map<string, { total: number; retained: number; lost: number }>();
-  let totalAll = 0,
-    retainedAll = 0,
-    lostAll = 0;
-  for (const r of monthRows) {
-    const coach = clientCoachMap.get(r.client_id) ?? "Unknown";
-    const bucket = perCoach.get(coach) ?? { total: 0, retained: 0, lost: 0 };
-    bucket.total += 1;
-    totalAll += 1;
-    if (r.outcome === "opp_lost") {
-      bucket.lost += 1;
-      lostAll += 1;
-    } else {
-      bucket.retained += 1;
-      retainedAll += 1;
-    }
-    perCoach.set(coach, bucket);
-  }
-
-  const byCoach = [...perCoach.entries()]
-    .map(([coach, v]) => ({
-      coach,
-      total: v.total,
-      retained: v.retained,
-      lost: v.lost,
-      pct: v.total > 0 ? Math.round((v.retained / v.total) * 100) : null,
-    }))
-    .sort(
-      (a, b) =>
-        (b.pct ?? -1) - (a.pct ?? -1) || b.total - a.total || a.coach.localeCompare(b.coach),
-    );
+  // Month retention rollup: from the Sales Tracker sheet (matches V1). Same
+  // source coaching-v1 and coaching-v2 use so V3's numbers agree with theirs.
+  const finance = await loadFinanceMonth(now.getUTCMonth());
 
   const latestSync = latestSnapQ.data
     ? {
@@ -507,11 +471,12 @@ export async function loadHubV3(): Promise<HubV3 | null> {
     latestSheetSync,
     monthRetention: {
       windowStart: monthStart.slice(0, 10),
-      total: totalAll,
-      retained: retainedAll,
-      lost: lostAll,
-      pct: totalAll > 0 ? Math.round((retainedAll / totalAll) * 100) : null,
-      byCoach,
+      retentionCount: finance.retentionCount,
+      retentionRevenue: finance.retentionRevenue,
+      refundCount: finance.refundCount,
+      refundAmount: finance.refundAmount,
+      byCoach: finance.byCoach,
+      financeError: finance.error,
     },
   };
 }

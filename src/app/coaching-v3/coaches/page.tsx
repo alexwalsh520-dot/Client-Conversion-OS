@@ -32,11 +32,14 @@ export default async function CoachesPage() {
       <div className="h3-kpis">
         <div className="h3-kpi">
           <div className="l">Team retention this month</div>
-          <div className={`v ${hub.monthRetention.pct == null ? "" : hub.monthRetention.pct >= 60 ? "g" : hub.monthRetention.pct >= 40 ? "a" : "r"}`}>
-            {hub.monthRetention.pct == null ? "—" : `${hub.monthRetention.pct}%`}
+          <div className={`v ${hub.monthRetention.retentionCount > 0 ? "g" : ""}`}>
+            {hub.monthRetention.retentionCount === 0
+              ? "0"
+              : `$${Math.round(hub.monthRetention.retentionRevenue).toLocaleString("en-US")}`}
           </div>
           <div className="d">
-            {hub.monthRetention.retained} retained · {hub.monthRetention.lost} lost
+            {hub.monthRetention.retentionCount} retention
+            {hub.monthRetention.retentionCount === 1 ? "" : "s"} (Sales Tracker)
           </div>
         </div>
         <div className="h3-kpi">
@@ -99,11 +102,11 @@ export default async function CoachesPage() {
                     {r.replyHoursMedian == null ? "—" : `${r.replyHoursMedian}h`}
                   </Td>
                   <Td>
-                    <b style={{ color: pctColor(r.monthRetentionPct) }}>
-                      {r.monthRetentionPct == null ? "—" : `${r.monthRetentionPct}%`}
+                    <b style={{ color: r.monthRetentionRevenue > 0 ? "var(--success)" : "var(--text-muted)" }}>
+                      ${Math.round(r.monthRetentionRevenue).toLocaleString("en-US")}
                     </b>
                     <span style={{ color: "var(--text-muted)", marginLeft: 6, fontSize: 11 }}>
-                      {r.monthRetained}/{r.monthTotal}
+                      {r.monthRetentionCount} ret · {r.monthRefundCount} ref
                     </span>
                   </Td>
                   <Td>

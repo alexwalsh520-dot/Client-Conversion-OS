@@ -49,17 +49,18 @@ type Note = {
 
 type MonthRetention = {
   windowStart: string;
-  total: number;
-  retained: number;
-  lost: number;
-  pct: number | null;
+  retentionCount: number;
+  retentionRevenue: number;
+  refundCount: number;
+  refundAmount: number;
   byCoach: {
     coach: string;
-    total: number;
-    retained: number;
-    lost: number;
-    pct: number | null;
+    retentionCount: number;
+    retentionRevenue: number;
+    refundCount: number;
+    refundAmount: number;
   }[];
+  financeError?: string;
 };
 
 type Props = {
@@ -242,12 +243,15 @@ export default function RetentionsView({ hubClients, openCycles, notes, monthRet
           <div className="d">Open cycles right now</div>
         </div>
         <div className="h3-kpi">
-          <div className="l">This month</div>
-          <div className={`v ${monthRetention.pct == null ? "" : monthRetention.pct >= 60 ? "g" : monthRetention.pct >= 40 ? "a" : "r"}`}>
-            {monthRetention.pct == null ? "—" : `${monthRetention.pct}%`}
+          <div className="l">This month retained</div>
+          <div className={`v ${monthRetention.retentionCount > 0 ? "g" : ""}`}>
+            {monthRetention.retentionCount === 0
+              ? "0"
+              : `$${Math.round(monthRetention.retentionRevenue).toLocaleString("en-US")}`}
           </div>
           <div className="d">
-            {monthRetention.retained} retained · {monthRetention.lost} lost · {monthRetention.total} decided
+            {monthRetention.retentionCount} retention
+            {monthRetention.retentionCount === 1 ? "" : "s"} from Sales Tracker
           </div>
         </div>
         <div className="h3-kpi">
@@ -277,9 +281,11 @@ export default function RetentionsView({ hubClients, openCycles, notes, monthRet
               <div className="h3-coach-cell" key={c.coach}>
                 <div className="n">{c.coach}</div>
                 <div className="m">
-                  <span>{c.retained}/{c.total} retained</span>
-                  <b style={{ color: c.pct == null ? "var(--text-muted)" : c.pct >= 60 ? "var(--success)" : c.pct >= 40 ? "var(--warning)" : "var(--danger)" }}>
-                    {c.pct == null ? "—" : `${c.pct}%`}
+                  <span>
+                    {c.retentionCount} retained · {c.refundCount} refund{c.refundCount === 1 ? "" : "s"}
+                  </span>
+                  <b style={{ color: c.retentionRevenue > 0 ? "var(--success)" : "var(--text-muted)" }}>
+                    ${Math.round(c.retentionRevenue).toLocaleString("en-US")}
                   </b>
                 </div>
               </div>

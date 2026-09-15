@@ -76,11 +76,15 @@ export default async function TodayPage() {
         </div>
         <div className="h3-kpi">
           <div className="l">This month retention</div>
-          <div className={`v ${hub.monthRetention.pct == null ? "" : hub.monthRetention.pct >= 60 ? "g" : hub.monthRetention.pct >= 40 ? "a" : "r"}`}>
-            {hub.monthRetention.pct == null ? "—" : `${hub.monthRetention.pct}%`}
+          <div className={`v ${hub.monthRetention.retentionCount > 0 ? "g" : ""}`}>
+            {hub.monthRetention.retentionCount === 0
+              ? "0"
+              : `$${Math.round(hub.monthRetention.retentionRevenue).toLocaleString("en-US")}`}
           </div>
           <div className="d">
-            {hub.monthRetention.retained} retained · {hub.monthRetention.lost} lost
+            {hub.monthRetention.retentionCount} retention
+            {hub.monthRetention.retentionCount === 1 ? "" : "s"} · ${" "}
+            {Math.round(hub.monthRetention.refundAmount).toLocaleString("en-US")} refunded
           </div>
         </div>
         <div className="h3-kpi">
