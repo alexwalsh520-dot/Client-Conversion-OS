@@ -13,6 +13,11 @@ import {
   Monitor,
   EyeOff,
   PanelLeft,
+  ChevronLeft,
+  Clock,
+  Trophy,
+  DollarSign,
+  Users,
 } from "lucide-react";
 import { ThemeIconButton } from "@/components/ThemeToggle";
 import LogoWordmark from "@/components/LogoWordmark";
@@ -39,6 +44,14 @@ export default function Sidebar() {
     return localStorage.getItem("force-desktop-view") === "true";
   });
   const [marketingOpen, setMarketingOpen] = useState(true);
+  // Coaching v2 owns the sidebar while you are inside it: a back row plus its
+  // own sections. "All apps" peeks the normal list without leaving the page.
+  const inHub = pathname === "/coaching-v2" || pathname.startsWith("/coaching-v2/");
+  // Remember the path the peek was opened on, so navigating anywhere closes it
+  // without an effect.
+  const [peekPath, setPeekPath] = useState<string | null>(null);
+  const peekApps = peekPath === pathname;
+  const setPeekApps = (on: boolean) => setPeekPath(on ? pathname : null);
   // per-user hidden tabs (two-finger click any tab -> Hide; add them back in Settings -> Apps)
   const [hidden, setHidden] = useState<string[]>(() => readHiddenTabs());
   const [menu, setMenu] = useState<{ href: string; label: string; x: number; y: number; hidden: boolean } | null>(null);
@@ -74,6 +87,7 @@ export default function Sidebar() {
   const isActive = (href: string) => {
     if (href === "/") return pathname === "/";
     if (href === "/studio-2") return pathname === "/studio-2";
+    if (href === "/coaching-v2") return pathname === "/coaching-v2";
     return pathname === href || pathname.startsWith(href + "/");
   };
 
@@ -199,6 +213,20 @@ export default function Sidebar() {
 
         {/* Navigation */}
         <nav className="sidebar-nav">
+          {inHub && !peekApps ? (
+            <>
+              <button type="button" className="sidebar-back" onClick={() => setPeekApps(true)}>
+                <span className="sidebar-link-icon"><ChevronLeft size={14} /></span>
+                {!collapsed && <span>All apps</span>}
+              </button>
+              {!collapsed && <div className="sidebar-section-label">Coaching</div>}
+              {renderLink({ href: "/coaching-v2", label: "Today", icon: Clock })}
+              {renderLink({ href: "/coaching-v2/clients", label: "Clients", icon: Users })}
+              {renderLink({ href: "/coaching-v2/coaches", label: "Coaches", icon: Trophy })}
+              {isAdmin && renderLink({ href: "/coaching-v2/money", label: "Money", icon: DollarSign })}
+            </>
+          ) : (
+            <>
           {visibleNavItems.map((item) => renderLink(item))}
           {visibleMarketingItems.length > 0 && (
             <div className="sidebar-section">
@@ -222,6 +250,8 @@ export default function Sidebar() {
                 </div>
               )}
             </div>
+          )}
+            </>
           )}
         </nav>
 

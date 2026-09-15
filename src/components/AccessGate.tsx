@@ -228,6 +228,11 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
   // in-page gate can do its job.
   if (pathname === "/partner-onboarding" || pathname.startsWith("/partner-onboarding/")) return <>{children}</>;
 
+  // Coaching v2 is the same team as the Coaching tab, new screens.
+  if ((pathname === "/coaching-v2" || pathname.startsWith("/coaching-v2/")) && allowedTabs.includes("/coaching")) {
+    return <>{children}</>;
+  }
+
   // Video Testimonials manager is open to the whole coaching team for view +
   // download. Management actions (feature/delete) stay admin-only, enforced in
   // the page and the manage API — not by hiding the page.

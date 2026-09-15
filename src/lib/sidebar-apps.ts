@@ -64,6 +64,7 @@ export const NAV_ITEMS: AppItem[] = [
   { href: "/setter-response-time", label: "Setter Response Time", icon: Timer },
   { href: "/lead-magnet", label: "Lead Magnet Funnel", icon: Magnet },
   { href: "/coaching", label: "Coaching", icon: Users },
+  { href: "/coaching-v2", label: "Coaching v2", icon: Users },
   { href: "/partner-onboarding", label: "Client Onboarding", icon: Handshake },
   { href: "/testimonials", label: "Testimonials", icon: Star },
   { href: "/testimonials/videos", label: "Video Testimonials", icon: Clapperboard },
@@ -142,6 +143,8 @@ export function canViewApp(item: AppItem, v: ViewerAccess): boolean {
     // Lead Magnet Funnel rides on Sales Hub access the same way.
     (item.href === "/lead-magnet" && !!v.allowedTabs?.includes("/sales-hub")) ||
     // Video Testimonials manager rides on Coaching access (view + download).
-    (item.href === "/testimonials/videos" && !!v.allowedTabs?.includes("/coaching"))
+    (item.href === "/testimonials/videos" && !!v.allowedTabs?.includes("/coaching")) ||
+    // Coaching v2 is the same team, same data, new screens.
+    (item.href === "/coaching-v2" && !!v.allowedTabs?.includes("/coaching"))
   );
 }
