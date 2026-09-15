@@ -64,6 +64,7 @@ export const NAV_ITEMS: AppItem[] = [
   { href: "/setter-response-time", label: "Setter Response Time", icon: Timer },
   { href: "/lead-magnet", label: "Lead Magnet Funnel", icon: Magnet },
   { href: "/coaching", label: "Coaching", icon: Users },
+  { href: "/coaching-v3", label: "Coaching v3", icon: Users, adminOnly: true },
   { href: "/coaching-v2", label: "Coaching v2", icon: Users },
   { href: "/partner-onboarding", label: "Client Onboarding", icon: Handshake },
   { href: "/testimonials", label: "Testimonials", icon: Star },
