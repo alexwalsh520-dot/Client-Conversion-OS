@@ -53,7 +53,7 @@ export interface TrackerInput {
   q2: number;
   q3: number;
   q4: number;
-  openResponse: string;
+  openResponse: string | null;
 }
 
 export async function notifyCheckInTracker(input: TrackerInput): Promise<{ ok: boolean; error?: string }> {
