@@ -11,10 +11,8 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  Calendar,
   Clock,
   UserPlus,
-  UserX,
   ClipboardList,
   Link2,
   ExternalLink,
@@ -62,8 +60,6 @@ type RefundRow = {
 
 type Props = {
   viewer: { isAdmin: boolean; canEditBacklog: boolean; email: string };
-  scheduled: OnboardingClient[];
-  noShows: OnboardingClient[];
   recentlyOnboarded: OnboardingClient[];
   calendarEvents: CalendarEvent[];
   calendarErr: string | null;
@@ -114,8 +110,6 @@ function fmtTime(iso: string): string {
 
 export default function OnboardingView({
   viewer,
-  scheduled,
-  noShows,
   recentlyOnboarded,
   calendarEvents,
   calendarErr,
@@ -130,24 +124,22 @@ export default function OnboardingView({
 
   const totals = useMemo(
     () => ({
-      scheduled: scheduled.length,
-      noShows: noShows.length,
       recent: recentlyOnboarded.length,
       backlog: backlog.length,
       upcoming: calendarEvents.length,
       refunds: refunds.length,
       unlinked: unlinkedForms.length,
     }),
-    [scheduled, noShows, recentlyOnboarded, backlog, calendarEvents, refunds, unlinkedForms],
+    [recentlyOnboarded, backlog, calendarEvents, refunds, unlinkedForms],
   );
 
   return (
     <>
       <div className="h3-kpis" style={{ marginTop: 6 }}>
-        <Kpi label="Scheduled" value={String(totals.scheduled)} />
-        <Kpi label="No-shows / Rescheduled" value={String(totals.noShows)} tone={totals.noShows > 0 ? "a" : undefined} />
         <Kpi label="Recently onboarded (14d)" value={String(totals.recent)} />
         <Kpi label="Backlog rows" value={String(totals.backlog)} />
+        <Kpi label="Upcoming (14d)" value={String(totals.upcoming)} />
+        <Kpi label="Unlinked forms" value={String(totals.unlinked)} tone={totals.unlinked ? "a" : undefined} />
       </div>
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "0 0 16px", gap: 10, flexWrap: "wrap" }}>
@@ -170,48 +162,6 @@ export default function OnboardingView({
           }}
         />
       )}
-
-      {/* Scheduled */}
-      <Section
-        icon={<Calendar size={13} />}
-        title="Scheduled onboardings"
-        count={scheduled.length}
-        subtitle="Active clients whose onboarding is on the books"
-        empty="Nothing scheduled."
-      >
-        {scheduled.map((c) => (
-          <ClientLine key={c.id} c={c} accent={fmtDate(c.startDate)} />
-        ))}
-      </Section>
-
-      {/* No-shows / Reschedules */}
-      <Section
-        icon={<UserX size={13} style={{ color: "var(--warning)" }} />}
-        title="No-shows / Rescheduled"
-        count={noShows.length}
-        subtitle="Nicole needs to follow up"
-        empty="No missed onboardings."
-      >
-        {noShows.map((c) => (
-          <div className="h3-li" key={c.id}>
-            <span className={`dot ${c.onboardingStatus === "no_show" ? "r" : "a"}`} />
-            <div className="main">
-              <div className="row1">
-                <span className="name">{c.name}</span>
-                <span className="coach">{c.coach}</span>
-                <span className={`bucket ${c.onboardingStatus === "no_show" ? "r" : "a"}`}>
-                  {c.onboardingStatus === "no_show" ? "no-show" : "rescheduled"}
-                </span>
-              </div>
-              <div className="row2">
-                <span>Start {fmtDate(c.startDate)}</span>
-                <span>{c.program}</span>
-                {c.email && <span>{c.email}</span>}
-              </div>
-            </div>
-          </div>
-        ))}
-      </Section>
 
       {/* Upcoming from Nicole's Google Calendar */}
       <Section

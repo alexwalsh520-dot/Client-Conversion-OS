@@ -1,15 +1,14 @@
 /**
  * Coaching V3 · Onboarding tab.
  *
- * Mirrors legacy Nicole flow (MAS 2026-09-16):
- *  - Scheduled Onboardings (from clients.onboarding_status = 'scheduled')
- *  - No-shows / Reschedules (from clients.onboarding_status)
+ * Sections (MAS 2026-09-17 trim — dropped Scheduled and No-shows,
+ * Nicole tracks those in Google Calendar + the Backlog Tracker):
  *  - Recently Onboarded (client onboarded in last 14 days)
  *  - Upcoming from Nicole's Google Calendar (next 14 days)
+ *  - Unlinked intake forms
  *  - Backlog Tracker (spreadsheet-like, editable inline for Nicole+admins)
  *  - Refunds & Cancellations (read-only view of Nicole's sheet)
  *  - "New Client" button in the header
- *  - "Link unlinked intake forms" panel (same action Nutrition surfaces)
  *
  * Data is loaded server-side and handed to the client component so the
  * page renders cold-start without a request waterfall. Nicole's calendar
@@ -166,18 +165,6 @@ export default async function OnboardingPage() {
     return Math.floor((now - t) / 86_400_000);
   };
 
-  const scheduled = clients
-    .filter((c) => c.status === "active" && c.onboarding_status === "scheduled")
-    .sort((a, b) => (a.start_date ?? "").localeCompare(b.start_date ?? ""));
-
-  const noShows = clients
-    .filter(
-      (c) =>
-        c.status === "active" &&
-        (c.onboarding_status === "no_show" || c.onboarding_status === "rescheduled"),
-    )
-    .sort((a, b) => (b.start_date ?? "").localeCompare(a.start_date ?? ""));
-
   const recentlyOnboarded = clients
     .filter((c) => c.status === "active")
     .filter((c) => {
@@ -189,8 +176,6 @@ export default async function OnboardingPage() {
   return (
     <OnboardingView
       viewer={{ isAdmin, canEditBacklog, email: userEmail }}
-      scheduled={scheduled.map(mapClient)}
-      noShows={noShows.map(mapClient)}
       recentlyOnboarded={recentlyOnboarded.map(mapClient)}
       calendarEvents={calendarEvents}
       calendarErr={calendarErr}
