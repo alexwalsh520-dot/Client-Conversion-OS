@@ -187,8 +187,35 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // Per-form Slack alert was removed when the manager workflow moved
-  // to a Sunday weekly digest. See /api/cron/check-in-weekly-digest.
+  // #check-in-tracker channel notification (MAS 2026-09-16). Best-effort;
+  // never fail the client's submission if Slack is unavailable. See
+  // /lib/check-in/notify-tracker.ts for the week-boundary and pending-list
+  // logic. Awaited so we surface an error line in logs, but caught so it
+  // can't propagate.
+  try {
+    const { notifyCheckInTracker } = await import("@/lib/check-in/notify-tracker");
+    const r = await notifyCheckInTracker({
+      db,
+      checkInId: inserted.id as number,
+      clientId: client.id,
+      clientName: client.name,
+      coachName: client.coach_name ?? "",
+      score,
+      q1: body.q1,
+      q2: body.q2,
+      q3: body.q3,
+      q4: body.q4,
+      openResponse: q5,
+    });
+    if (!r.ok) {
+      console.warn("[api/check-in/submit] tracker notify failed:", r.error);
+    }
+  } catch (err) {
+    console.warn(
+      "[api/check-in/submit] tracker notify threw:",
+      err instanceof Error ? err.message : String(err),
+    );
+  }
 
   return NextResponse.json({ ok: true, score });
 }
