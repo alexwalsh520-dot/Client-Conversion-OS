@@ -10,7 +10,7 @@ import {
   TrendingUp,
   Phone,
   PhoneCall,
-  XCircle,
+  FileText,
 } from "lucide-react";
 import { fmtDollars, fmtPercent, fmtNumber } from "@/lib/formatters";
 import type { Filters, SheetRow } from "../types";
@@ -31,8 +31,9 @@ interface CloserStats {
   callsTaken: number;
   showRate: number;
   wins: number;
-  losses: number;
   closeRate: number;
+  /** Contract value of the wins (tracker Revenue column) — cash on calls is what was collected. */
+  contracted: number;
   cash: number;
   aov: number;
   avgCallLength: string;
@@ -85,9 +86,9 @@ function statsFromRows(rows: SheetRow[]): Omit<CloserStats, "name"> {
 
   const winRows = takenRows.filter((r) => r.outcome === "WIN");
   const wins = winRows.length;
-  const losses = takenRows.filter((r) => r.outcome !== "WIN").length;
   const closeRate = callsTaken > 0 ? (wins / callsTaken) * 100 : 0;
 
+  const contracted = winRows.reduce((sum, r) => sum + r.revenue, 0);
   const cash = winRows.reduce((sum, r) => sum + r.cashCollected, 0);
   const aov = wins > 0 ? cash / wins : 0;
 
@@ -120,8 +121,8 @@ function statsFromRows(rows: SheetRow[]): Omit<CloserStats, "name"> {
     callsTaken,
     showRate,
     wins,
-    losses,
     closeRate,
+    contracted,
     cash,
     aov,
     avgCallLength: formatSeconds(avgCallSeconds),
@@ -222,11 +223,11 @@ export default function CloserPerformance({
     const showRate = showDenominator > 0 ? (callsTaken / showDenominator) * 100 : 0;
     const winRows = takenRows.filter((r) => r.outcome === "WIN");
     const wins = winRows.length;
-    const losses = takenRows.filter((r) => r.outcome !== "WIN").length;
     const closeRate = callsTaken > 0 ? (wins / callsTaken) * 100 : 0;
+    const contracted = winRows.reduce((sum, r) => sum + r.revenue, 0);
     const cashCollected = winRows.reduce((sum, r) => sum + r.cashCollected, 0);
     const aov = wins > 0 ? cashCollected / wins : 0;
-    return { callsBooked, callsTaken, showRate, wins, losses, closeRate, cashCollected, aov };
+    return { callsBooked, callsTaken, showRate, wins, closeRate, contracted, cashCollected, aov };
   }, [sheetData]);
 
   const topPerformers = useMemo(() => {
@@ -234,6 +235,7 @@ export default function CloserPerformance({
     return {
       showRate: findTopPerformer(closerStats, "showRate"),
       closeRate: findTopPerformer(closerStats, "closeRate"),
+      contracted: findTopPerformer(closerStats, "contracted"),
       cash: findTopPerformer(closerStats, "cash"),
       aov: findTopPerformer(closerStats, "aov"),
     };
@@ -333,16 +335,16 @@ export default function CloserPerformance({
       {aggregated && (
         <>
           <div className="metric-grid metric-grid-4" style={{ marginBottom: 12 }}>
+            <SummaryStat icon={<FileText size={12} style={{ color: "var(--success)" }} />} label="Contracted Revenue" value={fmtDollars(aggregated.contracted)} color="var(--success)" />
             <SummaryStat icon={<Banknote size={12} style={{ color: "var(--success)" }} />} label="Cash on Calls" value={fmtDollars(aggregated.cashCollected)} color="var(--success)" />
             <SummaryStat icon={<BarChart3 size={12} style={{ color: "var(--success)" }} />} label="AOV" value={fmtDollars(aggregated.aov)} color="var(--success)" />
             <SummaryStat icon={<TrendingUp size={12} style={{ color: "var(--accent)" }} />} label="Close Rate" value={fmtPercent(aggregated.closeRate)} />
-            <SummaryStat icon={<TrendingUp size={12} style={{ color: "var(--accent)" }} />} label="Show Rate" value={fmtPercent(aggregated.showRate)} />
           </div>
           <div className="metric-grid metric-grid-4" style={{ marginBottom: 20 }}>
+            <SummaryStat icon={<TrendingUp size={12} style={{ color: "var(--accent)" }} />} label="Show Rate" value={fmtPercent(aggregated.showRate)} />
             <SummaryStat icon={<Phone size={12} style={{ color: "var(--accent)" }} />} label="Calls Booked" value={fmtNumber(aggregated.callsBooked)} />
             <SummaryStat icon={<PhoneCall size={12} style={{ color: "var(--accent)" }} />} label="Calls Taken" value={fmtNumber(aggregated.callsTaken)} />
             <SummaryStat icon={<Trophy size={12} style={{ color: "var(--success)" }} />} label="Wins" value={fmtNumber(aggregated.wins)} color="var(--success)" />
-            <SummaryStat icon={<XCircle size={12} style={{ color: "var(--danger)" }} />} label="Losses" value={fmtNumber(aggregated.losses)} color="var(--danger)" />
           </div>
 
           <button
@@ -371,6 +373,7 @@ export default function CloserPerformance({
                 <thead>
                   <tr>
                     <th>Call Type</th>
+                    <th>Contracted</th>
                     <th>Cash</th>
                     <th>AOV</th>
                     <th>Close Rate</th>
@@ -378,7 +381,6 @@ export default function CloserPerformance({
                     <th>Booked</th>
                     <th>Taken</th>
                     <th>Wins</th>
-                    <th>Losses</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -387,6 +389,7 @@ export default function CloserPerformance({
                     return (
                       <tr key={cat.key}>
                         <td style={{ fontWeight: 600, color: "var(--text-primary)" }}>{cat.label}</td>
+                        <td style={{ color: "var(--success)", fontWeight: 600 }}>{fmtDollars(m.contracted)}</td>
                         <td style={{ color: "var(--success)" }}>{fmtDollars(m.cash)}</td>
                         <td>{fmtDollars(m.aov)}</td>
                         <td>{fmtPercent(m.closeRate)}</td>
@@ -394,7 +397,6 @@ export default function CloserPerformance({
                         <td>{fmtNumber(m.callsBooked)}</td>
                         <td>{fmtNumber(m.callsTaken)}</td>
                         <td style={{ color: "var(--success)" }}>{fmtNumber(m.wins)}</td>
-                        <td style={{ color: "var(--danger)" }}>{fmtNumber(m.losses)}</td>
                       </tr>
                     );
                   })}
@@ -411,6 +413,7 @@ export default function CloserPerformance({
           <thead>
             <tr>
               <th>Closer</th>
+              <th>Contracted</th>
               <th>Cash</th>
               <th>AOV</th>
               <th>Close Rate</th>
@@ -418,7 +421,6 @@ export default function CloserPerformance({
               <th>Booked</th>
               <th>Taken</th>
               <th>Wins</th>
-              <th>Losses</th>
               <th>Avg Call</th>
               <th>Top Objection</th>
             </tr>
@@ -435,6 +437,10 @@ export default function CloserPerformance({
                     <td style={{ fontWeight: 600, color: "var(--text-primary)" }}>
                       <span style={{ display: "inline-block", width: 12, color: "var(--text-muted)" }}>{isOpen ? "\u25be" : "\u25b8"}</span>
                       {s.name}
+                    </td>
+                    <td style={{ color: "var(--success)", fontWeight: 600 }}>
+                      {fmtDollars(s.contracted)}
+                      <TopBadge show={topPerformers.contracted === s.name} />
                     </td>
                     <td style={{ color: "var(--success)" }}>
                       {fmtDollars(s.cash)}
@@ -455,7 +461,6 @@ export default function CloserPerformance({
                     <td>{fmtNumber(s.callsBooked)}</td>
                     <td>{fmtNumber(s.callsTaken)}</td>
                     <td style={{ color: "var(--success)" }}>{fmtNumber(s.wins)}</td>
-                    <td style={{ color: "var(--danger)" }}>{fmtNumber(s.losses)}</td>
                     <td>{s.avgCallLength}</td>
                     <td
                       style={{ maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
@@ -470,6 +475,7 @@ export default function CloserPerformance({
                       return (
                         <tr key={s.name + cat.key} style={{ background: "rgba(127,127,127,0.06)" }}>
                           <td style={{ paddingLeft: 28, color: "var(--text-secondary)", fontSize: 12 }}>{cat.label}</td>
+                          <td style={{ color: "var(--success)", fontWeight: 600 }}>{fmtDollars(m.contracted)}</td>
                           <td style={{ color: "var(--success)" }}>{fmtDollars(m.cash)}</td>
                           <td>{fmtDollars(m.aov)}</td>
                           <td>{fmtPercent(m.closeRate)}</td>
@@ -477,7 +483,6 @@ export default function CloserPerformance({
                           <td>{fmtNumber(m.callsBooked)}</td>
                           <td>{fmtNumber(m.callsTaken)}</td>
                           <td style={{ color: "var(--success)" }}>{fmtNumber(m.wins)}</td>
-                          <td style={{ color: "var(--danger)" }}>{fmtNumber(m.losses)}</td>
                           <td>{m.avgCallLength}</td>
                           <td style={{ maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={m.topObjection}>{m.topObjection}</td>
                         </tr>

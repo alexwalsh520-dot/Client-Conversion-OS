@@ -35,8 +35,9 @@ interface ClientMetrics {
   pending: number;
   showRate: number;
   wins: number;
-  losses: number;
   closeRate: number;
+  /** Contract value of the wins (tracker Revenue column). */
+  contracted: number;
   cashCollected: number;
   aov: number;
 }
@@ -68,15 +69,15 @@ function computeMetrics(rows: SheetRow[], label: string): ClientMetrics {
 
   const winRows = takenRows.filter((r) => r.outcome === "WIN");
   const wins = winRows.length;
-  const losses = takenRows.filter((r) => r.outcome !== "WIN").length;
   const closeRate = callsTaken > 0 ? (wins / callsTaken) * 100 : 0;
 
+  const contracted = winRows.reduce((sum, r) => sum + r.revenue, 0);
   const cashCollected = winRows.reduce((sum, r) => sum + r.cashCollected, 0);
   const aov = wins > 0 ? cashCollected / wins : 0;
 
   return {
-    label, callsBooked, callsTaken, showRate, wins, losses,
-    closeRate, cashCollected, aov, pending,
+    label, callsBooked, callsTaken, showRate, wins,
+    closeRate, contracted, cashCollected, aov, pending,
   };
 }
 
@@ -215,6 +216,7 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
           <thead>
             <tr>
               <th>Client</th>
+              <th>Contracted</th>
               <th>Cash on Calls</th>
               <th>AOV</th>
               <th>Close Rate</th>
@@ -222,7 +224,6 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
               <th>Booked</th>
               <th>Taken</th>
               <th>Wins</th>
-              <th>Losses</th>
               <th>Pending</th>
             </tr>
           </thead>
@@ -237,6 +238,7 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
                       <span style={{ display: "inline-block", width: 12, color: "var(--text-muted)" }}>{isOpen ? "\u25be" : "\u25b8"}</span>
                       {c.label}
                     </td>
+                    <td style={{ color: "var(--success)", fontWeight: 600 }}>{fmtDollars(c.contracted)}</td>
                     <td style={{ color: "var(--success)", fontWeight: 600 }}>{fmtDollars(c.cashCollected)}</td>
                     <td>{fmtDollars(c.aov)}</td>
                     <td><span style={{ color: rateColor(c.closeRate), fontWeight: 600 }}>{fmtPercent(c.closeRate)}</span></td>
@@ -244,7 +246,6 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
                     <td>{fmtNumber(c.callsBooked)}</td>
                     <td>{fmtNumber(c.callsTaken)}</td>
                     <td style={{ color: "var(--success)" }}>{fmtNumber(c.wins)}</td>
-                    <td style={{ color: "var(--danger)" }}>{fmtNumber(c.losses)}</td>
                     <td style={{ color: c.pending > 0 ? "var(--warning)" : "var(--text-secondary)" }}>{fmtNumber(c.pending)}</td>
                   </tr>
                   {isOpen &&
@@ -253,6 +254,7 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
                       return (
                         <tr key={c.label + cat.key} style={{ background: "rgba(127,127,127,0.06)" }}>
                           <td style={{ paddingLeft: 28, color: "var(--text-secondary)", fontSize: 12 }}>{cat.label}</td>
+                          <td style={{ color: "var(--success)", fontWeight: 600 }}>{fmtDollars(m.contracted)}</td>
                           <td style={{ color: "var(--success)" }}>{fmtDollars(m.cashCollected)}</td>
                           <td>{fmtDollars(m.aov)}</td>
                           <td>{fmtPercent(m.closeRate)}</td>
@@ -260,7 +262,6 @@ export default function UnifiedDashboard({ filters }: UnifiedDashboardProps) {
                           <td>{fmtNumber(m.callsBooked)}</td>
                           <td>{fmtNumber(m.callsTaken)}</td>
                           <td style={{ color: "var(--success)" }}>{fmtNumber(m.wins)}</td>
-                          <td style={{ color: "var(--danger)" }}>{fmtNumber(m.losses)}</td>
                           <td>{fmtNumber(m.pending)}</td>
                         </tr>
                       );
