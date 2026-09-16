@@ -19,6 +19,9 @@ import {
   DollarSign,
   Users,
   Loader,
+  Repeat,
+  UserPlus,
+  UtensilsCrossed,
 } from "lucide-react";
 import { ThemeIconButton } from "@/components/ThemeToggle";
 import LogoWordmark from "@/components/LogoWordmark";
@@ -48,6 +51,9 @@ export default function Sidebar() {
   // Coaching v2 owns the sidebar while you are inside it: a back row plus its
   // own sections. "All apps" peeks the normal list without leaving the page.
   const inHub = pathname === "/coaching-v2" || pathname.startsWith("/coaching-v2/");
+  // Same pattern for Coaching v3. Kept as a separate flag so V3-only
+  // features (its own subtabs, no Ask-Ahmad button) don't leak into V2.
+  const inV3Hub = pathname === "/coaching-v3" || pathname.startsWith("/coaching-v3/");
   // Remember the path the peek was opened on, so navigating anywhere closes it
   // without an effect.
   const [peekPath, setPeekPath] = useState<string | null>(null);
@@ -89,6 +95,8 @@ export default function Sidebar() {
     if (href === "/") return pathname === "/";
     if (href === "/studio-2") return pathname === "/studio-2";
     if (href === "/coaching-v2") return pathname === "/coaching-v2";
+    // V3 index shouldn't light up when a coach is on /coaching-v3/clients etc.
+    if (href === "/coaching-v3") return pathname === "/coaching-v3";
     return pathname === href || pathname.startsWith(href + "/");
   };
 
@@ -225,6 +233,22 @@ export default function Sidebar() {
               {renderLink({ href: "/coaching-v2/clients", label: "Clients", icon: Users })}
               {renderLink({ href: "/coaching-v2/coaches", label: "Coaches", icon: Trophy })}
               {renderLink({ href: "/coaching-v2/money", label: "Money", icon: DollarSign })}
+            </>
+          ) : inV3Hub && !peekApps ? (
+            <>
+              <button type="button" className="sidebar-back" onClick={() => setPeekApps(true)}>
+                <span className="sidebar-link-icon"><ChevronLeft size={14} /></span>
+                {!collapsed && <span>All apps</span>}
+              </button>
+              {!collapsed && <div className="sidebar-section-label">Coaching v3</div>}
+              {renderLink({ href: "/coaching-v3", label: "Today", icon: Clock })}
+              {renderLink({ href: "/coaching-v3/clients", label: "Clients", icon: Users })}
+              {renderLink({ href: "/coaching-v3/coaches", label: "Coaches", icon: Trophy })}
+              {renderLink({ href: "/coaching-v3/retentions", label: "Retentions", icon: Repeat })}
+              {renderLink({ href: "/coaching-v3/onboarding", label: "Onboarding", icon: UserPlus })}
+              {renderLink({ href: "/coaching-v3/nutrition", label: "Nutrition", icon: UtensilsCrossed })}
+              {/* Money stays admin-only in V3, mirroring the tab-bar gate. */}
+              {isAdmin && renderLink({ href: "/coaching-v3/money", label: "Money", icon: DollarSign })}
             </>
           ) : (
             <>
