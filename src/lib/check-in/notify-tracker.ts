@@ -127,9 +127,7 @@ export async function notifyCheckInTracker(input: TrackerInput): Promise<{ ok: b
     const pendingLine =
       pending.length === 0
         ? `*All of ${coachName}'s clients have submitted this week.* 🎉`
-        : `*Still pending this week for ${coachName} (${pending.length} of ${totalActive}):*\n${pending
-            .map((n) => `• ${n}`)
-            .join("\n")}`;
+        : `*Still pending this week for ${coachName} (${pending.length} of ${totalActive}):* ${pending.join(", ")}`;
 
     const blocks: unknown[] = [
       {
