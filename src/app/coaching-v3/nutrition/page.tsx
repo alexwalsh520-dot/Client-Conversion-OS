@@ -161,13 +161,14 @@ export default async function NutritionPage() {
     .filter((c) => c.status === "active")
     .map((c) => ({ id: c.id, name: c.name, email: c.email ?? "" }));
 
-  // Unlinked forms = form id NOT referenced by any client and timestamp
-  // >= UNLINKED_CUTOFF_TS.
+  // Unlinked forms = every form id NOT referenced by any client. Legacy
+  // and V3 both keep pre-2026-04-01 rows in the pool but hide them by
+  // default (see NutritionView's "show older" toggle) — those legacy
+  // rows aren't worth chasing but occasionally still get resurfaced.
   const linkedFormIds = new Set<number>();
   for (const c of clients) if (c.nutrition_form_id) linkedFormIds.add(c.nutrition_form_id);
   const unlinkedForms = forms
     .filter((f) => !linkedFormIds.has(f.id))
-    .filter((f) => f.timestamp && new Date(f.timestamp).getTime() >= UNLINKED_CUTOFF_TS)
     .map((f) => ({
       id: f.id,
       firstName: (f.first_name ?? "").trim(),
@@ -175,6 +176,8 @@ export default async function NutritionPage() {
       email: (f.email ?? "").trim(),
       phone: (f.phone ?? "").trim(),
       submittedAt: f.timestamp,
+      isOld:
+        !f.timestamp || new Date(f.timestamp).getTime() < UNLINKED_CUTOFF_TS,
     }));
 
   // Pending clients — active, has intake form linked, status is 'pending'

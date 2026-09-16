@@ -55,9 +55,11 @@ export type PendingRow = {
   intakeForm: NutritionIntakeForm | null;
 };
 
+type UnlinkedRow = UnlinkedForm & { isOld?: boolean };
+
 type Props = {
   viewer: { isAdmin: boolean; email: string };
-  unlinkedForms: UnlinkedForm[];
+  unlinkedForms: UnlinkedRow[];
   clientDirectory: { id: number; name: string; email: string }[];
   pending: PendingRow[];
   done: PendingRow[];
@@ -104,6 +106,10 @@ export default function NutritionView({
   const [expandDone, setExpandDone] = useState(false);
   const [expandedClientId, setExpandedClientId] = useState<number | null>(null);
   const [expandedIntakeClientId, setExpandedIntakeClientId] = useState<number | null>(null);
+  // Legacy filter (2026-04-30): pre-2026-04-01 intake forms are hidden
+  // by default because their target clients aren't worth chasing. Toggle
+  // reveals them for the rare case a coach needs to link a backlog form.
+  const [showOldUnlinked, setShowOldUnlinked] = useState(false);
   const [showStale, setShowStale] = useState(false);
 
   const [autoLinking, setAutoLinking] = useState(false);
@@ -133,6 +139,16 @@ export default function NutritionView({
   const visiblePending = showStale ? pending : freshPending;
   const filteredPending = visiblePending.filter(filterBy);
   const filteredDone = done.filter(filterBy);
+
+  const recentUnlinked = useMemo(
+    () => unlinkedForms.filter((f) => !f.isOld),
+    [unlinkedForms],
+  );
+  const oldUnlinked = useMemo(
+    () => unlinkedForms.filter((f) => f.isOld),
+    [unlinkedForms],
+  );
+  const visibleUnlinked = showOldUnlinked ? unlinkedForms : recentUnlinked;
 
   const runAutoLink = async () => {
     setAutoLinking(true);
@@ -180,7 +196,7 @@ export default function NutritionView({
   return (
     <>
       <div className="h3-kpis" style={{ marginTop: 6 }}>
-        <Kpi label="Unlinked forms" value={String(unlinkedForms.length)} tone={unlinkedForms.length ? "a" : undefined} />
+        <Kpi label="Unlinked forms" value={String(recentUnlinked.length)} tone={recentUnlinked.length ? "a" : undefined} />
         <Kpi label="Pending (fresh)" value={String(freshPending.length)} tone={freshPending.some((c) => c.daysSinceOnboarding >= 7) ? "r" : undefined} />
         <Kpi label="Pending (older)" value={String(stalePending.length)} />
         <Kpi label="Done" value={String(done.length)} tone="g" />
@@ -230,12 +246,23 @@ export default function NutritionView({
             <UtensilsCrossed size={13} />
             Unlinked intake forms
           </button>
-          <span className="n">{unlinkedForms.length}</span>
+          <span className="n">{visibleUnlinked.length}</span>
+          {oldUnlinked.length > 0 && (
+            <button
+              className="h3-btn s"
+              onClick={() => setShowOldUnlinked((v) => !v)}
+              title={`${oldUnlinked.length} intake forms submitted before Apr 1, 2026`}
+            >
+              {showOldUnlinked
+                ? `Hide pre-Apr 2026 (${oldUnlinked.length})`
+                : `Show pre-Apr 2026 (${oldUnlinked.length})`}
+            </button>
+          )}
           <span style={{ flex: 1 }} />
           <button
             className="h3-btn p"
             onClick={runAutoLink}
-            disabled={autoLinking || unlinkedForms.length === 0}
+            disabled={autoLinking || recentUnlinked.length === 0}
             title="Auto-link forms whose email or full name exactly matches a client"
           >
             {autoLinking ? <Loader2 size={12} className="spin" /> : <Zap size={12} />}
@@ -292,10 +319,14 @@ export default function NutritionView({
               </div>
             )}
             <div className="h3-list">
-              {unlinkedForms.length === 0 ? (
-                <div className="h3-empty">Every recent intake form is linked. 👍</div>
+              {visibleUnlinked.length === 0 ? (
+                <div className="h3-empty">
+                  {showOldUnlinked
+                    ? "No unlinked intake forms."
+                    : "Every recent intake form is linked. 👍"}
+                </div>
               ) : (
-                <LinkFormsPanel forms={unlinkedForms} clientDirectory={clientDirectory} />
+                <LinkFormsPanel forms={visibleUnlinked} clientDirectory={clientDirectory} />
               )}
             </div>
           </>
