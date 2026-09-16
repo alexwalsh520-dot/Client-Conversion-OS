@@ -83,6 +83,10 @@ export interface CheckVerdict {
 
 /** Max appointments graded per run (one Claude call each — cost guard). */
 const MAX_GRADES_PER_RUN = 40;
+/** Legacy re-grades per run — kept small so a run stays inside the 300s cap. */
+const MAX_REGRADES_PER_RUN = 8;
+/** Stop starting new Claude calls past this; the route's maxDuration is 300s. */
+const RUN_TIME_BUDGET_MS = 220_000;
 /** Thread window: booking creation → call start + 1h. */
 const THREAD_TAIL_MS = 60 * 60_000;
 /** How many recent SendBlue messages to pull per phone number. */
@@ -539,8 +543,26 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
   };
 
   const inserts: ScoreInsert[] = [];
+  // Rows persist as they are graded (every few rows, and every re-grade) so
+  // a run that hits the platform's time cap keeps everything scored so far.
+  const persistRows = async (rows: ScoreInsert[], ignoreDuplicates = true) => {
+    if (rows.length === 0) return;
+    const { error } = await db
+      .schema("warehouse")
+      .from("metrics_adherence_scores")
+      .upsert(rows, { onConflict: "kind,appointment_key", ignoreDuplicates });
+    if (error) {
+      if (isMissingRelation(error)) throw new Error("metrics_adherence_scores missing — paste migration 115 first.");
+      throw new Error(`adherence upsert failed: ${error.message}`);
+    }
+  };
+  const outOfTime = () => Date.now() - nowMs > RUN_TIME_BUDGET_MS;
 
   for (const [apptId, event] of queue) {
+    if (outOfTime()) {
+      notes.push("time budget reached — remaining candidates are retried next run");
+      break;
+    }
     const appt = apptById.get(apptId) ?? null;
     const startIso = appt?.start_time || event.metadata?.start_time || null;
     const bookedAtIso = event.occurred_at;
@@ -609,6 +631,7 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
       notes: null,
     });
     base.graded += 1;
+    if (inserts.length >= 5) await persistRows(inserts.splice(0, inserts.length));
   }
 
   // 5) Persist.
@@ -631,7 +654,7 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
   //    'intro' check (and no timing). Re-score them with whatever budget the
   //    fresh grading left, newest first, so history fills in over a few runs.
   //    Rows with no thread are left alone (nothing to re-read).
-  const regradeBudget = Math.max(0, MAX_GRADES_PER_RUN - queue.length);
+  const regradeBudget = Math.max(0, Math.min(MAX_REGRADES_PER_RUN, MAX_GRADES_PER_RUN - queue.length));
   if (regradeBudget > 0) {
     const { rows: legacy } = await safeFetchAllRows<{
       appointment_key: string;
@@ -668,6 +691,10 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
 
       const regrades: ScoreInsert[] = [];
       for (const t of targets) {
+        if (outOfTime()) {
+          notes.push("time budget reached — remaining legacy rows re-grade next run");
+          break;
+        }
         const appt = legacyAppts.get(t.appointment_key);
         const phone = appt?.contact_phone?.trim() || null;
         const startIso = appt?.start_time || null;
@@ -699,13 +726,7 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
           notes: "re-graded under the intro + discovery rubric (2026-09-17)",
         });
         base.regraded += 1;
-      }
-      for (const batch of chunk(regrades, 50)) {
-        const { error } = await db
-          .schema("warehouse")
-          .from("metrics_adherence_scores")
-          .upsert(batch, { onConflict: "kind,appointment_key" });
-        if (error) throw new Error(`adherence regrade upsert failed: ${error.message}`);
+        await persistRows(regrades.splice(0, regrades.length), false);
       }
     }
   }
