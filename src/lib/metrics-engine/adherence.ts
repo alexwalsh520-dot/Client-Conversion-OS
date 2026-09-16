@@ -126,16 +126,16 @@ interface SemanticVerdict {
 const VERDICT_SCHEMA: Record<string, unknown> = {
   type: "object",
   properties: {
+    // NOTE: no numeric constraints (minimum/maximum) — Claude's structured
+    // outputs accept only a JSON-schema subset and reject them with a 400.
     intro_index: {
       type: "integer",
-      minimum: 0,
       description:
         "The message NUMBER (as numbered in the thread) of the closer-side INTRO — the first message greeting the prospect and stating/confirming the booked call time (canonical: 'good to meet you — looks like I got you in for <time>'). Paraphrases fully count. 0 if it was never sent.",
     },
     intro_evidence: { type: "string", description: "Short verbatim quote from that message, or empty string." },
     discovery_index: {
       type: "integer",
-      minimum: 0,
       description:
         "The message NUMBER of the closer-side DISCOVERY line — a question asking what the prospect wants to get out of the call (canonical: 'so I can make it worth your while… what's the main thing you want help with when we chat?'). Paraphrases fully count. First occurrence if repeated. 0 if never asked.",
     },
