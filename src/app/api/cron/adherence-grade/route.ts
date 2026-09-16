@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
     const result = await runAdherenceGrading({
       days: Number.isFinite(days) ? days : undefined,
     });
-    return NextResponse.json(result);
+    return NextResponse.json({ ...result, engine: "sop-v2.4" });
   } catch (err) {
     console.error("[adherence-grade] failed:", err);
     return NextResponse.json(
