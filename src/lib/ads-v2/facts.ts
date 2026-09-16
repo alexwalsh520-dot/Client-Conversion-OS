@@ -609,12 +609,16 @@ async function computeAndWriteFacts(db: Db, now: Date): Promise<FactsResult> {
   // and never a win. Identity ladder, same honesty tiers as tracker rows:
   //   1. keyword riding on the Stripe link (client_reference_id)  [hard key]
   //   2. the ManyChat id on the link -> that person's booking / DM keyword
-  //   3. no id on the link -> the tracker Subscription row for the SAME name
-  //      within 3 days lends its pasted ManyChat id (subscription weld)
+  //   3. no id on the link -> ANY tracker row for the SAME name within 3 days
+  //      (Subscription, Onboarding Call, Strategy Session, ...) lends its
+  //      pasted ManyChat id (subscription weld). Widened 2026-09-16: the
+  //      retired Subscription rows were the only source before, so a $50
+  //      payer whose Onboarding Call row carried the pasted id was missed.
+  //      Guard unchanged: exactly one distinct id among the candidates.
   //   4. nothing -> awaiting review, never guessed.
   const normName = (v: string | null | undefined) => (v || "").toLowerCase().replace(/[^a-z]/g, "");
   const trackerSubsByName = new Map<string, { subscriberId: string; day: string; key: string }[]>();
-  for (const r of trackerSubscriptionRows) {
+  for (const r of saleRowsAll) {
     const pasted = (r.manychat_subscriber_id || "").trim();
     const name = normName(r.prospect_name);
     if (!pasted || !name) continue;
