@@ -434,6 +434,107 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
 
   const db = getServiceSupabase();
 
+  // Rows persist as they are graded (every few rows, and every re-grade) so
+  // a run that hits the platform's time cap keeps everything scored so far.
+  const persistRows = async (rows: ScoreInsert[], ignoreDuplicates = true) => {
+    if (rows.length === 0) return;
+    const { error } = await db
+      .schema("warehouse")
+      .from("metrics_adherence_scores")
+      .upsert(rows, { onConflict: "kind,appointment_key", ignoreDuplicates });
+    if (error) {
+      if (isMissingRelation(error)) throw new Error("metrics_adherence_scores missing — paste migration 115 first.");
+      throw new Error(`adherence upsert failed: ${error.message}`);
+    }
+  };
+  const outOfTime = () => Date.now() - nowMs > RUN_TIME_BUDGET_MS;
+
+  // Runs at the END of every run — including runs with nothing fresh to
+  // grade — so the legacy backlog drains on the quiet 2-hourly runs too.
+  const regradeLegacy = async (freshCount: number) => {
+    // 6) Legacy re-grade — rows scored under the pre-2026-09-17 rubric carry no
+    //    'intro' check (and no timing). Re-score them with whatever budget the
+    //    fresh grading left, newest first, so history fills in over a few runs.
+    //    Rows with no thread are left alone (nothing to re-read).
+    const regradeBudget = Math.max(0, Math.min(MAX_REGRADES_PER_RUN, MAX_GRADES_PER_RUN - freshCount));
+    if (regradeBudget > 0) {
+      const { rows: legacy } = await safeFetchAllRows<{
+        appointment_key: string;
+        client_key: string;
+        lead_key: string | null;
+        rep_key: string | null;
+      }>((from, to) =>
+        db
+          .schema("warehouse")
+          .from("metrics_adherence_scores")
+          .select("appointment_key, client_key, lead_key, rep_key")
+          .eq("kind", "pre_call")
+          .eq("thread_found", true)
+          .not("checks", "cs", JSON.stringify([{ id: "intro" }]))
+          .order("graded_at", { ascending: false })
+          .range(from, to),
+      );
+      const targets = legacy.slice(0, regradeBudget);
+      if (targets.length > 0) {
+        type LegacyAppt = AppointmentRow & { created_at: string | null };
+        const legacyAppts = new Map<string, LegacyAppt>();
+        for (const ids of chunk(targets.map((t) => t.appointment_key), 200)) {
+          const { rows } = await safeFetchAllRows<LegacyAppt>((from, to) =>
+            db
+              .schema("warehouse")
+              .from("ghl_appointments")
+              .select("appointment_id, contact_phone, contact_name, assigned_user_id, start_time, created_at")
+              .in("appointment_id", ids)
+              .order("appointment_id", { ascending: true })
+              .range(from, to),
+          );
+          for (const r of rows) legacyAppts.set(r.appointment_id, r);
+        }
+
+        const regrades: ScoreInsert[] = [];
+        for (const t of targets) {
+          if (outOfTime()) {
+            notes.push("time budget reached — remaining legacy rows re-grade next run");
+            break;
+          }
+          const appt = legacyAppts.get(t.appointment_key);
+          const phone = appt?.contact_phone?.trim() || null;
+          const startIso = appt?.start_time || null;
+          const bookedAtIso = appt?.created_at || startIso;
+          if (!phone || !startIso || !bookedAtIso) continue;
+          const repKey = t.rep_key ?? repKeyFromGhlUserId(appt?.assigned_user_id) ?? null;
+          const graded = await gradeThread({
+            phone,
+            startIso,
+            bookedAtIso,
+            repKey,
+            contactName: appt?.contact_name ?? null,
+          });
+          if (graded.status !== "graded") continue;
+          const applicable = graded.checks.filter((c) => c.applicable).length;
+          const passed = graded.checks.filter((c) => c.applicable && c.passed).length;
+          regrades.push({
+            client_key: t.client_key,
+            appointment_key: t.appointment_key,
+            lead_key: t.lead_key,
+            rep_key: repKey,
+            kind: "pre_call",
+            score: applicable > 0 ? passed / applicable : null,
+            applicable_checks: applicable,
+            passed_checks: passed,
+            checks: graded.checks,
+            thread_found: true,
+            model: CLAUDE_MODEL,
+            notes: "re-graded under the intro + discovery rubric (2026-09-17)",
+          });
+          base.regraded += 1;
+          await persistRows(regrades.splice(0, regrades.length), false);
+        }
+      }
+    }
+
+  };
+
   // 1) Sales bookings whose scheduled start is in the past N ET days.
   const bookingsRes = await safeFetchAllRows<BookingEventRow>((from, to) =>
     db
@@ -467,7 +568,10 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
     if (!byAppointment.has(apptId)) byAppointment.set(apptId, e);
   }
   base.candidates = byAppointment.size;
-  if (byAppointment.size === 0) return base;
+  if (byAppointment.size === 0) {
+    await regradeLegacy(0);
+    return base;
+  }
 
   // 2) Drop appointments that already carry a pre_call score.
   const allApptIds = [...byAppointment.keys()];
@@ -489,7 +593,10 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
       if (byAppointment.delete(r.appointment_key)) base.already_graded += 1;
     }
   }
-  if (byAppointment.size === 0) return base;
+  if (byAppointment.size === 0) {
+    await regradeLegacy(0);
+    return base;
+  }
 
   // 3) Appointment context (contact phone) for the remaining candidates.
   const apptById = new Map<string, AppointmentRow>();
@@ -543,20 +650,6 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
   };
 
   const inserts: ScoreInsert[] = [];
-  // Rows persist as they are graded (every few rows, and every re-grade) so
-  // a run that hits the platform's time cap keeps everything scored so far.
-  const persistRows = async (rows: ScoreInsert[], ignoreDuplicates = true) => {
-    if (rows.length === 0) return;
-    const { error } = await db
-      .schema("warehouse")
-      .from("metrics_adherence_scores")
-      .upsert(rows, { onConflict: "kind,appointment_key", ignoreDuplicates });
-    if (error) {
-      if (isMissingRelation(error)) throw new Error("metrics_adherence_scores missing — paste migration 115 first.");
-      throw new Error(`adherence upsert failed: ${error.message}`);
-    }
-  };
-  const outOfTime = () => Date.now() - nowMs > RUN_TIME_BUDGET_MS;
 
   for (const [apptId, event] of queue) {
     if (outOfTime()) {
@@ -650,86 +743,7 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
     }
   }
 
-  // 6) Legacy re-grade — rows scored under the pre-2026-09-17 rubric carry no
-  //    'intro' check (and no timing). Re-score them with whatever budget the
-  //    fresh grading left, newest first, so history fills in over a few runs.
-  //    Rows with no thread are left alone (nothing to re-read).
-  const regradeBudget = Math.max(0, Math.min(MAX_REGRADES_PER_RUN, MAX_GRADES_PER_RUN - queue.length));
-  if (regradeBudget > 0) {
-    const { rows: legacy } = await safeFetchAllRows<{
-      appointment_key: string;
-      client_key: string;
-      lead_key: string | null;
-      rep_key: string | null;
-    }>((from, to) =>
-      db
-        .schema("warehouse")
-        .from("metrics_adherence_scores")
-        .select("appointment_key, client_key, lead_key, rep_key")
-        .eq("kind", "pre_call")
-        .eq("thread_found", true)
-        .not("checks", "cs", JSON.stringify([{ id: "intro" }]))
-        .order("graded_at", { ascending: false })
-        .range(from, to),
-    );
-    const targets = legacy.slice(0, regradeBudget);
-    if (targets.length > 0) {
-      type LegacyAppt = AppointmentRow & { created_at: string | null };
-      const legacyAppts = new Map<string, LegacyAppt>();
-      for (const ids of chunk(targets.map((t) => t.appointment_key), 200)) {
-        const { rows } = await safeFetchAllRows<LegacyAppt>((from, to) =>
-          db
-            .schema("warehouse")
-            .from("ghl_appointments")
-            .select("appointment_id, contact_phone, contact_name, assigned_user_id, start_time, created_at")
-            .in("appointment_id", ids)
-            .order("appointment_id", { ascending: true })
-            .range(from, to),
-        );
-        for (const r of rows) legacyAppts.set(r.appointment_id, r);
-      }
-
-      const regrades: ScoreInsert[] = [];
-      for (const t of targets) {
-        if (outOfTime()) {
-          notes.push("time budget reached — remaining legacy rows re-grade next run");
-          break;
-        }
-        const appt = legacyAppts.get(t.appointment_key);
-        const phone = appt?.contact_phone?.trim() || null;
-        const startIso = appt?.start_time || null;
-        const bookedAtIso = appt?.created_at || startIso;
-        if (!phone || !startIso || !bookedAtIso) continue;
-        const repKey = t.rep_key ?? repKeyFromGhlUserId(appt?.assigned_user_id) ?? null;
-        const graded = await gradeThread({
-          phone,
-          startIso,
-          bookedAtIso,
-          repKey,
-          contactName: appt?.contact_name ?? null,
-        });
-        if (graded.status !== "graded") continue;
-        const applicable = graded.checks.filter((c) => c.applicable).length;
-        const passed = graded.checks.filter((c) => c.applicable && c.passed).length;
-        regrades.push({
-          client_key: t.client_key,
-          appointment_key: t.appointment_key,
-          lead_key: t.lead_key,
-          rep_key: repKey,
-          kind: "pre_call",
-          score: applicable > 0 ? passed / applicable : null,
-          applicable_checks: applicable,
-          passed_checks: passed,
-          checks: graded.checks,
-          thread_found: true,
-          model: CLAUDE_MODEL,
-          notes: "re-graded under the intro + discovery rubric (2026-09-17)",
-        });
-        base.regraded += 1;
-        await persistRows(regrades.splice(0, regrades.length), false);
-      }
-    }
-  }
+  await regradeLegacy(queue.length);
 
   return base;
 }
