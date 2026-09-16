@@ -1,15 +1,18 @@
 // Closer Pre-Call Adherence — the Sales Hub section behind /api/sales-hub/precall-adherence.
 //
 // Surfaces what the adherence grader (src/lib/metrics-engine/adherence.ts,
-// cron every 2h) already writes to warehouse.metrics_adherence_scores: for
-// every graded sales call, did the closer run the two required pre-call
-// lines over SendBlue —
-//   discovery   "what do you want out of the call"
-//   commitment  "any reason you wouldn't make it"
-// — plus whether a SendBlue thread existed at all, joined to the sales
-// tracker for the closer name and the call outcome (cash-override rule:
-// cash collected counts as taken). The headline correlation: show rate when
-// the discovery line was asked vs when it wasn't.
+// cron every 2h) writes to warehouse.metrics_adherence_scores. The SOP
+// (owner, 2026-09-17) is two closer-side lines with a timing gap between:
+//   intro      "good to meet you — looks like I got you in for <time>"
+//   (prospect replies)
+//   discovery  "what do you want out of the call"
+// and we measure how long the closer took to answer the prospect's reply to
+// the intro (ideally with the discovery line itself). There is no commitment
+// line. Joined to the sales tracker for closer name + outcome (cash-override
+// rule) so every adherence signal can be split by show rate.
+//
+// Rows graded before 2026-09-17 carry no intro/timing yet ("legacy"); the
+// grader re-scores them a few per run, so they fill in over the day.
 
 import { getServiceSupabase } from "@/lib/supabase";
 import { fetchSheetData, type SheetRow } from "@/lib/google-sheets";
@@ -26,24 +29,37 @@ export interface PrecallCallRow {
   startIso: string;
   etDay: string;
   threadFound: boolean;
-  /** true = line asked, false = not asked, null = no thread / not applicable */
+  /** Graded under the old rubric — intro/timing not available until re-graded. */
+  legacy: boolean;
+  intro: boolean | null;
+  leadReplied: boolean | null; // did the prospect answer the intro
+  responseSeconds: number | null; // prospect's reply → closer's next message
   discovery: boolean | null;
-  commitment: boolean | null;
+  discoveryDirect: boolean | null; // the discovery line WAS that next message
   outcome: PrecallOutcome;
   cashCollected: number;
 }
 
 export interface PrecallLineStat {
   asked: number;
-  eligible: number; // graded calls with a thread where the check applied
+  eligible: number;
   rate: number | null;
 }
 
 export interface PrecallShowBucket {
+  label: string;
   calls: number; // calls with a known outcome (show or no-show)
   shows: number;
   rate: number | null;
   cashCollected: number;
+}
+
+export interface PrecallResponseStat {
+  samples: number;
+  averageSeconds: number | null;
+  /** Owner definition: the average with the single slowest removed. */
+  medianSeconds: number | null;
+  slowestSeconds: number | null;
 }
 
 export interface PrecallCloserRow {
@@ -51,8 +67,11 @@ export interface PrecallCloserRow {
   graded: number;
   threads: number;
   threadRate: number | null;
+  intro: PrecallLineStat;
+  leadReplied: PrecallLineStat;
   discovery: PrecallLineStat;
-  commitment: PrecallLineStat;
+  discoveryDirect: PrecallLineStat;
+  response: PrecallResponseStat;
   shows: number;
   knownOutcomes: number;
   showRate: number | null;
@@ -64,11 +83,16 @@ export interface PrecallAdherenceResult {
     graded: number;
     threads: number;
     threadRate: number | null;
+    legacyPending: number;
+    intro: PrecallLineStat;
+    leadReplied: PrecallLineStat;
     discovery: PrecallLineStat;
-    commitment: PrecallLineStat;
-    showWhenDiscoveryAsked: PrecallShowBucket;
-    showWhenDiscoveryNotAsked: PrecallShowBucket;
-    showWhenNoThread: PrecallShowBucket;
+    discoveryDirect: PrecallLineStat;
+    response: PrecallResponseStat;
+    showByDiscovery: PrecallShowBucket[];
+    showByIntro: PrecallShowBucket[];
+    showByLeadReply: PrecallShowBucket[];
+    showByResponse: PrecallShowBucket[];
   };
   closers: PrecallCloserRow[];
   calls: PrecallCallRow[]; // newest first
@@ -77,11 +101,22 @@ export interface PrecallAdherenceResult {
 
 /* ── Warehouse row shapes ─────────────────────────────────────────── */
 
+interface CheckRow {
+  id: string;
+  passed: boolean;
+  applicable: boolean;
+  at?: string | null;
+  leadReplyAt?: string | null;
+  closerReplyAt?: string | null;
+  responseSeconds?: number | null;
+  directReply?: boolean | null;
+}
+
 interface ScoreRow {
   appointment_key: string;
   rep_key: string | null;
   score: number | null;
-  checks: { id: string; passed: boolean; applicable: boolean }[] | null;
+  checks: CheckRow[] | null;
   thread_found: boolean;
 }
 
@@ -127,6 +162,66 @@ function dayDiff(a: string, b: string): number {
     (new Date(`${a}T12:00:00Z`).getTime() - new Date(`${b}T12:00:00Z`).getTime()) / 86_400_000,
   );
 }
+
+function shiftDay(day: string, delta: number): string {
+  const d = new Date(`${day}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
+
+/* ── Stats helpers ────────────────────────────────────────────────── */
+
+const rate = (n: number, d: number): number | null => (d > 0 ? (n / d) * 100 : null);
+
+function lineStat(rows: PrecallCallRow[], pick: (r: PrecallCallRow) => boolean | null): PrecallLineStat {
+  const eligible = rows.filter((r) => pick(r) !== null);
+  const asked = eligible.filter((r) => pick(r) === true).length;
+  return { asked, eligible: eligible.length, rate: rate(asked, eligible.length) };
+}
+
+function responseStat(rows: PrecallCallRow[]): PrecallResponseStat {
+  const values = rows
+    .map((r) => r.responseSeconds)
+    .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+  if (values.length === 0) return { samples: 0, averageSeconds: null, medianSeconds: null, slowestSeconds: null };
+  const sorted = [...values].sort((a, b) => a - b);
+  const avg = values.reduce((s, v) => s + v, 0) / values.length;
+  const trimmed = sorted.length > 1 ? sorted.slice(0, -1) : sorted;
+  const median = trimmed.reduce((s, v) => s + v, 0) / trimmed.length;
+  return { samples: values.length, averageSeconds: avg, medianSeconds: median, slowestSeconds: sorted[sorted.length - 1] };
+}
+
+function showBucket(label: string, rows: PrecallCallRow[]): PrecallShowBucket {
+  const known = rows.filter((r) => r.outcome === "show" || r.outcome === "no_show");
+  const shows = known.filter((r) => r.outcome === "show").length;
+  return {
+    label,
+    calls: known.length,
+    shows,
+    rate: rate(shows, known.length),
+    cashCollected: known.reduce((sum, r) => sum + r.cashCollected, 0),
+  };
+}
+
+function responseBucketLabel(r: PrecallCallRow): string | null {
+  if (r.intro !== true) return null;
+  if (r.leadReplied !== true) return "Prospect never replied";
+  const s = r.responseSeconds;
+  if (s === null) return "Closer never replied";
+  if (s <= 300) return "Replied within 5 min";
+  if (s <= 1800) return "5–30 min";
+  if (s <= 7200) return "30 min – 2 h";
+  return "Over 2 h";
+}
+
+const RESPONSE_BUCKET_ORDER = [
+  "Replied within 5 min",
+  "5–30 min",
+  "30 min – 2 h",
+  "Over 2 h",
+  "Closer never replied",
+  "Prospect never replied",
+];
 
 /* ── Engine ───────────────────────────────────────────────────────── */
 
@@ -197,11 +292,13 @@ export async function getPrecallAdherence(opts: {
   const findTrackerCall = (name: string, etDay: string): TrackerCall | null => {
     const key = normName(name);
     if (!key) return null;
-    const candidates = trackerByName.get(key) ?? (() => {
-      const tokens = key.split(" ");
-      if (tokens.length < 2) return undefined;
-      return trackerByToken.get(`${tokens[0]} ${tokens[tokens.length - 1]}`);
-    })();
+    const candidates =
+      trackerByName.get(key) ??
+      (() => {
+        const tokens = key.split(" ");
+        if (tokens.length < 2) return undefined;
+        return trackerByToken.get(`${tokens[0]} ${tokens[tokens.length - 1]}`);
+      })();
     if (!candidates) return null;
     let best: TrackerCall | null = null;
     for (const c of candidates) {
@@ -229,16 +326,24 @@ export async function getPrecallAdherence(opts: {
     else if (tracker?.noShow) outcome = "no_show";
     else if (new Date(startIso).getTime() > nowMs) outcome = "upcoming";
 
-    const closer =
-      tracker?.closer ||
-      (s.rep_key ? titleCase(s.rep_key) : "") ||
-      "Unknown";
+    const closer = tracker?.closer || (s.rep_key ? titleCase(s.rep_key) : "") || "Unknown";
 
-    const check = (id: string): boolean | null => {
-      const c = (s.checks || []).find((x) => x.id === id);
-      if (!c || !c.applicable) return null;
-      return c.passed;
-    };
+    const checks = s.checks || [];
+    const introCheck = checks.find((c) => c.id === "intro");
+    const discoveryCheck = checks.find((c) => c.id === "discovery");
+    const legacy = s.thread_found && !introCheck;
+
+    const intro = s.thread_found && introCheck ? Boolean(introCheck.passed) : null;
+    const leadReplied = intro === true ? Boolean(introCheck?.leadReplyAt) : null;
+    const responseSeconds =
+      leadReplied === true && typeof introCheck?.responseSeconds === "number"
+        ? introCheck.responseSeconds
+        : null;
+    const discovery = s.thread_found && discoveryCheck ? Boolean(discoveryCheck.passed) : null;
+    const discoveryDirect =
+      discovery === true && typeof discoveryCheck?.directReply === "boolean"
+        ? discoveryCheck.directReply
+        : null;
 
     calls.push({
       appointmentKey: s.appointment_key,
@@ -247,8 +352,12 @@ export async function getPrecallAdherence(opts: {
       startIso,
       etDay,
       threadFound: s.thread_found,
-      discovery: s.thread_found ? check("discovery") : null,
-      commitment: s.thread_found ? check("commitment") : null,
+      legacy,
+      intro,
+      leadReplied,
+      responseSeconds,
+      discovery,
+      discoveryDirect,
       outcome,
       cashCollected: tracker?.cash || 0,
     });
@@ -256,29 +365,19 @@ export async function getPrecallAdherence(opts: {
   calls.sort((a, b) => b.startIso.localeCompare(a.startIso));
 
   // 5) Aggregate.
-  const rate = (n: number, d: number): number | null => (d > 0 ? (n / d) * 100 : null);
-  const lineStat = (rows: PrecallCallRow[], key: "discovery" | "commitment"): PrecallLineStat => {
-    const eligible = rows.filter((r) => r[key] !== null);
-    const asked = eligible.filter((r) => r[key] === true).length;
-    return { asked, eligible: eligible.length, rate: rate(asked, eligible.length) };
-  };
-  const showBucket = (rows: PrecallCallRow[]): PrecallShowBucket => {
-    const known = rows.filter((r) => r.outcome === "show" || r.outcome === "no_show");
-    const shows = known.filter((r) => r.outcome === "show").length;
-    return {
-      calls: known.length,
-      shows,
-      rate: rate(shows, known.length),
-      cashCollected: known.reduce((sum, r) => sum + r.cashCollected, 0),
-    };
-  };
-
   const threads = calls.filter((c) => c.threadFound);
+  const summarize = (rows: PrecallCallRow[]) => ({
+    intro: lineStat(rows, (r) => r.intro),
+    leadReplied: lineStat(rows, (r) => r.leadReplied),
+    discovery: lineStat(rows, (r) => r.discovery),
+    discoveryDirect: lineStat(rows, (r) => r.discoveryDirect),
+    response: responseStat(rows),
+  });
+
   const byCloser = new Map<string, PrecallCallRow[]>();
   for (const c of calls) {
     (byCloser.get(c.closer) ?? byCloser.set(c.closer, []).get(c.closer)!).push(c);
   }
-
   const closers: PrecallCloserRow[] = [...byCloser.entries()]
     .map(([closer, rows]) => {
       const closerThreads = rows.filter((r) => r.threadFound).length;
@@ -289,8 +388,7 @@ export async function getPrecallAdherence(opts: {
         graded: rows.length,
         threads: closerThreads,
         threadRate: rate(closerThreads, rows.length),
-        discovery: lineStat(rows, "discovery"),
-        commitment: lineStat(rows, "commitment"),
+        ...summarize(rows),
         shows,
         knownOutcomes: known.length,
         showRate: rate(shows, known.length),
@@ -299,16 +397,36 @@ export async function getPrecallAdherence(opts: {
     })
     .sort((a, b) => b.graded - a.graded || a.closer.localeCompare(b.closer));
 
+  const responseBuckets = new Map<string, PrecallCallRow[]>();
+  for (const c of calls) {
+    const label = responseBucketLabel(c);
+    if (!label) continue;
+    (responseBuckets.get(label) ?? responseBuckets.set(label, []).get(label)!).push(c);
+  }
+
   return {
     team: {
       graded: calls.length,
       threads: threads.length,
       threadRate: rate(threads.length, calls.length),
-      discovery: lineStat(calls, "discovery"),
-      commitment: lineStat(calls, "commitment"),
-      showWhenDiscoveryAsked: showBucket(threads.filter((c) => c.discovery === true)),
-      showWhenDiscoveryNotAsked: showBucket(threads.filter((c) => c.discovery !== true)),
-      showWhenNoThread: showBucket(calls.filter((c) => !c.threadFound)),
+      legacyPending: calls.filter((c) => c.legacy).length,
+      ...summarize(calls),
+      showByDiscovery: [
+        showBucket("Discovery line asked", threads.filter((c) => c.discovery === true)),
+        showBucket("Not asked", threads.filter((c) => c.discovery === false)),
+        showBucket("No thread", calls.filter((c) => !c.threadFound)),
+      ],
+      showByIntro: [
+        showBucket("Intro sent", calls.filter((c) => c.intro === true)),
+        showBucket("Intro not sent", calls.filter((c) => c.intro === false)),
+      ],
+      showByLeadReply: [
+        showBucket("Prospect replied to intro", calls.filter((c) => c.leadReplied === true)),
+        showBucket("Prospect never replied", calls.filter((c) => c.leadReplied === false)),
+      ],
+      showByResponse: RESPONSE_BUCKET_ORDER.filter((l) => responseBuckets.has(l)).map((l) =>
+        showBucket(l, responseBuckets.get(l) || []),
+      ),
     },
     closers,
     calls,
@@ -316,25 +434,24 @@ export async function getPrecallAdherence(opts: {
   };
 }
 
-function shiftDay(day: string, delta: number): string {
-  const d = new Date(`${day}T12:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + delta);
-  return d.toISOString().slice(0, 10);
-}
-
 function emptyResult(): PrecallAdherenceResult {
   const zeroLine: PrecallLineStat = { asked: 0, eligible: 0, rate: null };
-  const zeroBucket: PrecallShowBucket = { calls: 0, shows: 0, rate: null, cashCollected: 0 };
+  const zeroResponse: PrecallResponseStat = { samples: 0, averageSeconds: null, medianSeconds: null, slowestSeconds: null };
   return {
     team: {
       graded: 0,
       threads: 0,
       threadRate: null,
+      legacyPending: 0,
+      intro: zeroLine,
+      leadReplied: zeroLine,
       discovery: zeroLine,
-      commitment: zeroLine,
-      showWhenDiscoveryAsked: zeroBucket,
-      showWhenDiscoveryNotAsked: zeroBucket,
-      showWhenNoThread: zeroBucket,
+      discoveryDirect: zeroLine,
+      response: zeroResponse,
+      showByDiscovery: [],
+      showByIntro: [],
+      showByLeadReply: [],
+      showByResponse: [],
     },
     closers: [],
     calls: [],

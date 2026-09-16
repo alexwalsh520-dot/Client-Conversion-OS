@@ -48,13 +48,17 @@ import type { CallType } from "./types";
 
 // ── The rubric ────────────────────────────────────────────────────────────
 
-// Rubric narrowed by the owner (2026-08-26): exactly TWO lines are graded —
-// the discovery line and the commitment line. Nothing else counts.
-export type AdherenceCheckId = "discovery" | "commitment";
+// Rubric per the owner's SOP (2026-09-17): the closer opens with the INTRO
+// ("good to meet you — looks like I got you in for <time>"), the prospect
+// replies, and the closer asks the DISCOVERY line. There is NO commitment
+// line in the SOP ("I made that up") — it was removed. Two checks, plus the
+// timing between them: how long the closer took to answer the prospect's
+// reply to the intro (ideally with the discovery line itself).
+export type AdherenceCheckId = "intro" | "discovery";
 
 export const ADHERENCE_CHECKS: ReadonlyArray<{ id: AdherenceCheckId; label: string }> = [
-  { id: "discovery", label: 'Discovery line ("make it worth your while")' },
-  { id: "commitment", label: 'Commitment line ("any reason you wouldn\'t make it")' },
+  { id: "intro", label: 'Intro ("good to meet you — got you in for <time>")' },
+  { id: "discovery", label: 'Discovery line ("what do you want out of the call")' },
 ];
 
 export interface CheckVerdict {
@@ -64,6 +68,15 @@ export interface CheckVerdict {
   passed: boolean;
   /** Short quote from the thread backing the verdict (may be empty). */
   evidence: string;
+  /** ISO time of the closer-side message that delivered the line (null when not sent). */
+  at?: string | null;
+  /** intro only: the prospect's first reply after the intro. */
+  leadReplyAt?: string | null;
+  /** intro only: the closer side's first message after that reply, and the gap. */
+  closerReplyAt?: string | null;
+  responseSeconds?: number | null;
+  /** discovery only: was the discovery line the closer's DIRECT reply to the prospect's intro response? */
+  directReply?: boolean | null;
 }
 
 // ── Tunables ──────────────────────────────────────────────────────────────
@@ -100,29 +113,31 @@ function etStamp(iso: string | null): string {
 // ── Claude: one structured call per appointment ───────────────────────────
 
 interface SemanticVerdict {
-  discovery_asked: boolean;
+  intro_index: number; // 1-based message number, 0 = never sent
+  intro_evidence: string;
+  discovery_index: number;
   discovery_evidence: string;
-  commitment_asked: boolean;
-  commitment_evidence: string;
 }
 
 const VERDICT_SCHEMA: Record<string, unknown> = {
   type: "object",
   properties: {
-    discovery_asked: {
-      type: "boolean",
+    intro_index: {
+      type: "integer",
+      minimum: 0,
       description:
-        "Did the closer's side ask the DISCOVERY line — a question in the spirit of 'so I can make it worth your while/time… what's the main thing you want help with?' Paraphrases fully count; the intent is asking what the prospect wants out of the call.",
+        "The message NUMBER (as numbered in the thread) of the closer-side INTRO — the first message greeting the prospect and stating/confirming the booked call time (canonical: 'good to meet you — looks like I got you in for <time>'). Paraphrases fully count. 0 if it was never sent.",
     },
-    discovery_evidence: { type: "string", description: "Short verbatim quote, or empty string." },
-    commitment_asked: {
-      type: "boolean",
+    intro_evidence: { type: "string", description: "Short verbatim quote from that message, or empty string." },
+    discovery_index: {
+      type: "integer",
+      minimum: 0,
       description:
-        "Did the closer's side ask the COMMITMENT line — in the spirit of 'other than something crazy happening, is there any reason you wouldn't make it?' Paraphrases fully count; the intent is locking a commitment that they will show up.",
+        "The message NUMBER of the closer-side DISCOVERY line — a question asking what the prospect wants to get out of the call (canonical: 'so I can make it worth your while… what's the main thing you want help with when we chat?'). Paraphrases fully count. First occurrence if repeated. 0 if never asked.",
     },
-    commitment_evidence: { type: "string", description: "Short verbatim quote, or empty string." },
+    discovery_evidence: { type: "string", description: "Short verbatim quote from that message, or empty string." },
   },
-  required: ["discovery_asked", "discovery_evidence", "commitment_asked", "commitment_evidence"],
+  required: ["intro_index", "intro_evidence", "discovery_index", "discovery_evidence"],
   additionalProperties: false,
 };
 
@@ -196,13 +211,13 @@ function buildPrompt(args: {
   });
 
   return [
-    "You grade whether a sales closer delivered TWO specific pre-call lines in an iMessage group chat with a prospect. The chat has the closer's side (closer + a ghost influencer number — both count as CLOSER SIDE) and the prospect.",
+    "You grade a sales closer's PRE-CALL SOP in an iMessage group chat with a prospect. The chat has the closer's side (closer + a ghost influencer number — both count as CLOSER SIDE) and the prospect.",
     "",
-    "Only these two things are graded (exact wording is NEVER required — grade intent, paraphrases fully count):",
-    "1. THE DISCOVERY LINE — canonical form: \"Quick question so I can make it worth your while… what's the main thing you want help with when we chat?\" Any question asking what the prospect wants to get out of the call, framed around making it worth their while/time, counts.",
-    "2. THE COMMITMENT LINE — canonical form: \"And other than something crazy happening, is there any reason you wouldn't make it?\" Any question locking in a commitment that they will show up (barring emergencies) counts.",
+    "The SOP has exactly TWO closer-side messages (exact wording is NEVER required — grade intent, paraphrases fully count):",
+    "1. THE INTRO — right after booking, the closer greets the prospect and states/confirms the booked call time. Canonical form: \"Hey <name>, good to meet you — looks like I got you in for <time>.\" Any first message that greets the prospect and confirms the call time counts.",
+    "2. THE DISCOVERY LINE — after the prospect replies, the closer asks what they want to get out of the call. Canonical form: \"Quick question so I can make it worth your while… what's the main thing you want help with when we chat?\" Any question asking what the prospect wants out of the call counts.",
     "",
-    "Nothing else in the thread is graded. Ignore confirmations, reminders, pings, and small talk except as context.",
+    "Nothing else in the thread is graded — there is no commitment line in this SOP. Ignore reminders, pings, and small talk except as context.",
     "",
     `Call context: closer = ${args.repName}; prospect = ${args.contactName || "unknown"}.`,
     `The call was booked at ${etStamp(args.bookedAtIso)} and scheduled to start at ${etStamp(args.startIso)}.`,
@@ -210,30 +225,121 @@ function buildPrompt(args: {
     "The thread (chronological, timestamps in Eastern Time):",
     lines.length ? lines.join("\n") : "(no messages)",
     "",
-    "Answer every field of the schema. Evidence fields: a SHORT verbatim quote (under 120 characters) from the closer-side message that best supports a true verdict, or an empty string when the answer is false.",
+    "For each of the two lines return the NUMBER of the closer-side message that delivers it (use the numbering shown), or 0 if it was never sent; if a line appears more than once, return the FIRST occurrence. Evidence: a SHORT verbatim quote (under 120 characters) from that message, or an empty string when the line was never sent.",
   ].join("\n");
 }
 
 // ── Assemble the verdict rows ─────────────────────────────────────────────
 
-function buildChecks(semantic: SemanticVerdict): CheckVerdict[] {
+function buildChecks(semantic: SemanticVerdict, messages: ThreadMessage[]): CheckVerdict[] {
   const label = (id: AdherenceCheckId) => ADHERENCE_CHECKS.find((c) => c.id === id)!.label;
+  // A line only counts when Claude's index points at a real closer-side
+  // message — a stray index at a prospect message never scores.
+  const outboundAt = (index: number): string | null => {
+    const m = Number.isInteger(index) && index >= 1 && index <= messages.length ? messages[index - 1] : null;
+    return m && m.direction === "outbound" ? m.sentAt : null;
+  };
+  const introIdx = semantic.intro_index;
+  const discoveryIdx = semantic.discovery_index;
+  const introAt = outboundAt(introIdx);
+  const discoveryAt = outboundAt(discoveryIdx);
+
+  // Timing is deterministic once the intro is located: the prospect's first
+  // reply after it, then the closer side's first message after that reply.
+  let leadReplyAt: string | null = null;
+  let closerReplyAt: string | null = null;
+  let closerReplyIdx = 0;
+  if (introAt) {
+    for (let i = introIdx; i < messages.length; i++) {
+      const m = messages[i];
+      if (!m.sentAt) continue;
+      if (!leadReplyAt) {
+        if (m.direction === "inbound") leadReplyAt = m.sentAt;
+        continue;
+      }
+      if (m.direction === "outbound") {
+        closerReplyAt = m.sentAt;
+        closerReplyIdx = i + 1;
+        break;
+      }
+    }
+  }
+  const responseSeconds =
+    leadReplyAt && closerReplyAt
+      ? Math.max(0, (new Date(closerReplyAt).getTime() - new Date(leadReplyAt).getTime()) / 1000)
+      : null;
+
   return [
+    {
+      id: "intro",
+      label: label("intro"),
+      applicable: true,
+      passed: Boolean(introAt),
+      evidence: introAt ? semantic.intro_evidence : "",
+      at: introAt,
+      leadReplyAt,
+      closerReplyAt,
+      responseSeconds,
+    },
     {
       id: "discovery",
       label: label("discovery"),
       applicable: true,
-      passed: semantic.discovery_asked,
-      evidence: semantic.discovery_evidence,
-    },
-    {
-      id: "commitment",
-      label: label("commitment"),
-      applicable: true,
-      passed: semantic.commitment_asked,
-      evidence: semantic.commitment_evidence,
+      passed: Boolean(discoveryAt),
+      evidence: discoveryAt ? semantic.discovery_evidence : "",
+      at: discoveryAt,
+      directReply: discoveryAt ? closerReplyIdx === discoveryIdx : null,
     },
   ];
+}
+
+// ── One appointment's thread → verdict ────────────────────────────────────
+
+type GradeOutcome =
+  | { status: "no_thread" }
+  | { status: "failed" }
+  | { status: "graded"; checks: CheckVerdict[] };
+
+/**
+ * Fetch the SendBlue thread for one appointment, window it to booking → call
+ * start + 1h, and run the one semantic Claude call. Shared by fresh grading
+ * and the legacy re-grade so both paths score identically.
+ */
+async function gradeThread(args: {
+  phone: string;
+  startIso: string;
+  bookedAtIso: string;
+  repKey: string | null;
+  contactName: string | null;
+}): Promise<GradeOutcome> {
+  // The SendBlue thread — group chats expanded so the closer-side outbound
+  // messages are present (number= alone returns only the prospect's side).
+  const { messages: rawMessages } = await getThreadMessages(args.phone, { limit: SENDBLUE_FETCH_LIMIT });
+  const startMs = new Date(args.startIso).getTime();
+  const bookedMs = new Date(args.bookedAtIso).getTime();
+  const windowFrom = Math.min(bookedMs, startMs);
+  const windowTo = startMs + THREAD_TAIL_MS;
+  const messages: ThreadMessage[] = rawMessages
+    .filter((m) => {
+      const t = m.sentAt ? new Date(m.sentAt).getTime() : NaN;
+      return Number.isFinite(t) && t >= windowFrom && t <= windowTo;
+    })
+    .sort((a, b) => new Date(a.sentAt || 0).getTime() - new Date(b.sentAt || 0).getTime())
+    .map((m) => ({ content: m.content, direction: m.direction, sentAt: m.sentAt }));
+
+  if (messages.length === 0) return { status: "no_thread" };
+
+  const semantic = await askClaudeForVerdict(
+    buildPrompt({
+      repName: (args.repKey && REPS_BY_KEY[args.repKey]?.name) || "the closer",
+      contactName: args.contactName,
+      bookedAtIso: args.bookedAtIso,
+      startIso: args.startIso,
+      messages,
+    }),
+  );
+  if (!semantic) return { status: "failed" };
+  return { status: "graded", checks: buildChecks(semantic, messages) };
 }
 
 // ── The run ───────────────────────────────────────────────────────────────
@@ -274,6 +380,8 @@ export interface AdherenceRunResult {
   graded: number;
   thread_missing: number;
   claude_failed: number;
+  /** Old-rubric rows re-scored this run (budget left after fresh grading). */
+  regraded: number;
   notes: string[];
 }
 
@@ -309,6 +417,7 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
     graded: 0,
     thread_missing: 0,
     claude_failed: 0,
+    regraded: 0,
     notes,
   };
 
@@ -460,22 +569,14 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
       continue;
     }
 
-    // The SendBlue thread — group chats expanded so the closer-side outbound
-    // messages are present (number= alone returns only the prospect's side).
-    const { messages: rawMessages } = await getThreadMessages(phone, { limit: SENDBLUE_FETCH_LIMIT });
-    const startMs = new Date(startIso).getTime();
-    const bookedMs = new Date(bookedAtIso).getTime();
-    const windowFrom = Math.min(bookedMs, startMs);
-    const windowTo = startMs + THREAD_TAIL_MS;
-    const messages: ThreadMessage[] = rawMessages
-      .filter((m) => {
-        const t = m.sentAt ? new Date(m.sentAt).getTime() : NaN;
-        return Number.isFinite(t) && t >= windowFrom && t <= windowTo;
-      })
-      .sort((a, b) => new Date(a.sentAt || 0).getTime() - new Date(b.sentAt || 0).getTime())
-      .map((m) => ({ content: m.content, direction: m.direction, sentAt: m.sentAt }));
-
-    if (messages.length === 0) {
+    const graded = await gradeThread({
+      phone,
+      startIso,
+      bookedAtIso,
+      repKey,
+      contactName: appt?.contact_name ?? null,
+    });
+    if (graded.status === "no_thread") {
       inserts.push({
         ...rowBase,
         score: null,
@@ -489,23 +590,12 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
       base.thread_missing += 1;
       continue;
     }
-
-    // The one semantic Claude call.
-    const semantic = await askClaudeForVerdict(
-      buildPrompt({
-        repName: (repKey && REPS_BY_KEY[repKey]?.name) || "the closer",
-        contactName: appt?.contact_name ?? null,
-        bookedAtIso,
-        startIso,
-        messages,
-      }),
-    );
-    if (!semantic) {
+    if (graded.status === "failed") {
       base.claude_failed += 1;
       continue; // no row — a later run retries this appointment
     }
 
-    const checks = buildChecks(semantic);
+    const checks = graded.checks;
     const applicable = checks.filter((c) => c.applicable).length;
     const passed = checks.filter((c) => c.applicable && c.passed).length;
     inserts.push({
@@ -533,6 +623,89 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
           return { ...base, migration_pending: true, skipped: "metrics_adherence_scores missing — paste migration 115 first." };
         }
         throw new Error(`adherence insert failed: ${error.message}`);
+      }
+    }
+  }
+
+  // 6) Legacy re-grade — rows scored under the pre-2026-09-17 rubric carry no
+  //    'intro' check (and no timing). Re-score them with whatever budget the
+  //    fresh grading left, newest first, so history fills in over a few runs.
+  //    Rows with no thread are left alone (nothing to re-read).
+  const regradeBudget = Math.max(0, MAX_GRADES_PER_RUN - queue.length);
+  if (regradeBudget > 0) {
+    const { rows: legacy } = await safeFetchAllRows<{
+      appointment_key: string;
+      client_key: string;
+      lead_key: string | null;
+      rep_key: string | null;
+    }>((from, to) =>
+      db
+        .schema("warehouse")
+        .from("metrics_adherence_scores")
+        .select("appointment_key, client_key, lead_key, rep_key")
+        .eq("kind", "pre_call")
+        .eq("thread_found", true)
+        .not("checks", "cs", JSON.stringify([{ id: "intro" }]))
+        .order("graded_at", { ascending: false })
+        .range(from, to),
+    );
+    const targets = legacy.slice(0, regradeBudget);
+    if (targets.length > 0) {
+      type LegacyAppt = AppointmentRow & { created_at: string | null };
+      const legacyAppts = new Map<string, LegacyAppt>();
+      for (const ids of chunk(targets.map((t) => t.appointment_key), 200)) {
+        const { rows } = await safeFetchAllRows<LegacyAppt>((from, to) =>
+          db
+            .schema("warehouse")
+            .from("ghl_appointments")
+            .select("appointment_id, contact_phone, contact_name, assigned_user_id, start_time, created_at")
+            .in("appointment_id", ids)
+            .order("appointment_id", { ascending: true })
+            .range(from, to),
+        );
+        for (const r of rows) legacyAppts.set(r.appointment_id, r);
+      }
+
+      const regrades: ScoreInsert[] = [];
+      for (const t of targets) {
+        const appt = legacyAppts.get(t.appointment_key);
+        const phone = appt?.contact_phone?.trim() || null;
+        const startIso = appt?.start_time || null;
+        const bookedAtIso = appt?.created_at || startIso;
+        if (!phone || !startIso || !bookedAtIso) continue;
+        const repKey = t.rep_key ?? repKeyFromGhlUserId(appt?.assigned_user_id) ?? null;
+        const graded = await gradeThread({
+          phone,
+          startIso,
+          bookedAtIso,
+          repKey,
+          contactName: appt?.contact_name ?? null,
+        });
+        if (graded.status !== "graded") continue;
+        const applicable = graded.checks.filter((c) => c.applicable).length;
+        const passed = graded.checks.filter((c) => c.applicable && c.passed).length;
+        regrades.push({
+          client_key: t.client_key,
+          appointment_key: t.appointment_key,
+          lead_key: t.lead_key,
+          rep_key: repKey,
+          kind: "pre_call",
+          score: applicable > 0 ? passed / applicable : null,
+          applicable_checks: applicable,
+          passed_checks: passed,
+          checks: graded.checks,
+          thread_found: true,
+          model: CLAUDE_MODEL,
+          notes: "re-graded under the intro + discovery rubric (2026-09-17)",
+        });
+        base.regraded += 1;
+      }
+      for (const batch of chunk(regrades, 50)) {
+        const { error } = await db
+          .schema("warehouse")
+          .from("metrics_adherence_scores")
+          .upsert(batch, { onConflict: "kind,appointment_key" });
+        if (error) throw new Error(`adherence regrade upsert failed: ${error.message}`);
       }
     }
   }
