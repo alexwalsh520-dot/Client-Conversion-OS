@@ -475,6 +475,7 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
           .range(from, to),
       );
       const targets = legacy.slice(0, regradeBudget);
+      notes.push(`legacy re-grade: ${legacy.length} old-rubric rows, budget ${regradeBudget}, targets ${targets.length}`);
       if (targets.length > 0) {
         type LegacyAppt = AppointmentRow & { created_at: string | null };
         const legacyAppts = new Map<string, LegacyAppt>();
@@ -490,18 +491,21 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
           );
           for (const r of rows) legacyAppts.set(r.appointment_id, r);
         }
+        notes.push(`legacy re-grade: ${legacyAppts.size}/${targets.length} appointments found`);
+        const skipped = { no_phone: 0, no_start: 0, no_thread: 0, claude_failed: 0, out_of_time: 0 };
 
         const regrades: ScoreInsert[] = [];
         for (const t of targets) {
           if (outOfTime()) {
-            notes.push("time budget reached — remaining legacy rows re-grade next run");
-            break;
+            skipped.out_of_time += 1;
+            continue;
           }
           const appt = legacyAppts.get(t.appointment_key);
           const phone = appt?.contact_phone?.trim() || null;
           const startIso = appt?.start_time || null;
           const bookedAtIso = appt?.created_at || startIso;
-          if (!phone || !startIso || !bookedAtIso) continue;
+          if (!phone) { skipped.no_phone += 1; continue; }
+          if (!startIso || !bookedAtIso) { skipped.no_start += 1; continue; }
           const repKey = t.rep_key ?? repKeyFromGhlUserId(appt?.assigned_user_id) ?? null;
           const graded = await gradeThread({
             phone,
@@ -510,7 +514,11 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
             repKey,
             contactName: appt?.contact_name ?? null,
           });
-          if (graded.status !== "graded") continue;
+          if (graded.status !== "graded") {
+            if (graded.status === "no_thread") skipped.no_thread += 1;
+            else skipped.claude_failed += 1;
+            continue;
+          }
           const applicable = graded.checks.filter((c) => c.applicable).length;
           const passed = graded.checks.filter((c) => c.applicable && c.passed).length;
           regrades.push({
@@ -530,9 +538,9 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
           base.regraded += 1;
           await persistRows(regrades.splice(0, regrades.length), false);
         }
+        notes.push(`legacy re-grade: regraded ${base.regraded}, skipped ${JSON.stringify(skipped)}`);
       }
     }
-
   };
 
   // 1) Sales bookings whose scheduled start is in the past N ET days.
