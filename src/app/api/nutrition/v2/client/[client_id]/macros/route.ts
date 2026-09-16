@@ -23,7 +23,11 @@ import {
 } from "@/lib/nutrition/macro-adjust";
 
 export const runtime = "nodejs";
-export const maxDuration = 10;
+// 10s was too tight — a cold-start plus slow Supabase handshake was
+// tipping the editor into HTTP 504 "failed to load macros" during
+// meal-plan reviews. The endpoint itself is two queries + math, so
+// 30s is a generous safety margin without hiding real slowness.
+export const maxDuration = 30;
 
 export async function GET(
   req: NextRequest,
