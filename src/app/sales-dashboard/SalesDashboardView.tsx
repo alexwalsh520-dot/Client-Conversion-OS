@@ -980,8 +980,9 @@ export default function SalesDashboardView() {
                   </div>
                   <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "8px 2px 0" }}>
                     Pre-call adherence is AI-graded from each call&apos;s SendBlue thread on
-                    two lines only: the discovery line (&quot;make it worth your while&quot;) and
-                    the commitment line (&quot;any reason you wouldn&apos;t make it&quot;). Scope:
+                    the two SOP lines: the intro (&quot;good to meet you — got you in for
+                    &lt;time&gt;&quot;) and the discovery line (&quot;what do you want out of the
+                    call&quot;), plus how fast the closer answered the prospect&apos;s reply. Scope:
                     strategy sessions + onboarding calls taken by our reps (grading runs every
                     2 hours). Calls with no thread found are excluded from averages.
                   </p>

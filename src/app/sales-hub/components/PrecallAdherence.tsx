@@ -15,10 +15,18 @@ interface LineStat {
 }
 
 interface ShowBucket {
+  label: string;
   calls: number;
   shows: number;
   rate: number | null;
   cashCollected: number;
+}
+
+interface ResponseStat {
+  samples: number;
+  averageSeconds: number | null;
+  medianSeconds: number | null;
+  slowestSeconds: number | null;
 }
 
 interface CloserRow {
@@ -26,8 +34,11 @@ interface CloserRow {
   graded: number;
   threads: number;
   threadRate: number | null;
+  intro: LineStat;
+  leadReplied: LineStat;
   discovery: LineStat;
-  commitment: LineStat;
+  discoveryDirect: LineStat;
+  response: ResponseStat;
   shows: number;
   knownOutcomes: number;
   showRate: number | null;
@@ -41,8 +52,12 @@ interface CallRow {
   startIso: string;
   etDay: string;
   threadFound: boolean;
+  legacy: boolean;
+  intro: boolean | null;
+  leadReplied: boolean | null;
+  responseSeconds: number | null;
   discovery: boolean | null;
-  commitment: boolean | null;
+  discoveryDirect: boolean | null;
   outcome: "show" | "no_show" | "upcoming" | "unknown";
   cashCollected: number;
 }
@@ -52,11 +67,16 @@ interface PrecallResult {
     graded: number;
     threads: number;
     threadRate: number | null;
+    legacyPending: number;
+    intro: LineStat;
+    leadReplied: LineStat;
     discovery: LineStat;
-    commitment: LineStat;
-    showWhenDiscoveryAsked: ShowBucket;
-    showWhenDiscoveryNotAsked: ShowBucket;
-    showWhenNoThread: ShowBucket;
+    discoveryDirect: LineStat;
+    response: ResponseStat;
+    showByDiscovery: ShowBucket[];
+    showByIntro: ShowBucket[];
+    showByLeadReply: ShowBucket[];
+    showByResponse: ShowBucket[];
   };
   closers: CloserRow[];
   calls: CallRow[];
@@ -67,6 +87,17 @@ const CALL_LIST_LIMIT = 30;
 
 /** Rates are null when the denominator is 0. */
 const pct = (v: number | null) => (v === null ? "—" : fmtPercent(v));
+
+function fmtDuration(seconds: number | null): string {
+  if (seconds === null) return "—";
+  const s = Math.round(seconds);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${s % 60}s`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ${m % 60}m`;
+  return `${Math.floor(h / 24)}d ${h % 24}h`;
+}
 
 /* ── Component ────────────────────────────────────────────────────── */
 
@@ -79,9 +110,7 @@ export default function PrecallAdherence({ filters }: { filters: Filters }) {
   const load = useCallback(async () => {
     const { dateFrom, dateTo } = getEffectiveDates(filters);
     try {
-      const res = await fetch(
-        `/api/sales-hub/precall-adherence?dateFrom=${dateFrom}&dateTo=${dateTo}`,
-      );
+      const res = await fetch(`/api/sales-hub/precall-adherence?dateFrom=${dateFrom}&dateTo=${dateTo}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setData(await res.json());
       setError(null);
@@ -117,29 +146,55 @@ export default function PrecallAdherence({ filters }: { filters: Filters }) {
 
   return (
     <div>
-      {/* Team cards */}
+      {/* Team cards — the SOP: intro → prospect replies → discovery line */}
       <div className="metric-grid metric-grid-4" style={{ marginBottom: 16 }}>
         <Card
           label="Graded Calls"
           value={fmtNumber(team.graded)}
-          sub={`${fmtNumber(team.threads)} with a SendBlue thread (${pct(team.threadRate)})`}
+          sub={
+            <>
+              {fmtNumber(team.threads)} with a SendBlue thread ({pct(team.threadRate)})
+              {team.legacyPending > 0 && (
+                <> · {fmtNumber(team.legacyPending)} still on the old rubric — re-grading every 2h</>
+              )}
+            </>
+          }
+        />
+        <Card
+          label="Intro Sent"
+          value={pct(team.intro.rate)}
+          sub={`${fmtNumber(team.intro.asked)} of ${fmtNumber(team.intro.eligible)} — “good to meet you, got you in for <time>” · prospect replied ${pct(team.leadReplied.rate)}`}
         />
         <Card
           label="Discovery Line Asked"
           value={pct(team.discovery.rate)}
-          sub={`${fmtNumber(team.discovery.asked)} of ${fmtNumber(team.discovery.eligible)} threads — “what do you want out of the call”`}
+          sub={`${fmtNumber(team.discovery.asked)} of ${fmtNumber(team.discovery.eligible)} threads — “what do you want out of the call” · as the direct reply ${pct(team.discoveryDirect.rate)}`}
         />
         <Card
-          label="Commitment Line Asked"
-          value={pct(team.commitment.rate)}
-          sub={`${fmtNumber(team.commitment.asked)} of ${fmtNumber(team.commitment.eligible)} threads — “any reason you wouldn’t make it”`}
-          color={team.commitment.rate !== null && team.commitment.rate < 25 ? "var(--danger)" : undefined}
+          label="Closer Response Time"
+          value={fmtDuration(team.response.averageSeconds)}
+          sub={`prospect’s reply → closer’s next message · median ${fmtDuration(team.response.medianSeconds)} · slowest ${fmtDuration(team.response.slowestSeconds)} · n=${team.response.samples}`}
+          color={
+            team.response.averageSeconds !== null && team.response.averageSeconds > 1800
+              ? "var(--danger)"
+              : undefined
+          }
         />
-        <Card
-          label="Show Rate: Line vs No Line"
-          value={`${pct(team.showWhenDiscoveryAsked.rate)} vs ${pct(team.showWhenDiscoveryNotAsked.rate)}`}
-          sub={`asked n=${team.showWhenDiscoveryAsked.calls} · not asked n=${team.showWhenDiscoveryNotAsked.calls} · no thread ${pct(team.showWhenNoThread.rate)} (n=${team.showWhenNoThread.calls})`}
-        />
+      </div>
+
+      {/* Show rate by everything */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+          gap: 12,
+          marginBottom: 16,
+        }}
+      >
+        <ShowSplit title="Show rate · discovery line" buckets={team.showByDiscovery} />
+        <ShowSplit title="Show rate · intro" buckets={team.showByIntro} />
+        <ShowSplit title="Show rate · prospect replied" buckets={team.showByLeadReply} />
+        <ShowSplit title="Show rate · closer response speed" buckets={team.showByResponse} />
       </div>
 
       {/* Per-closer table */}
@@ -149,11 +204,14 @@ export default function PrecallAdherence({ filters }: { filters: Filters }) {
             <tr>
               <th>Closer</th>
               <th>Graded</th>
-              <th>Thread Found</th>
+              <th>Thread</th>
+              <th>Intro Sent</th>
+              <th>Prospect Replied</th>
+              <th>Response (avg · median)</th>
               <th>Discovery Line</th>
-              <th>Commitment Line</th>
+              <th>Direct Reply</th>
               <th>Show Rate</th>
-              <th>Cash Collected</th>
+              <th>Cash</th>
             </tr>
           </thead>
           <tbody>
@@ -166,12 +224,24 @@ export default function PrecallAdherence({ filters }: { filters: Filters }) {
                   <Faint> ({c.threads}/{c.graded})</Faint>
                 </td>
                 <td>
+                  {pct(c.intro.rate)}
+                  <Faint> ({c.intro.asked}/{c.intro.eligible})</Faint>
+                </td>
+                <td>
+                  {pct(c.leadReplied.rate)}
+                  <Faint> ({c.leadReplied.asked}/{c.leadReplied.eligible})</Faint>
+                </td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  {fmtDuration(c.response.averageSeconds)}
+                  <Faint> · {fmtDuration(c.response.medianSeconds)} · n={c.response.samples}</Faint>
+                </td>
+                <td>
                   {pct(c.discovery.rate)}
                   <Faint> ({c.discovery.asked}/{c.discovery.eligible})</Faint>
                 </td>
                 <td>
-                  {pct(c.commitment.rate)}
-                  <Faint> ({c.commitment.asked}/{c.commitment.eligible})</Faint>
+                  {pct(c.discoveryDirect.rate)}
+                  <Faint> ({c.discoveryDirect.asked}/{c.discoveryDirect.eligible})</Faint>
                 </td>
                 <td>
                   {pct(c.showRate)}
@@ -182,7 +252,7 @@ export default function PrecallAdherence({ filters }: { filters: Filters }) {
             ))}
             {data.closers.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ textAlign: "center", color: "var(--text-muted)" }}>
+                <td colSpan={10} style={{ textAlign: "center", color: "var(--text-muted)" }}>
                   No graded calls in this range yet — the grader runs every 2 hours.
                 </td>
               </tr>
@@ -193,21 +263,10 @@ export default function PrecallAdherence({ filters }: { filters: Filters }) {
 
       {/* Per-call log */}
       <div className="glass-static" style={{ overflow: "auto" }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "12px 14px 0",
-            fontSize: 13,
-            fontWeight: 600,
-          }}
-        >
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 14px 0", fontSize: 13, fontWeight: 600 }}>
           <ClipboardCheck size={15} style={{ color: "var(--text-muted)" }} />
           Graded calls
-          <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>
-            ({fmtNumber(data.calls.length)} in range)
-          </span>
+          <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>({fmtNumber(data.calls.length)} in range)</span>
         </div>
         <table className="data-table">
           <thead>
@@ -216,8 +275,10 @@ export default function PrecallAdherence({ filters }: { filters: Filters }) {
               <th>Lead</th>
               <th>Closer</th>
               <th>Thread</th>
+              <th>Intro</th>
+              <th>Replied</th>
+              <th>Response</th>
               <th>Discovery</th>
-              <th>Commitment</th>
               <th>Outcome</th>
               <th>Cash</th>
             </tr>
@@ -226,18 +287,26 @@ export default function PrecallAdherence({ filters }: { filters: Filters }) {
             {visibleCalls.map((call) => (
               <tr key={call.appointmentKey}>
                 <td style={{ whiteSpace: "nowrap" }}>{call.etDay}</td>
-                <td>{call.leadName}</td>
+                <td>
+                  {call.leadName}
+                  {call.legacy && <Faint> · old rubric</Faint>}
+                </td>
                 <td>{call.closer}</td>
                 <td><Mark value={call.threadFound} /></td>
-                <td><Mark value={call.discovery} /></td>
-                <td><Mark value={call.commitment} /></td>
+                <td><Mark value={call.intro} /></td>
+                <td><Mark value={call.leadReplied} /></td>
+                <td style={{ whiteSpace: "nowrap" }}>{fmtDuration(call.responseSeconds)}</td>
+                <td>
+                  <Mark value={call.discovery} />
+                  {call.discoveryDirect === true && <Faint> direct</Faint>}
+                </td>
                 <td><OutcomeBadge outcome={call.outcome} /></td>
                 <td>{call.cashCollected > 0 ? fmtDollars(call.cashCollected) : "—"}</td>
               </tr>
             ))}
             {data.calls.length === 0 && (
               <tr>
-                <td colSpan={8} style={{ textAlign: "center", color: "var(--text-muted)" }}>
+                <td colSpan={10} style={{ textAlign: "center", color: "var(--text-muted)" }}>
                   Nothing graded in this range.
                 </td>
               </tr>
@@ -260,9 +329,7 @@ export default function PrecallAdherence({ filters }: { filters: Filters }) {
               cursor: "pointer",
             }}
           >
-            {showAllCalls
-              ? "Show fewer"
-              : `Show all ${fmtNumber(data.calls.length)} calls`}
+            {showAllCalls ? "Show fewer" : `Show all ${fmtNumber(data.calls.length)} calls`}
           </button>
         )}
       </div>
@@ -272,26 +339,40 @@ export default function PrecallAdherence({ filters }: { filters: Filters }) {
 
 /* ── Bits ─────────────────────────────────────────────────────────── */
 
-function Card({
-  label,
-  value,
-  sub,
-  color,
-}: {
-  label: string;
-  value: ReactNode;
-  sub?: ReactNode;
-  color?: string;
-}) {
+function Card({ label, value, sub, color }: { label: string; value: ReactNode; sub?: ReactNode; color?: string }) {
   return (
     <div className="glass-static metric-card">
       <div className="metric-card-label">{label}</div>
       <div className="metric-card-value" style={color ? { color } : undefined}>{value}</div>
-      {sub && (
-        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, lineHeight: 1.4 }}>
-          {sub}
-        </div>
-      )}
+      {sub && <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, lineHeight: 1.4 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function ShowSplit({ title, buckets }: { title: string; buckets: ShowBucket[] }) {
+  return (
+    <div className="glass-static" style={{ padding: "10px 12px" }}>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 6 }}>
+        {title}
+      </div>
+      <table className="data-table" style={{ fontSize: 12 }}>
+        <tbody>
+          {buckets.map((b) => (
+            <tr key={b.label}>
+              <td>{b.label}</td>
+              <td style={{ fontWeight: 700, whiteSpace: "nowrap" }}>{pct(b.rate)}</td>
+              <td style={{ whiteSpace: "nowrap" }}>
+                <Faint>{b.shows}/{b.calls} · {fmtDollars(b.cashCollected)}</Faint>
+              </td>
+            </tr>
+          ))}
+          {buckets.length === 0 && (
+            <tr>
+              <td colSpan={3} style={{ color: "var(--text-muted)" }}>No data yet</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -303,7 +384,7 @@ function Faint({ children }: { children: ReactNode }) {
 function Mark({ value }: { value: boolean | null }) {
   if (value === null) return <Minus size={14} style={{ color: "var(--text-muted)" }} />;
   return value ? (
-    <Check size={15} style={{ color: "var(--success, #22c55e)" }} />
+    <Check size={15} style={{ color: "var(--success)" }} />
   ) : (
     <X size={15} style={{ color: "var(--danger)" }} />
   );
@@ -311,10 +392,10 @@ function Mark({ value }: { value: boolean | null }) {
 
 function OutcomeBadge({ outcome }: { outcome: CallRow["outcome"] }) {
   const map: Record<CallRow["outcome"], { label: string; color: string }> = {
-    show: { label: "Show", color: "var(--success, #22c55e)" },
+    show: { label: "Show", color: "var(--success)" },
     no_show: { label: "No-show", color: "var(--danger)" },
     upcoming: { label: "Upcoming", color: "var(--text-muted)" },
-    unknown: { label: "Not logged", color: "var(--warning, #eab308)" },
+    unknown: { label: "Not logged", color: "var(--warning)" },
   };
   const { label, color } = map[outcome];
   return <span style={{ color, fontWeight: 600, fontSize: 12 }}>{label}</span>;
