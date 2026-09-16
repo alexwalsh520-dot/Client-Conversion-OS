@@ -55,15 +55,25 @@ export async function loadDownsellSubscriptions(stripe = stripeClient()): Promis
     out.push({ id: s.id, status: s.status, created: s.created, endedAt });
   }
   // Involuntary churn: the first invoice that was never paid marks the death.
+  // One invoice read per unpaid subscription (about a hundred today), run
+  // eight at a time so the cron stays far inside its 300 s budget.
   const bySub = new Map(out.map((s) => [s.id, s]));
-  for (const id of unpaidIds) {
+  const firstUnpaidInvoice = async (id: string): Promise<number | null> => {
     let first: number | null = null;
     for await (const inv of stripe.invoices.list({ subscription: id, limit: 100 })) {
       if (inv.status === "paid") continue;
       if (first === null || inv.created < first) first = inv.created;
     }
-    const sub = bySub.get(id)!;
-    sub.endedAt = first ?? sub.created;
+    return first;
+  };
+  const BATCH = 8;
+  for (let i = 0; i < unpaidIds.length; i += BATCH) {
+    const slice = unpaidIds.slice(i, i + BATCH);
+    const firsts = await Promise.all(slice.map(firstUnpaidInvoice));
+    slice.forEach((id, j) => {
+      const sub = bySub.get(id)!;
+      sub.endedAt = firsts[j] ?? sub.created;
+    });
   }
   return out;
 }
