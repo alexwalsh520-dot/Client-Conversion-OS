@@ -205,7 +205,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       q2: body.q2,
       q3: body.q3,
       q4: body.q4,
-      openResponse: q5,
+      openResponse: q5 ?? "",
     });
     if (!r.ok) {
       console.warn("[api/check-in/submit] tracker notify failed:", r.error);

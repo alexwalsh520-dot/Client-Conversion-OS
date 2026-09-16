@@ -9,6 +9,7 @@ const TABS = [
   { href: "/coaching-v3/clients", label: "Clients", adminOnly: false },
   { href: "/coaching-v3/coaches", label: "Coaches", adminOnly: false },
   { href: "/coaching-v3/retentions", label: "Retentions", adminOnly: false },
+  { href: "/coaching-v3/onboarding", label: "Onboarding", adminOnly: false },
   // Money is admin-only. Never visible to coaches even when Coaching V3 as a
   // whole is opened up to them — the tab link itself is filtered out here,
   // and the /money page checks role === "admin" server-side as a defense in
