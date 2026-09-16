@@ -126,7 +126,11 @@ export default function ClientsView({ rows }: { rows: Row[] }) {
   const [search, setSearch] = useState("");
   const [coachFilter, setCoachFilter] = useState<string>("__all__");
   const [sortKey, setSortKey] = useState<SortKey>("score");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  // Default direction is high-to-low retention so managers see the
+  // healthiest clients first (MAS 2026-09-17). Rows with an "unknown"
+  // bucket sink to the bottom regardless of direction — see the score
+  // branch below.
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [drawerId, setDrawerId] = useState<number | null>(null);
 
   const coaches = useMemo(() => {
@@ -152,9 +156,17 @@ export default function ClientsView({ rows }: { rows: Row[] }) {
     arr.sort((a, b) => {
       let cmp = 0;
       switch (sortKey) {
-        case "score":
+        case "score": {
+          // "Unknown" bucket = no check-in, no workouts, no coach
+          // contact. Those rows sink to the bottom in every direction so
+          // no-signal clients never sit at the top of a manager's view.
+          const aUnknown = a.score.bucket === "unknown";
+          const bUnknown = b.score.bucket === "unknown";
+          if (aUnknown && !bUnknown) return 1;
+          if (!aUnknown && bUnknown) return -1;
           cmp = a.score.score - b.score.score;
           break;
+        }
         case "days":
           cmp = (a.daysRemaining ?? 9999) - (b.daysRemaining ?? 9999);
           break;
