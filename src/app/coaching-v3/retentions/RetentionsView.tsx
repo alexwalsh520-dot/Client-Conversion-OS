@@ -74,6 +74,10 @@ type Props = {
   openCycles: OpenCycle[];
   notes: Note[];
   monthRetention: MonthRetention;
+  monthConversion: {
+    retainedCount: number;
+    oppLostCount: number;
+  };
 };
 
 function fmtWhen(iso: string): string {
@@ -93,7 +97,7 @@ function bucketClass(b: RetentionScore["bucket"]): "g" | "a" | "r" | "u" {
   return "u";
 }
 
-export default function RetentionsView({ hubClients, openCycles, notes, monthRetention }: Props) {
+export default function RetentionsView({ hubClients, openCycles, notes, monthRetention, monthConversion }: Props) {
   // Only clients in the retention window (have an open cycle). Coaching v3
   // is deliberately narrower than the legacy Retentions tab — the score/notes/
   // detail all key off open cycles, and clients out of the window don't need
@@ -273,6 +277,27 @@ export default function RetentionsView({ hubClients, openCycles, notes, monthRet
             {rows.filter((r) => r.client.score.bucket === "likely").length}
           </div>
           <div className="d">Score 70+</div>
+        </div>
+        <div className="h3-kpi">
+          <div className="l">Conversion rate</div>
+          <div
+            className={`v ${
+              monthConversion.oppLostCount === 0
+                ? ""
+                : monthConversion.retainedCount >= monthConversion.oppLostCount
+                  ? "g"
+                  : monthConversion.retainedCount * 2 >= monthConversion.oppLostCount
+                    ? "a"
+                    : "r"
+            }`}
+          >
+            {monthConversion.oppLostCount === 0
+              ? "—"
+              : `${Math.round((monthConversion.retainedCount / monthConversion.oppLostCount) * 100)}%`}
+          </div>
+          <div className="d">
+            {monthConversion.retainedCount} retained · {monthConversion.oppLostCount} lost
+          </div>
         </div>
       </div>
 

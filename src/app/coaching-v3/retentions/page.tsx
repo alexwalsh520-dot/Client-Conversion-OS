@@ -13,10 +13,32 @@ export default async function RetentionsPageV3() {
   // render doesn't wait on a second round-trip. Client-side actions still
   // hit /api/coaching/retention for mutations.
   const db = getServiceSupabase();
+
+  // First-of-current-month, UTC. Used for the Conversion Rate KPI —
+  // retentions_this_month / opp_lost_this_month, both from retention_cycles
+  // so the ratio stays self-consistent (Sales Tracker $ counts drift from
+  // the operational state when coaches close cycles manually).
+  const now = new Date();
+  const monthStartIso = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+  ).toISOString();
+
   const { data: openCycles } = await db
     .from("retention_cycles")
     .select("id, client_id, entered_window_at, end_date_at_entry")
     .is("outcome", null);
+  const { data: monthCycles } = await db
+    .from("retention_cycles")
+    .select("outcome")
+    .gte("outcome_at", monthStartIso)
+    .in("outcome", ["retained_4wk", "retained_12wk", "opp_lost"]);
+  let monthRetainedCount = 0;
+  let monthOppLostCount = 0;
+  for (const c of monthCycles ?? []) {
+    const o = (c as { outcome: string | null }).outcome;
+    if (o === "retained_4wk" || o === "retained_12wk") monthRetainedCount++;
+    else if (o === "opp_lost") monthOppLostCount++;
+  }
   const cycleIds = (openCycles ?? []).map((c) => c.id as number);
   const openClientIds = (openCycles ?? [])
     .map((c) => c.client_id as number | null)
@@ -109,6 +131,10 @@ export default async function RetentionsPageV3() {
         createdAt: (n as { created_at: string }).created_at,
       }))}
       monthRetention={hub.monthRetention}
+      monthConversion={{
+        retainedCount: monthRetainedCount,
+        oppLostCount: monthOppLostCount,
+      }}
     />
   );
 }
