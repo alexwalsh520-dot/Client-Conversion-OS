@@ -452,6 +452,7 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
   // Runs at the END of every run — including runs with nothing fresh to
   // grade — so the legacy backlog drains on the quiet 2-hourly runs too.
   const regradeLegacy = async (freshCount: number) => {
+    console.log("[adherence] regradeLegacy enter", { freshCount, MAX_REGRADES_PER_RUN, MAX_GRADES_PER_RUN });
     // 6) Legacy re-grade — rows scored under the pre-2026-09-17 rubric carry no
     //    'intro' check (and no timing). Re-score them with whatever budget the
     //    fresh grading left, newest first, so history fills in over a few runs.
@@ -475,6 +476,7 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
           .range(from, to),
       );
       const targets = legacy.slice(0, regradeBudget);
+      console.log("[adherence] legacy rows", legacy.length, "targets", targets.length);
       notes.push(`legacy re-grade: ${legacy.length} old-rubric rows, budget ${regradeBudget}, targets ${targets.length}`);
       if (targets.length > 0) {
         type LegacyAppt = AppointmentRow & { created_at: string | null };
@@ -576,6 +578,7 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
     if (!byAppointment.has(apptId)) byAppointment.set(apptId, e);
   }
   base.candidates = byAppointment.size;
+  console.log("[adherence] candidates", byAppointment.size);
   if (byAppointment.size === 0) {
     await regradeLegacy(0);
     return base;
@@ -601,8 +604,10 @@ export async function runAdherenceGrading(params?: { days?: number }): Promise<A
       if (byAppointment.delete(r.appointment_key)) base.already_graded += 1;
     }
   }
+  console.log("[adherence] after step 2, remaining", byAppointment.size, "already_graded", base.already_graded);
   if (byAppointment.size === 0) {
     await regradeLegacy(0);
+    console.log("[adherence] early exit after regradeLegacy, regraded", base.regraded, "notes", notes.length);
     return base;
   }
 
