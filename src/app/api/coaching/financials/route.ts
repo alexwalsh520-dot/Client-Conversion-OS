@@ -88,6 +88,38 @@ function findHeaderRow(grid: Grid, titleRow: number, titleCol: number): number |
   return null;
 }
 
+/**
+ * Title-independent header finder. Scans every row for the retention-table
+ * fingerprint: a Date cell that has a Payment cell and a Coach cell to its
+ * right, all within a small window. This is how we recover on months where
+ * Nicole didn't paste the "Flagship Retention Payments" title text
+ * (e.g. MAY 2026 tab), and it survives column reorders because we don't
+ * hard-code positions — only the co-occurrence pattern.
+ * Returns { row, col } for the Date cell of the header row.
+ */
+function findHeaderByFingerprint(grid: Grid): { row: number; col: number } | null {
+  const MAX_COL_GAP = 12; // Date + payment + coach are all in the retention block
+  for (let r = 0; r < grid.length; r++) {
+    const row = grid[r] ?? [];
+    for (let c = 0; c < row.length; c++) {
+      if (!HEADER_DATE.test((row[c] ?? "").toString())) continue;
+      // Look right for both a Payment header AND a Coach header within
+      // the window. Both are required so we don't false-match on the
+      // month-summary "Date" columns on the left side of the sheet.
+      let hasPayment = false;
+      let hasCoach = false;
+      const stop = Math.min(row.length, c + 1 + MAX_COL_GAP);
+      for (let k = c + 1; k < stop; k++) {
+        const v = (row[k] ?? "").toString();
+        if (HEADER_PAYMENT.test(v)) hasPayment = true;
+        if (HEADER_COACH.test(v)) hasCoach = true;
+      }
+      if (hasPayment && hasCoach) return { row: r, col: c };
+    }
+  }
+  return null;
+}
+
 interface RetentionColumns {
   date: number;
   name: number | null;
@@ -243,82 +275,102 @@ export async function GET(request: Request) {
     if (retentionGridRes?.data?.values) {
       const grid = retentionGridRes.data.values as Grid;
 
-      // 1. Find the "Flagship Retention Payments" title cell
+      // 1. Try to anchor on the "Flagship Retention Payments" title cell
+      //    first — it's the intended anchor. If it isn't found (some month
+      //    tabs like MAY 2026 omit the title but keep the header row), fall
+      //    back to fingerprint-matching the header row itself: a row that
+      //    contains a Date cell with Payment + Coach cells to its right.
       const title = findCell(grid, RETENTION_TITLE);
-      if (!title) {
-        diagnostics.warnings.push(
-          `Could not find "Flagship Retention Payments" anchor on ${monthTab} tab`,
-        );
-      } else {
+      let headerRowIdx: number | null = null;
+      let anchorCol = 0;
+      if (title) {
         diagnostics.retention_anchor_found = true;
         diagnostics.retention_title_cell = `row ${title.row + 1}, col ${title.col + 1}`;
-
-        // 2. Below the title, find the header row (contains a "Date" cell)
-        const headerRowIdx = findHeaderRow(grid, title.row, title.col);
+        anchorCol = title.col;
+        headerRowIdx = findHeaderRow(grid, title.row, title.col);
         if (headerRowIdx == null) {
           diagnostics.warnings.push(
             `Found retention title at row ${title.row + 1} but no "Date" header within ${HEADER_LOOKAHEAD} rows below`,
           );
+        }
+      }
+      // Fingerprint fallback — runs when the title anchor was missing OR
+      // the title was present but the header row wasn't in the small
+      // lookahead window.
+      if (headerRowIdx == null) {
+        const fp = findHeaderByFingerprint(grid);
+        if (fp) {
+          headerRowIdx = fp.row;
+          anchorCol = fp.col;
+          diagnostics.warnings.push(
+            `Recovered retention header on ${monthTab} via header fingerprint at row ${fp.row + 1} (no title anchor).`,
+          );
         } else {
-          diagnostics.retention_header_found = true;
-          const headerRow = grid[headerRowIdx] ?? [];
+          diagnostics.warnings.push(
+            `Could not find retention header on ${monthTab} tab (no title, no Date+Payment+Coach fingerprint).`,
+          );
+        }
+      }
 
-          try {
-            const cols = mapRetentionColumns(headerRow, title.col);
-            diagnostics.retention_columns = {
-              date: cols.date,
-              name: cols.name,
-              payment: cols.payment,
-              coach: cols.coach,
-              isNew: cols.isNew,
-              offer: cols.offer,
-              months: cols.months,
-            };
+      if (headerRowIdx != null) {
+        diagnostics.retention_header_found = true;
+        const headerRow = grid[headerRowIdx] ?? [];
 
-            // 3. Read data rows starting one below the header.
-            //    Nicole leaves visual gaps (2-3 empty rows) inside the
-            //    retention table on some month tabs — July 2026 has one
-            //    at rows 11-12 — so a single blank row is NOT the end of
-            //    the section. Stop only after `MAX_EMPTY_GAP` consecutive
-            //    empty rows, or when MAX_DATA_ROWS is reached.
-            const MAX_EMPTY_GAP = 6;
-            const endRow = Math.min(grid.length, headerRowIdx + 1 + MAX_DATA_ROWS);
-            let consecutiveEmpty = 0;
-            for (let r = headerRowIdx + 1; r < endRow; r++) {
-              const row = grid[r] ?? [];
-              const dateVal = (row[cols.date] ?? "").toString().trim();
-              const nameVal = cols.name != null ? (row[cols.name] ?? "").toString().trim() : "";
-              const paymentVal = cols.payment != null ? (row[cols.payment] ?? "").toString().trim() : "";
+        try {
+          const cols = mapRetentionColumns(headerRow, anchorCol);
+          diagnostics.retention_columns = {
+            date: cols.date,
+            name: cols.name,
+            payment: cols.payment,
+            coach: cols.coach,
+            isNew: cols.isNew,
+            offer: cols.offer,
+            months: cols.months,
+          };
 
-              if (!dateVal && !nameVal && !paymentVal) {
-                consecutiveEmpty++;
-                if (consecutiveEmpty >= MAX_EMPTY_GAP) break;
-                continue;
-              }
-              consecutiveEmpty = 0;
-              // Skip rows that have a date but no client name (template scaffold).
-              if (!nameVal) continue;
+          // 3. Read data rows starting one below the header.
+          //    Nicole leaves visual gaps (2-3 empty rows) inside the
+          //    retention table on some month tabs — July 2026 has one
+          //    at rows 11-12 — so a single blank row is NOT the end of
+          //    the section. Stop only after `MAX_EMPTY_GAP` consecutive
+          //    empty rows, or when MAX_DATA_ROWS is reached.
+          const MAX_EMPTY_GAP = 6;
+          const endRow = Math.min(grid.length, headerRowIdx + 1 + MAX_DATA_ROWS);
+          let consecutiveEmpty = 0;
+          for (let r = headerRowIdx + 1; r < endRow; r++) {
+            const row = grid[r] ?? [];
+            const dateVal = (row[cols.date] ?? "").toString().trim();
+            const nameVal = cols.name != null ? (row[cols.name] ?? "").toString().trim() : "";
+            const paymentVal = cols.payment != null ? (row[cols.payment] ?? "").toString().trim() : "";
 
-              retentions.push({
-                // call number isn't a guaranteed column anymore — use the
-                // sheet row number as a stable identifier instead
-                callNumber: `Row ${r + 1}`,
-                date: dateVal,
-                clientName: nameVal,
-                paymentTotal: parseMoney(paymentVal),
-                coach: cols.coach != null ? (row[cols.coach] ?? "").toString().trim() : "",
-                isNew: cols.isNew != null ? (row[cols.isNew] ?? "").toString().trim() : "",
-                offer: cols.offer != null ? (row[cols.offer] ?? "").toString().trim() : "",
-                monthsSold: cols.months != null
-                  ? parseInt((row[cols.months] ?? "0").toString(), 10) || 0
-                  : 0,
-              });
+            if (!dateVal && !nameVal && !paymentVal) {
+              consecutiveEmpty++;
+              if (consecutiveEmpty >= MAX_EMPTY_GAP) break;
+              continue;
             }
-          } catch (e) {
-            diagnostics.warnings.push(
-              `retention column mapping failed: ${e instanceof Error ? e.message : String(e)}`,
-            );
+            consecutiveEmpty = 0;
+            // Skip rows that have a date but no client name (template scaffold).
+            if (!nameVal) continue;
+
+            retentions.push({
+              // call number isn't a guaranteed column anymore — use the
+              // sheet row number as a stable identifier instead
+              callNumber: `Row ${r + 1}`,
+              date: dateVal,
+              clientName: nameVal,
+              paymentTotal: parseMoney(paymentVal),
+              coach: cols.coach != null ? (row[cols.coach] ?? "").toString().trim() : "",
+              isNew: cols.isNew != null ? (row[cols.isNew] ?? "").toString().trim() : "",
+              offer: cols.offer != null ? (row[cols.offer] ?? "").toString().trim() : "",
+              monthsSold: cols.months != null
+                ? parseInt((row[cols.months] ?? "0").toString(), 10) || 0
+                : 0,
+            });
           }
+        } catch (e) {
+          diagnostics.warnings.push(
+            `retention column mapping failed: ${e instanceof Error ? e.message : String(e)}`,
+          );
         }
       }
     }
