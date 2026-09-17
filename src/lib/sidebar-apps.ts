@@ -64,7 +64,7 @@ export const NAV_ITEMS: AppItem[] = [
   { href: "/setter-response-time", label: "Setter Response Time", icon: Timer },
   { href: "/lead-magnet", label: "Lead Magnet Funnel", icon: Magnet },
   { href: "/coaching", label: "Coaching", icon: Users },
-  { href: "/coaching-v3", label: "Coaching v3", icon: Users, adminOnly: true },
+  { href: "/coaching-v3", label: "Coaching v3", icon: Users },
   { href: "/coaching-v2", label: "Coaching v2", icon: Users },
   { href: "/partner-onboarding", label: "Client Onboarding", icon: Handshake },
   { href: "/testimonials", label: "Testimonials", icon: Star },
@@ -146,6 +146,8 @@ export function canViewApp(item: AppItem, v: ViewerAccess): boolean {
     // Video Testimonials manager rides on Coaching access (view + download).
     (item.href === "/testimonials/videos" && !!v.allowedTabs?.includes("/coaching")) ||
     // Coaching v2 is the same team, same data, new screens.
-    (item.href === "/coaching-v2" && !!v.allowedTabs?.includes("/coaching"))
+    (item.href === "/coaching-v2" && !!v.allowedTabs?.includes("/coaching")) ||
+    // Coaching v3 rides on /coaching access — team-wide rollout 2026-09-17.
+    (item.href === "/coaching-v3" && !!v.allowedTabs?.includes("/coaching"))
   );
 }

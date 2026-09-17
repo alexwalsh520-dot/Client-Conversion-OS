@@ -233,6 +233,12 @@ export default function AccessGate({ children }: { children: React.ReactNode }) 
     return <>{children}</>;
   }
 
+  // Coaching v3 rides on /coaching access — team-wide rollout 2026-09-17.
+  // Money still gates admin-only in the page and the sidebar entry.
+  if ((pathname === "/coaching-v3" || pathname.startsWith("/coaching-v3/")) && allowedTabs.includes("/coaching")) {
+    return <>{children}</>;
+  }
+
   // Video Testimonials manager is open to the whole coaching team for view +
   // download. Management actions (feature/delete) stay admin-only, enforced in
   // the page and the manage API — not by hiding the page.
