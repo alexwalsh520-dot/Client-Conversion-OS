@@ -282,11 +282,15 @@ export default function Sidebar() {
 
         {/* Bottom section */}
         <div className="sidebar-bottom">
-          {inHub && (
+          {(inHub || inV3Hub) && (
             <button
               type="button"
               className="sidebar-ask"
-              onClick={() => window.dispatchEvent(new CustomEvent("ccos-v2-ask"))}
+              onClick={() =>
+                window.dispatchEvent(
+                  new CustomEvent(inV3Hub ? "ccos-v3-ask" : "ccos-v2-ask"),
+                )
+              }
               title="Ask Ahmad"
             >
               <span className="sidebar-link-icon"><Loader size={16} /></span>

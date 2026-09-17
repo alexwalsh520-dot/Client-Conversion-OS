@@ -1,4 +1,5 @@
 import "./hub.css";
+import AskShell from "./components/AskShell";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,7 @@ export default async function CoachingV3Layout({ children }: { children: React.R
           <p className="h3-sub">Question-first coaching hub. Trial phase.</p>
         </div>
       </div>
-      {children}
+      <AskShell>{children}</AskShell>
     </div>
   );
 }
