@@ -275,18 +275,27 @@ export async function GET(request: Request) {
               months: cols.months,
             };
 
-            // 3. Read data rows starting one below the header. Stop on the
-            //    first row where both Date and Name (or Payment) are empty,
-            //    which marks the end of the section.
+            // 3. Read data rows starting one below the header.
+            //    Nicole leaves visual gaps (2-3 empty rows) inside the
+            //    retention table on some month tabs — July 2026 has one
+            //    at rows 11-12 — so a single blank row is NOT the end of
+            //    the section. Stop only after `MAX_EMPTY_GAP` consecutive
+            //    empty rows, or when MAX_DATA_ROWS is reached.
+            const MAX_EMPTY_GAP = 6;
             const endRow = Math.min(grid.length, headerRowIdx + 1 + MAX_DATA_ROWS);
+            let consecutiveEmpty = 0;
             for (let r = headerRowIdx + 1; r < endRow; r++) {
               const row = grid[r] ?? [];
               const dateVal = (row[cols.date] ?? "").toString().trim();
               const nameVal = cols.name != null ? (row[cols.name] ?? "").toString().trim() : "";
               const paymentVal = cols.payment != null ? (row[cols.payment] ?? "").toString().trim() : "";
 
-              // Stop scanning when we hit a fully empty row (end of section).
-              if (!dateVal && !nameVal && !paymentVal) break;
+              if (!dateVal && !nameVal && !paymentVal) {
+                consecutiveEmpty++;
+                if (consecutiveEmpty >= MAX_EMPTY_GAP) break;
+                continue;
+              }
+              consecutiveEmpty = 0;
               // Skip rows that have a date but no client name (template scaffold).
               if (!nameVal) continue;
 
