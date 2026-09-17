@@ -31,13 +31,16 @@ export default async function RetentionsPageV3() {
     .from("retention_cycles")
     .select("outcome")
     .gte("outcome_at", monthStartIso)
-    .in("outcome", ["retained_4wk", "retained_12wk", "opp_lost"]);
+    .in("outcome", ["retained_4wk", "retained_12wk", "retained_manual", "opp_lost"]);
   let monthRetainedCount = 0;
   let monthOppLostCount = 0;
   for (const c of monthCycles ?? []) {
     const o = (c as { outcome: string | null }).outcome;
-    if (o === "retained_4wk" || o === "retained_12wk") monthRetainedCount++;
-    else if (o === "opp_lost") monthOppLostCount++;
+    if (o === "retained_4wk" || o === "retained_12wk" || o === "retained_manual") {
+      monthRetainedCount++;
+    } else if (o === "opp_lost") {
+      monthOppLostCount++;
+    }
   }
   const cycleIds = (openCycles ?? []).map((c) => c.id as number);
   const openClientIds = (openCycles ?? [])

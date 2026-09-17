@@ -19,6 +19,11 @@
  *                       MAX(current end_date, today) + N days. The MAX
  *                       guards against a heavily-negative client keeping
  *                       negative days_remaining after the extension.
+ *   * "extend_days"   — MAS 2026-09-17: same additive extension as
+ *                       "extend" but with an arbitrary day count (1..365).
+ *                       Cycle closes with outcome='retained_manual' once
+ *                       the push clears the 14-day window; the KPI counts
+ *                       it as a retention.
  *
  * Sync invariants enforced on every "list" (and on demand via "sync"):
  *   * Every active client whose end_date::date <= today+14 has ONE open
@@ -369,6 +374,105 @@ export async function POST(req: NextRequest) {
         const { error: closeErr } = await db
           .from("retention_cycles")
           .update({ outcome, outcome_at: nowIso, outcome_by: userEmail })
+          .eq("id", cyRow.id)
+          .is("outcome", null);
+        if (closeErr) throw new Error(closeErr.message);
+        cycleClosed = true;
+      }
+
+      return NextResponse.json({
+        ok: true,
+        newEndDate: newEndDateStr,
+        newDaysRemaining,
+        stillInWindow: !cycleClosed,
+      });
+    }
+
+    if (action === "extend_days") {
+      const clientId = Number(body.clientId);
+      const daysRaw = Number(body.days);
+      if (!clientId || !Number.isFinite(daysRaw)) {
+        return NextResponse.json(
+          { error: "clientId and days (integer, 1-365) required" },
+          { status: 400 },
+        );
+      }
+      const days = Math.floor(daysRaw);
+      if (days < 1 || days > 365) {
+        return NextResponse.json(
+          { error: "days must be between 1 and 365" },
+          { status: 400 },
+        );
+      }
+
+      const { data: client, error: clientErr } = await db
+        .from("clients")
+        .select("id, end_date")
+        .eq("id", clientId)
+        .single();
+      if (clientErr) throw new Error(clientErr.message);
+      if (!client?.end_date) {
+        return NextResponse.json(
+          { error: "Client has no end_date; cannot extend." },
+          { status: 400 },
+        );
+      }
+
+      // Same additive rule as the fixed 4wk/12wk buttons: end_date + N days.
+      const currentEnd = new Date(client.end_date);
+      const newEnd = new Date(currentEnd);
+      newEnd.setDate(newEnd.getDate() + days);
+      const newEndDateStr = newEnd.toISOString().slice(0, 10);
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const newDaysRemaining = Math.round(
+        (newEnd.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+      );
+
+      const { data: cyRow, error: cyErr } = await db
+        .from("retention_cycles")
+        .select("id")
+        .eq("client_id", clientId)
+        .is("outcome", null)
+        .maybeSingle();
+      if (cyErr) throw new Error(cyErr.message);
+      if (!cyRow) {
+        return NextResponse.json(
+          { error: "Client has no open retention cycle" },
+          { status: 404 },
+        );
+      }
+
+      const { error: endErr } = await db
+        .from("clients")
+        .update({ end_date: newEndDateStr })
+        .eq("id", clientId);
+      if (endErr) throw new Error(endErr.message);
+
+      const remainingLabel =
+        newDaysRemaining >= 0 ? `+${newDaysRemaining}` : String(newDaysRemaining);
+      await db.from("retention_notes").insert({
+        cycle_id: cyRow.id,
+        note_text: `Manual increase +${days} day${days === 1 ? "" : "s"}. New end date ${newEndDateStr} (${remainingLabel} days remaining).`,
+        source: "manual",
+        author_email: userEmail,
+      });
+
+      // Only close the cycle when the manual extension clears the 14-day
+      // window, mirroring the +4wk / +12wk logic. When it does, stamp
+      // outcome='retained_manual' so the KPI counts it and history stays
+      // distinguishable from a preset retention.
+      let cycleClosed = false;
+      if (newDaysRemaining > WINDOW_DAYS) {
+        const nowIso = new Date().toISOString();
+        const { error: closeErr } = await db
+          .from("retention_cycles")
+          .update({
+            outcome: "retained_manual",
+            outcome_at: nowIso,
+            outcome_by: userEmail,
+          })
           .eq("id", cyRow.id)
           .is("outcome", null);
         if (closeErr) throw new Error(closeErr.message);

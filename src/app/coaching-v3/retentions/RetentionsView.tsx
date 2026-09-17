@@ -119,6 +119,8 @@ export default function RetentionsView({ hubClients, openCycles, notes, monthRet
   const [chatSending, setChatSending] = useState(false);
   const [manualId, setManualId] = useState<number | null>(null);
   const [manualText, setManualText] = useState("");
+  const [daysId, setDaysId] = useState<number | null>(null);
+  const [daysText, setDaysText] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -217,6 +219,34 @@ export default function RetentionsView({ hubClients, openCycles, notes, monthRet
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+      window.location.reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const extendDays = async (id: number, name: string) => {
+    const raw = daysText.trim();
+    const days = Number.parseInt(raw, 10);
+    if (!Number.isFinite(days) || days < 1 || days > 365) {
+      setError("Enter a whole number of days between 1 and 365.");
+      return;
+    }
+    if (!confirm(`Add ${days} day${days === 1 ? "" : "s"} to ${name}'s end date?`)) return;
+    setBusyId(id);
+    setError(null);
+    try {
+      const res = await fetch("/api/coaching/retention", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "extend_days", clientId: id, days }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+      setDaysId(null);
+      setDaysText("");
       window.location.reload();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -527,6 +557,16 @@ export default function RetentionsView({ hubClients, openCycles, notes, monthRet
                       +12 weeks
                     </button>
                     <button
+                      className="h3-btn s"
+                      disabled={busyId === client.id}
+                      onClick={() => {
+                        setDaysId(daysId === client.id ? null : client.id);
+                        setDaysText("");
+                      }}
+                    >
+                      Add manual increase
+                    </button>
+                    <button
                       className="h3-btn s r"
                       disabled={busyId === client.id}
                       onClick={() => oppLost(client.id, client.name)}
@@ -534,6 +574,54 @@ export default function RetentionsView({ hubClients, openCycles, notes, monthRet
                       <XCircle size={11} /> Opp Lost
                     </button>
                   </div>
+                  {daysId === client.id && (
+                    <div
+                      style={{
+                        marginTop: 8,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <input
+                        className="h3-in"
+                        type="number"
+                        min={1}
+                        max={365}
+                        step={1}
+                        autoFocus
+                        placeholder="Days"
+                        value={daysText}
+                        onChange={(e) => setDaysText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") extendDays(client.id, client.name);
+                          if (e.key === "Escape") {
+                            setDaysId(null);
+                            setDaysText("");
+                          }
+                        }}
+                        style={{ width: 110 }}
+                      />
+                      <button
+                        className="h3-btn s p"
+                        disabled={busyId === client.id || !daysText.trim()}
+                        onClick={() => extendDays(client.id, client.name)}
+                      >
+                        Add days
+                      </button>
+                      <button
+                        className="h3-btn s"
+                        disabled={busyId === client.id}
+                        onClick={() => {
+                          setDaysId(null);
+                          setDaysText("");
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
 
                   {cyNotes.length > 0 && (
                     <div className="h3-notes">
