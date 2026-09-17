@@ -121,6 +121,9 @@ export default function RetentionsView({ hubClients, openCycles, notes, monthRet
   const [manualText, setManualText] = useState("");
   const [daysId, setDaysId] = useState<number | null>(null);
   const [daysText, setDaysText] = useState("");
+  const [editNoteId, setEditNoteId] = useState<number | null>(null);
+  const [editNoteText, setEditNoteText] = useState("");
+  const [editNoteSaving, setEditNoteSaving] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -224,6 +227,32 @@ export default function RetentionsView({ hubClients, openCycles, notes, monthRet
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const saveNoteEdit = async (noteId: number) => {
+    const text = editNoteText.trim();
+    if (!text) {
+      setError("Note text can't be empty.");
+      return;
+    }
+    setEditNoteSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/coaching/retention", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "edit_note", noteId, text }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+      setEditNoteId(null);
+      setEditNoteText("");
+      window.location.reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setEditNoteSaving(false);
     }
   };
 
@@ -625,14 +654,76 @@ export default function RetentionsView({ hubClients, openCycles, notes, monthRet
 
                   {cyNotes.length > 0 && (
                     <div className="h3-notes">
-                      {cyNotes.map((n) => (
-                        <div className="h3-note" key={n.id}>
-                          <div className="body">{n.noteText}</div>
-                          <div className="footer">
-                            {n.source === "chat_batch" ? "chat" : "manual"} · {n.authorEmail} · {fmtWhen(n.createdAt)}
+                      {cyNotes.map((n) => {
+                        const editable = n.source === "manual";
+                        if (editNoteId === n.id) {
+                          return (
+                            <div className="h3-note" key={n.id}>
+                              <textarea
+                                autoFocus
+                                value={editNoteText}
+                                onChange={(e) => setEditNoteText(e.target.value)}
+                                rows={3}
+                                style={{
+                                  width: "100%",
+                                  resize: "vertical",
+                                  fontFamily: "inherit",
+                                  fontSize: 12,
+                                  padding: 8,
+                                  background: "var(--bg-input, var(--bg-card))",
+                                  color: "var(--text-primary)",
+                                  border: "1px solid var(--border-primary)",
+                                  borderRadius: 6,
+                                  boxSizing: "border-box",
+                                }}
+                              />
+                              <div style={{ display: "flex", gap: 6, marginTop: 6, justifyContent: "flex-end" }}>
+                                <button
+                                  className="h3-btn s"
+                                  onClick={() => {
+                                    setEditNoteId(null);
+                                    setEditNoteText("");
+                                  }}
+                                  disabled={editNoteSaving}
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  className="h3-btn s p"
+                                  onClick={() => saveNoteEdit(n.id)}
+                                  disabled={editNoteSaving || !editNoteText.trim()}
+                                >
+                                  {editNoteSaving ? "Saving…" : "Save"}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="h3-note" key={n.id}>
+                            <div className="body">{n.noteText}</div>
+                            <div className="footer" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <span>
+                                {n.source === "chat_batch" ? "chat" : "manual"} · {n.authorEmail} · {fmtWhen(n.createdAt)}
+                              </span>
+                              {editable && (
+                                <button
+                                  className="h3-btn s"
+                                  onClick={() => {
+                                    setEditNoteId(n.id);
+                                    setEditNoteText(n.noteText);
+                                    setError(null);
+                                  }}
+                                  style={{ padding: "2px 6px", fontSize: 10 }}
+                                  title="Edit this note"
+                                >
+                                  Edit
+                                </button>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
 

@@ -22,6 +22,9 @@ export default async function ClientsPage() {
       .from("clients")
       .select("id, name, coach_name, program, start_date, end_date")
       .eq("status", "completed"),
+    // A soft-deleted client is completely hidden from V3 — we don't even
+    // show them under Completed. The row survives in Supabase and can be
+    // restored via SQL if a coach clicks Delete by mistake.
   ]);
 
   const byId = new Map<number, { startDate: string | null }>();

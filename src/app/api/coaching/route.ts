@@ -12,6 +12,7 @@ import { upsertCoachingContact } from "@/lib/ghl/coaching-contacts";
 type Action =
   | "upsert_client"
   | "delete_client"
+  | "soft_delete_client"
   | "upsert_milestone"
   | "upsert_pause"
   | "upsert_meeting"
@@ -230,6 +231,23 @@ export async function POST(req: NextRequest) {
           .delete()
           .eq("id", id);
 
+        if (error) throw error;
+        return NextResponse.json({ success: true });
+      }
+
+      // ---- Soft-delete Client (V3 Clients tab) ----
+      // Flips status to 'deleted'. Reversible via SQL if the coach
+      // clicks it by mistake. Every V3 client-facing surface excludes
+      // status='deleted' so the row disappears immediately.
+      case "soft_delete_client": {
+        const { id } = payload;
+        if (!id) {
+          return NextResponse.json({ error: "Missing client id" }, { status: 400 });
+        }
+        const { error } = await db
+          .from("clients")
+          .update({ status: "deleted" })
+          .eq("id", id);
         if (error) throw error;
         return NextResponse.json({ success: true });
       }

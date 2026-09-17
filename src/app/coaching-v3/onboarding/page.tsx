@@ -71,6 +71,7 @@ export default async function OnboardingPage() {
       .select(
         "id, name, email, phone_number, coach_name, program, offer, start_date, end_date, onboarding_date, onboarding_status, amount_paid, sales_person, payment_platform, sales_fathom_link, status, nutrition_form_id",
       )
+      .neq("status", "deleted")
       .order("start_date", { ascending: false }),
     db
       .from("onboarding_backlog")

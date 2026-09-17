@@ -27,7 +27,9 @@ export async function GET(req: NextRequest) {
 
   const { data: client } = await db
     .from("clients")
-    .select("id, name, coach_name, program, start_date, end_date, status")
+    .select(
+      "id, name, email, phone_number, coach_name, program, offer, start_date, end_date, status, amount_paid, sales_person, payment_platform",
+    )
     .eq("id", clientId)
     .maybeSingle();
   if (!client) {
@@ -82,11 +84,17 @@ export async function GET(req: NextRequest) {
     client: {
       id: client.id,
       name: client.name,
-      coachName: client.coach_name,
-      program: client.program,
-      startDate: client.start_date,
-      endDate: client.end_date,
+      email: (client.email as string | null) ?? "",
+      phoneNumber: (client.phone_number as string | null) ?? "",
+      coachName: (client.coach_name as string | null) ?? "",
+      program: (client.program as string | null) ?? "",
+      offer: (client.offer as string | null) ?? "",
+      startDate: (client.start_date as string | null) ?? "",
+      endDate: (client.end_date as string | null) ?? "",
       status: client.status,
+      amountPaid: Number(client.amount_paid) || 0,
+      salesPerson: (client.sales_person as string | null) ?? "",
+      paymentPlatform: (client.payment_platform as string | null) ?? "",
     },
     clientNotes: (clientNotesQ.data ?? []).map((r) => ({
       text: r.note as string,

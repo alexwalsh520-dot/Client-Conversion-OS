@@ -145,7 +145,8 @@ export default async function NutritionPage() {
       .from("clients")
       .select(
         "id, name, email, phone_number, coach_name, program, offer, status, start_date, end_date, onboarding_date, nutrition_form_id, nutrition_status, nutrition_assigned_to, nutrition_assigned_at, nutrition_completed_at, nutrition_checklist_allergies, nutrition_checklist_everfit, nutrition_checklist_message",
-      ),
+      )
+      .neq("status", "deleted"),
     db
       .from("nutrition_intake_forms")
       .select("*")

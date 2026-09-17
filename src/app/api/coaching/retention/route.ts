@@ -388,6 +388,42 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    if (action === "edit_note") {
+      const noteId = Number(body.noteId);
+      const text = String(body.text ?? "").trim();
+      if (!noteId || !text) {
+        return NextResponse.json(
+          { error: "noteId and non-empty text required" },
+          { status: 400 },
+        );
+      }
+      // Only manual notes are editable (MAS 2026-09-17). chat_batch and
+      // system-authored notes stay immutable audit trail.
+      const { data: cur, error: readErr } = await db
+        .from("retention_notes")
+        .select("id, source")
+        .eq("id", noteId)
+        .maybeSingle();
+      if (readErr) throw new Error(readErr.message);
+      if (!cur) {
+        return NextResponse.json({ error: "Note not found" }, { status: 404 });
+      }
+      if (cur.source !== "manual") {
+        return NextResponse.json(
+          { error: `Only manual notes are editable (this note is '${cur.source}').` },
+          { status: 400 },
+        );
+      }
+      const { data: updated, error: updErr } = await db
+        .from("retention_notes")
+        .update({ note_text: text })
+        .eq("id", noteId)
+        .select()
+        .single();
+      if (updErr) throw new Error(updErr.message);
+      return NextResponse.json({ note: updated });
+    }
+
     if (action === "extend_days") {
       const clientId = Number(body.clientId);
       const daysRaw = Number(body.days);

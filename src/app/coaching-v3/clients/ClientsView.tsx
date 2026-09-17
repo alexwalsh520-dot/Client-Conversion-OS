@@ -452,6 +452,29 @@ function ClientDrawer({ row, onClose }: { row: Row; onClose: () => void }) {
   const [meetingSaving, setMeetingSaving] = useState(false);
   const [meetingErr, setMeetingErr] = useState<string | null>(null);
 
+  // Profile-edit state. When editing=true the drawer shows a form with the
+  // full editable profile (mirrors New Client modal fields). The current
+  // values are seeded from client-detail on load so we never null-out a
+  // field we didn't touch when we upsert back.
+  type ProfileForm = {
+    name: string;
+    email: string;
+    phoneNumber: string;
+    coachName: string;
+    program: string;
+    offer: string;
+    startDate: string;
+    endDate: string;
+    amountPaid: string;
+    salesPerson: string;
+    paymentPlatform: string;
+  };
+  const [profile, setProfile] = useState<ProfileForm | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editErr, setEditErr] = useState<string | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+
   const reloadDetail = async () => {
     setDetailLoading(true);
     setDetailErr(null);
@@ -482,6 +505,34 @@ function ClientDrawer({ row, onClose }: { row: Row; onClose: () => void }) {
         setCheckIns((body.checkIns ?? []) as CheckInSubmission[]);
         setMeetings((body.meetings ?? []) as MeetingRow[]);
         setMilestone((body.milestone ?? null) as MilestoneRow | null);
+        const c = body.client as {
+          name: string;
+          email: string;
+          phoneNumber: string;
+          coachName: string;
+          program: string;
+          offer: string;
+          startDate: string;
+          endDate: string;
+          amountPaid: number;
+          salesPerson: string;
+          paymentPlatform: string;
+        } | undefined;
+        if (c) {
+          setProfile({
+            name: c.name ?? "",
+            email: c.email ?? "",
+            phoneNumber: c.phoneNumber ?? "",
+            coachName: c.coachName ?? "",
+            program: c.program ?? "",
+            offer: c.offer ?? "",
+            startDate: (c.startDate ?? "").slice(0, 10),
+            endDate: (c.endDate ?? "").slice(0, 10),
+            amountPaid: c.amountPaid ? String(c.amountPaid) : "",
+            salesPerson: c.salesPerson ?? "",
+            paymentPlatform: c.paymentPlatform ?? "",
+          });
+        }
       } catch (e) {
         if (!cancelled) setDetailErr(e instanceof Error ? e.message : String(e));
       } finally {
@@ -492,6 +543,83 @@ function ClientDrawer({ row, onClose }: { row: Row; onClose: () => void }) {
       cancelled = true;
     };
   }, [row.id]);
+
+  const saveProfile = async () => {
+    if (!profile) return;
+    if (!profile.name.trim()) {
+      setEditErr("Name is required.");
+      return;
+    }
+    if (profile.endDate && profile.startDate && profile.endDate < profile.startDate) {
+      setEditErr("End date must be on or after start date.");
+      return;
+    }
+    setEditSaving(true);
+    setEditErr(null);
+    try {
+      const amount = Number(profile.amountPaid);
+      const res = await fetch("/api/coaching", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "upsert_client",
+          payload: {
+            id: row.id,
+            name: profile.name.trim(),
+            email: profile.email.trim(),
+            phoneNumber: profile.phoneNumber.trim(),
+            coachName: profile.coachName.trim(),
+            program: profile.program.trim(),
+            offer: profile.offer.trim(),
+            startDate: profile.startDate || null,
+            endDate: profile.endDate || null,
+            amountPaid: Number.isFinite(amount) && amount > 0 ? amount : 0,
+            salesPerson: profile.salesPerson.trim(),
+            paymentPlatform: profile.paymentPlatform.trim(),
+            // Keep the client's current status (upsert_client defaults to
+            // 'active' when status isn't passed, which would resurrect a
+            // completed client).
+            status: row.status,
+          },
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+      setEditing(false);
+      window.location.reload();
+    } catch (e) {
+      setEditErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const softDelete = async () => {
+    if (
+      !confirm(
+        `Delete ${row.name}? They stop showing up everywhere in V3.\n\nThis is a soft delete — their history stays in the database and can be restored if needed.`,
+      )
+    )
+      return;
+    setDeleteBusy(true);
+    try {
+      const res = await fetch("/api/coaching", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "soft_delete_client",
+          payload: { id: row.id },
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+      window.location.reload();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
 
   const copyVideoLink = async () => {
     setVideoBusy("copy");
@@ -645,10 +773,163 @@ function ClientDrawer({ row, onClose }: { row: Row; onClose: () => void }) {
               {row.coach || "Unassigned"} · {row.program || "—"}
             </div>
           </div>
-          <button className="h3-btn s" onClick={onClose}>
-            <X size={12} /> Close
-          </button>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            {!editing ? (
+              <>
+                <button
+                  className="h3-btn s"
+                  onClick={() => {
+                    setEditing(true);
+                    setEditErr(null);
+                  }}
+                  disabled={!profile || detailLoading}
+                  title="Edit client info"
+                >
+                  <Pencil size={12} /> Edit
+                </button>
+                <button
+                  className="h3-btn s r"
+                  onClick={softDelete}
+                  disabled={deleteBusy}
+                  title="Soft-delete this client"
+                >
+                  {deleteBusy ? "…" : "Delete"}
+                </button>
+              </>
+            ) : (
+              <button
+                className="h3-btn s"
+                onClick={() => {
+                  setEditing(false);
+                  setEditErr(null);
+                }}
+                disabled={editSaving}
+              >
+                Cancel
+              </button>
+            )}
+            <button className="h3-btn s" onClick={onClose}>
+              <X size={12} /> Close
+            </button>
+          </div>
         </div>
+
+        {editing && profile && (
+          <section
+            className="h3-sec"
+            style={{
+              marginTop: 12,
+              padding: 12,
+              border: "1px solid var(--border-primary)",
+              borderRadius: 10,
+              background: "var(--bg-card)",
+            }}
+          >
+            <h2 style={{ margin: "0 0 8px" }}>Edit client info</h2>
+            <div style={{ display: "grid", gap: 8 }}>
+              <DrawerField label="Name">
+                <input
+                  className="h3-in"
+                  value={profile.name}
+                  onChange={(e) => setProfile({ ...profile, name: e.target.value })}
+                />
+              </DrawerField>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <DrawerField label="Email">
+                  <input
+                    className="h3-in"
+                    type="email"
+                    value={profile.email}
+                    onChange={(e) => setProfile({ ...profile, email: e.target.value })}
+                  />
+                </DrawerField>
+                <DrawerField label="Phone">
+                  <input
+                    className="h3-in"
+                    value={profile.phoneNumber}
+                    onChange={(e) => setProfile({ ...profile, phoneNumber: e.target.value })}
+                  />
+                </DrawerField>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <DrawerField label="Coach">
+                  <input
+                    className="h3-in"
+                    value={profile.coachName}
+                    onChange={(e) => setProfile({ ...profile, coachName: e.target.value })}
+                  />
+                </DrawerField>
+                <DrawerField label="Program">
+                  <input
+                    className="h3-in"
+                    value={profile.program}
+                    onChange={(e) => setProfile({ ...profile, program: e.target.value })}
+                  />
+                </DrawerField>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <DrawerField label="Offer">
+                  <input
+                    className="h3-in"
+                    value={profile.offer}
+                    onChange={(e) => setProfile({ ...profile, offer: e.target.value })}
+                  />
+                </DrawerField>
+                <DrawerField label="Closer">
+                  <input
+                    className="h3-in"
+                    value={profile.salesPerson}
+                    onChange={(e) => setProfile({ ...profile, salesPerson: e.target.value })}
+                  />
+                </DrawerField>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <DrawerField label="Start date">
+                  <input
+                    className="h3-in"
+                    type="date"
+                    value={profile.startDate}
+                    onChange={(e) => setProfile({ ...profile, startDate: e.target.value })}
+                  />
+                </DrawerField>
+                <DrawerField label="End date">
+                  <input
+                    className="h3-in"
+                    type="date"
+                    value={profile.endDate}
+                    onChange={(e) => setProfile({ ...profile, endDate: e.target.value })}
+                  />
+                </DrawerField>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <DrawerField label="Amount paid ($)">
+                  <input
+                    className="h3-in"
+                    type="number"
+                    min={0}
+                    value={profile.amountPaid}
+                    onChange={(e) => setProfile({ ...profile, amountPaid: e.target.value })}
+                  />
+                </DrawerField>
+                <DrawerField label="Payment platform">
+                  <input
+                    className="h3-in"
+                    value={profile.paymentPlatform}
+                    onChange={(e) => setProfile({ ...profile, paymentPlatform: e.target.value })}
+                  />
+                </DrawerField>
+              </div>
+              {editErr && (
+                <div style={{ fontSize: 12, color: "var(--danger)" }}>{editErr}</div>
+              )}
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
+                <button className="h3-btn p s" onClick={saveProfile} disabled={editSaving}>
+                  {editSaving ? "Saving…" : "Save"}
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
 
         <div className="h3-kpis" style={{ marginTop: 14, gridTemplateColumns: "1fr 1fr" }}>
           <div className="h3-kpi">
@@ -1135,5 +1416,16 @@ function ClientDrawer({ row, onClose }: { row: Row; onClose: () => void }) {
         )}
       </aside>
     </>
+  );
+}
+
+function DrawerField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label style={{ display: "grid", gap: 3 }}>
+      <span style={{ fontSize: 10.5, color: "var(--text-muted)", fontWeight: 600, letterSpacing: 0.4, textTransform: "uppercase" }}>
+        {label}
+      </span>
+      {children}
+    </label>
   );
 }
