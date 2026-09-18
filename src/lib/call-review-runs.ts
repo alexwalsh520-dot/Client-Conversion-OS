@@ -3,7 +3,7 @@
 //   kind "call"   -> fathom_id = the recording id
 //   kind "digest" -> the sales brief keys on digest_date; every other report
 //                    keys on fathom_id = "<report>:<period>" (marketing:,
-//                    weekly:, setter:) because mm_review_runs_kind_check only
+//                    weekly:, setter:, dm-combine:) because mm_review_runs_kind_check only
 //                    allows the two kinds and digest_date is unique.
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { jeremySend, jeremyPoll } from "@/lib/jeremy";
@@ -16,7 +16,7 @@ export interface RunRow {
   status: string; attempts: number; created_at: string;
 }
 
-/** "call" | "digest" | "marketing" | "weekly" | "setter" */
+/** "call" | "digest" | "marketing" | "weekly" | "setter" | "dm-combine" */
 export function runReport(run: RunRow): string {
   if (run.kind === "call") return "call";
   const id = String(run.fathom_id || "");

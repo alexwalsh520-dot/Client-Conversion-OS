@@ -1,7 +1,10 @@
 // Setter DM Review: nightly, Jeremy grades every engaged Instagram conversation
-// per setter and posts a SETTER BRIEF per setter to #a-sales-manager.
-// ?date=YYYY-MM-DD re-runs a day (ET); ?setter=Amara limits to one setter;
-// ?force=1 re-posts a brief that already completed.
+// per setter (silent runs), then ONE combined "DM Brief — {date}" PDF posts to
+// #a-sales-manager once the last setter run finishes (owner's rule: exactly one
+// message per day, no per-setter briefs, no parts).
+// ?date=YYYY-MM-DD re-runs a day (ET); ?setter=Amara grades one setter silently
+// (debug — never posts); ?force=1 redoes the whole day, setter runs + the
+// combined brief.
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
 import { runDmReviews } from "@/lib/dm-reviews";
