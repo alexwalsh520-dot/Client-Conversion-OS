@@ -73,9 +73,11 @@ sending; `call-reviews-digest?date=YYYY-MM-DD` and
   `supabase/migrations/20260919120000_call_review_v2.sql` (paste by hand). The
   code tolerates their absence: reviews save and Slack posts go out, but the
   marketing brief and weekly report are thin without `fields`.
-- Non-call Jeremy runs are tracked in `mm_review_runs` with
-  `fathom_id = "marketing:<date>"` / `"weekly:<monday>"` so they never collide
-  with the digest's unique `digest_date`.
+- Non-call Jeremy runs are tracked in `mm_review_runs` with kind `digest`
+  (the only non-call value `mm_review_runs_kind_check` allows) and
+  `fathom_id = "marketing:<date>"` / `"weekly:<monday>"`; the prefix picks the
+  finalizer and keeps them clear of the digest's unique `digest_date`.
+  Re-running a period skips briefs that already completed unless `?force=1`.
 
 ## Watchdog (nightly)
 

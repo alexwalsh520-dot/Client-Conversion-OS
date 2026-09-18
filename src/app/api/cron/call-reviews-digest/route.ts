@@ -17,7 +17,10 @@ async function handle(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const date = req.nextUrl.searchParams.get("date") || undefined;
-  const report = await runDailyDigest(getServiceSupabase(), { date });
+  const force = req.nextUrl.searchParams.get("force") === "1"; // re-post a period that already completed
+  const onlyParam = req.nextUrl.searchParams.get("only");
+  const only = onlyParam === "digest" || onlyParam === "marketing" ? onlyParam : undefined;
+  const report = await runDailyDigest(getServiceSupabase(), { date, force, only });
   return NextResponse.json({ ok: true, ...report });
 }
 

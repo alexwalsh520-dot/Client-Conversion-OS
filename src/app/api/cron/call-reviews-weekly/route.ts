@@ -15,7 +15,8 @@ async function handle(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const weekStart = req.nextUrl.searchParams.get("weekStart") || undefined; // YYYY-MM-DD (a Monday) to re-run a week
-  const report = await runWeeklyReport(getServiceSupabase(), { weekStart });
+  const force = req.nextUrl.searchParams.get("force") === "1";
+  const report = await runWeeklyReport(getServiceSupabase(), { weekStart, force });
   return NextResponse.json({ ok: true, ...report });
 }
 

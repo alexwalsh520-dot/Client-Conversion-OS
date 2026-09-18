@@ -320,7 +320,8 @@ export async function loadCloserHistory(sb: Sb, closerDisplay: string | null, da
 /* ------------------------------- tracker stats ------------------------------ */
 
 export interface GroupStats {
-  booked: number; taken: number; noShows: number; closed: number; cashCents: number;
+  booked: number; taken: number; noShows: number; pending: number; cancelled: number;
+  closed: number; cashCents: number;
   closeRate: number | null; showRate: number | null;
 }
 export interface DayStats extends GroupStats {
@@ -330,7 +331,7 @@ export interface DayStats extends GroupStats {
 }
 
 function emptyGroup(): GroupStats {
-  return { booked: 0, taken: 0, noShows: 0, closed: 0, cashCents: 0, closeRate: null, showRate: null };
+  return { booked: 0, taken: 0, noShows: 0, pending: 0, cancelled: 0, closed: 0, cashCents: 0, closeRate: null, showRate: null };
 }
 function finish(g: GroupStats): GroupStats {
   g.closeRate = g.taken > 0 ? Math.round((g.closed / g.taken) * 100) : null;
@@ -342,9 +343,11 @@ function finish(g: GroupStats): GroupStats {
 /**
  * Day (or range) stats straight from the tracker. Definitions, stated in the
  * digest so nobody argues with the number:
- *   taken   = Call Taken == yes
- *   no-show = outcome NS/RS or NO SHOW
- *   closed  = outcome WIN
+ *   taken     = Call Taken == yes
+ *   no-show   = outcome NS/RS or NO SHOW
+ *   cancelled = outcome CANCELLED
+ *   pending   = not taken, not a no-show, not cancelled (hasn't happened / not marked yet)
+ *   closed    = outcome WIN
  *   show %  = taken / (taken + no-shows)   (pending + cancelled excluded)
  *   close % = closed / taken
  */
@@ -354,9 +357,12 @@ export function trackerDayStats(rows: TrackerRow[]): DayStats {
     const outcome = String(r.outcome || "").toUpperCase();
     const taken = r.call_taken_status === "yes";
     const noShow = outcome.startsWith("NS") || outcome.includes("NO SHOW");
+    const cancelled = outcome === "CANCELLED";
     g.booked += 1;
     if (taken) g.taken += 1;
-    if (noShow) g.noShows += 1;
+    else if (noShow) g.noShows += 1;
+    else if (cancelled) g.cancelled += 1;
+    else g.pending += 1;
     if (outcome === "WIN") g.closed += 1;
     g.cashCents += Number(r.collected_revenue_cents) || 0;
   };

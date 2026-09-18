@@ -121,8 +121,11 @@ test("trackerDayStats: show = taken / (taken + no-shows), close = closed / taken
   assert.equal(s.cashCents, 210000);
   assert.equal(s.closeRate, 50);
   assert.equal(s.showRate, 67);
+  assert.equal(s.pending, 1);
+  assert.equal(s.cancelled, 1);
   assert.equal(s.byCloser.WILL.closeRate, 50);
   assert.equal(s.byCloser.WOBBE.taken, 0);
+  assert.equal(s.byCloser.WOBBE.pending, 1);
   assert.equal(s.byCloser.WOBBE.showRate, 0);
 });
 
