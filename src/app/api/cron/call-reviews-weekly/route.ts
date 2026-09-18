@@ -1,11 +1,9 @@
-// Layer 2 of the Call Review Autopilot: nightly, roll the day's call reviews
-// into the DAILY SALES BRIEF (Matt) and the DAILY MARKETING BRIEF (Alex), and
-// run the dead-feed / dead-key / not-recording watchdog.
-//
-// ?date=YYYY-MM-DD re-runs a past day (ET).
+// Layer 3 of the Call Review Autopilot: Monday morning, roll last week's
+// reviews + tracker into the WEEKLY PATTERN REPORT (closer trends, objection
+// patterns, setter show rates, coaching focus, review queue).
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
-import { runDailyDigest } from "@/lib/call-reviews";
+import { runWeeklyReport } from "@/lib/call-reviews";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,8 +14,8 @@ async function handle(req: NextRequest) {
   if (secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const date = req.nextUrl.searchParams.get("date") || undefined;
-  const report = await runDailyDigest(getServiceSupabase(), { date });
+  const weekStart = req.nextUrl.searchParams.get("weekStart") || undefined; // YYYY-MM-DD (a Monday) to re-run a week
+  const report = await runWeeklyReport(getServiceSupabase(), { weekStart });
   return NextResponse.json({ ok: true, ...report });
 }
 
