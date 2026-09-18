@@ -326,8 +326,10 @@ export async function runDmReviews(sb: Sb, opts: { date?: string; force?: boolea
     report.totals = totals;
     const setters = Object.keys(bySetter).filter((s) => !opts.setter || s.toLowerCase() === opts.setter.toLowerCase()).sort();
     const results: Record<string, string> = {};
-    // Send everything first, then wait; each setter's brief posts as it lands.
-    const waitEach = Math.max(20000, Math.floor(200000 / Math.max(1, setters.length)));
+    // Fire every batch without waiting (a night is 8-12 Jeremy turns of 2-5
+    // min each — far beyond one function invocation); the 30-minute
+    // call-reviews tick collects them and each brief posts as it lands.
+    const waitEach = 0;
     for (const setter of setters) {
       const batches = splitBatches(bySetter[setter]);
       for (let i = 0; i < batches.length; i++) {
