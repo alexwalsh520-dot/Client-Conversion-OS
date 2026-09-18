@@ -22,6 +22,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { SALES_MANAGER_PROMPT, mmSubmitCallReview } from "@/lib/micromanager";
 import { jeremySend, jeremyPoll } from "@/lib/jeremy";
 import { postAsCso } from "@/lib/slack";
+import { markRun, runLabel, runReport, sendAndMaybeCollect, upsertRun, type RunRow } from "@/lib/call-review-runs";
+import { finalizeSetterRun } from "@/lib/dm-reviews";
 import { getRoster } from "@/lib/fathom-team-calls";
 import {
   addDays, callTypeFromTitle, closerCodeFromName, closerDisplayName, etDate, etDateFromIso,
@@ -464,32 +466,6 @@ export function parseReviewReply(reply: string): {
 
 /* ------------------------------ run tracking ------------------------------ */
 
-interface RunRow {
-  id: number; kind: string; fathom_id: string | null; digest_date: string | null;
-  run_id: string | null; conversation_id: string | null;
-  status: string; attempts: number; created_at: string;
-}
-
-async function markRun(sb: Sb, id: number, patch: Record<string, unknown>) {
-  await sb.from("mm_review_runs").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id);
-}
-
-/** Non-call runs (marketing, weekly) are stored with kind "digest" (the only
- *  non-call value mm_review_runs_kind_check allows) and key on
- *  fathom_id = "<report>:<period>" so they never collide with the sales
- *  brief's unique digest_date — no migration needed. The prefix picks the
- *  finalizer. */
-async function upsertRun(sb: Sb, row: Record<string, unknown>, onConflict: "fathom_id" | "digest_date") {
-  const { error } = await sb.from("mm_review_runs").upsert({
-    ...row,
-    status: "running",
-    last_error: null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  }, { onConflict });
-  if (error) throw new Error(error.message);
-}
-
 /** Store a report. mm_reports is created by migration 20260919120000; until it
  *  is pasted, the Slack post is still the deliverable, so failures are soft. */
 async function saveReport(sb: Sb, kind: string, periodKey: string, md: string, fields?: unknown): Promise<string | null> {
@@ -598,27 +574,14 @@ async function finalizeWeekly(sb: Sb, run: RunRow, reply: string): Promise<strin
   return `weekly report posted${err ? ` (not stored: ${clip(err, 80)})` : ""}`;
 }
 
-/** "call" | "digest" | "marketing" | "weekly" — non-call reports share the
- *  stored kind "digest" and are told apart by the fathom_id prefix. */
-function runReport(run: RunRow): string {
-  if (run.kind === "call") return "call";
-  const id = String(run.fathom_id || "");
-  if (id.startsWith("marketing:")) return "marketing";
-  if (id.startsWith("weekly:")) return "weekly";
-  return "digest";
-}
-
 async function finalizeRun(sb: Sb, run: RunRow, reply: string): Promise<string> {
   switch (runReport(run)) {
     case "digest": return finalizeDigest(sb, run, reply);
     case "marketing": return finalizeMarketing(sb, run, reply);
     case "weekly": return finalizeWeekly(sb, run, reply);
+    case "setter": return finalizeSetterRun(sb, run, reply);
     default: return finalizeCallReview(sb, run, reply);
   }
-}
-
-function runLabel(run: RunRow): string {
-  return run.kind === "call" ? `call:${run.fathom_id}` : `${runReport(run)}:${run.digest_date || String(run.fathom_id || "").split(":")[1] || ""}`;
 }
 
 /** Check every running Jeremy turn; save what finished, fail what died. */
@@ -935,48 +898,6 @@ async function watchdog(sb: Sb, gaps: string[]): Promise<string[]> {
   return warnings;
 }
 
-/** True when this report already completed for the period — re-running a day
- *  (?date=) must not post the same brief twice. */
-async function alreadyDone(sb: Sb, kind: string, key: string): Promise<boolean> {
-  const q = kind === "digest"
-    ? sb.from("mm_review_runs").select("id").eq("kind", "digest").eq("digest_date", key).eq("status", "completed")
-    : sb.from("mm_review_runs").select("id").eq("fathom_id", `${kind}:${key}`).eq("status", "completed");
-  const { data } = await q.limit(1);
-  return (data || []).length > 0;
-}
-
-/** Send a non-call run and give it ~100s to finish inline; otherwise the
- *  30-minute tick collects it. */
-async function sendAndMaybeCollect(sb: Sb, kind: string, key: string, message: string, force = false): Promise<string> {
-  if (!force && (await alreadyDone(sb, kind, key))) return `${kind} already completed for ${key} (pass force=1 to redo)`;
-  const res = await jeremySend(message);
-  const row: Record<string, unknown> = {
-    kind: "digest", run_id: res.run_id || null, conversation_id: res.conversation_id || null, attempts: 1,
-  };
-  if (kind === "digest") { row.digest_date = key; row.fathom_id = null; await upsertRun(sb, row, "digest_date"); }
-  else { row.fathom_id = `${kind}:${key}`; row.digest_date = null; await upsertRun(sb, row, "fathom_id"); }
-  for (let i = 0; i < 5; i++) {
-    await new Promise((r) => setTimeout(r, 20000));
-    try {
-      const poll = await jeremyPoll({ runId: res.run_id, conversationId: res.conversation_id });
-      if (poll.status === "completed" && poll.reply) {
-        const q = kind === "digest"
-          ? sb.from("mm_review_runs").select("*").eq("kind", "digest").eq("digest_date", key)
-          : sb.from("mm_review_runs").select("*").eq("kind", "digest").eq("fathom_id", `${kind}:${key}`);
-        const { data: run } = await q.maybeSingle();
-        if (run) {
-          const what = await finalizeRun(sb, run as RunRow, poll.reply);
-          await markRun(sb, (run as RunRow).id, { status: "completed" });
-          return `${kind} ${what} (inline)`;
-        }
-        return `${kind} completed but run row missing`;
-      }
-      if (poll.status !== "running") return `${kind} failed (${poll.status}); tick will record it`;
-    } catch { /* transient; retry */ }
-  }
-  return `${kind} running; the 30-min tick will collect it`;
-}
-
 /** The nightly Layer 2 run: sales brief + marketing brief, then the watchdog. */
 export async function runDailyDigest(sb: Sb, opts: { date?: string; force?: boolean; only?: "digest" | "marketing" } = {}) {
   const report: Record<string, unknown> = {};
@@ -1004,7 +925,8 @@ export async function runDailyDigest(sb: Sb, opts: { date?: string; force?: bool
       if (want("digest")) try {
         report.digest = await sendAndMaybeCollect(
           sb, "digest", digestDate,
-          buildDigestMessage(digestDate, todays, history, dayStats, gaps, scripts.guardrails), force
+          buildDigestMessage(digestDate, todays, history, dayStats, gaps, scripts.guardrails),
+          (run, reply) => finalizeRun(sb, run, reply), { force }
         );
       } catch (e) {
         report.digest = `error: ${String(e).slice(0, 300)}`;
@@ -1014,7 +936,8 @@ export async function runDailyDigest(sb: Sb, opts: { date?: string; force?: bool
           ? "no reviews today, marketing brief skipped"
           : await sendAndMaybeCollect(
               sb, "marketing", digestDate,
-              buildMarketingMessage(digestDate, todays, trackerDayStats(mtdRows), mtdReviews, dayStats), force
+              buildMarketingMessage(digestDate, todays, trackerDayStats(mtdRows), mtdReviews, dayStats),
+              (run, reply) => finalizeRun(sb, run, reply), { force }
             );
       } catch (e) {
         report.marketing = `error: ${String(e).slice(0, 300)}`;
@@ -1107,7 +1030,7 @@ export async function runWeeklyReport(sb: Sb, opts: { weekStart?: string; force?
       report.weekly = await sendAndMaybeCollect(
         sb, "weekly", weekStart,
         buildWeeklyMessage(weekStart, weekEnd, reviews, prevReviews, trackerDayStats(rows), trackerDayStats(prevRows)),
-        !!opts.force
+        (run, reply) => finalizeRun(sb, run, reply), { force: !!opts.force }
       );
     }
     report.week = { weekStart, weekEnd, reviews: reviews.length, trackerRows: rows.length };

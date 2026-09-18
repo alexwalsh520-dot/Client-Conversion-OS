@@ -174,6 +174,18 @@
     {
       "path": "/api/cron/stripe-churn-monthly",
       "schedule": "30 2 1 * *"
+    },
+    {
+      "path": "/api/cron/dm-reviews",
+      "schedule": "15 3 * * *"
+    },
+    {
+      "path": "/api/cron/tracker-autofill-shadow",
+      "schedule": "20,50 * * * *"
+    },
+    {
+      "path": "/api/cron/tracker-autofill-shadow?report=1",
+      "schedule": "40 3 * * *"
     }
   ]
 }
