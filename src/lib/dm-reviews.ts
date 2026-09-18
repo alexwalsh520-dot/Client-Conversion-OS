@@ -12,9 +12,9 @@
 //     -> instagram_lead_links.manychat_subscriber_id (+ lead name, handle)
 //     -> manychat_tag_events.setter_name (latest) / sales_tracker_rows.setter
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { postAsCso } from "@/lib/slack";
 import { addDays, etDate, flattenDmThread, normalizeName, type DmMessage } from "@/lib/call-review-context";
-import { clip, fitSlack } from "@/lib/call-review-format";
+import { clip } from "@/lib/call-review-format";
+import { deliverReport } from "@/lib/report-delivery";
 import { sendAndMaybeCollect, type RunRow } from "@/lib/call-review-runs";
 
 type Sb = SupabaseClient;
@@ -305,8 +305,12 @@ export async function finalizeSetterRun(sb: Sb, run: RunRow, reply: string): Pro
     kind: "setter", period_key: `${date}:${setter}${partN > 1 ? `:p${partN}` : ""}`, report_md: full,
     fields: { ...fields, conversations_matched: stored, conversations_sent: convs.length }, model: "jeremy", created_at: new Date().toISOString(),
   }, { onConflict: "kind,period_key" });
-  await postAsCso(fitSlack(full, 5000)).catch(() => false);
-  return `setter brief posted (${stored}/${graded.length} grades stored${storeErr ? `; grades not stored: ${clip(storeErr, 60)}` : ""}${repErr ? `; report not stored: ${clip(repErr.message, 60)}` : ""})`;
+  const how = await deliverReport({
+    title: `Setter Brief — ${setter} — ${date}${partN > 1 ? ` (part ${partN})` : ""}`,
+    filename: `setter-brief-${date}-${setter.toLowerCase()}${partN > 1 ? `-p${partN}` : ""}.pdf`,
+    summary: header, body: full,
+  });
+  return `setter brief delivered as ${how} (${stored}/${graded.length} grades stored${storeErr ? `; grades not stored: ${clip(storeErr, 60)}` : ""}${repErr ? `; report not stored: ${clip(repErr.message, 60)}` : ""})`;
 }
 
 /* ---------------------------------- run ----------------------------------- */

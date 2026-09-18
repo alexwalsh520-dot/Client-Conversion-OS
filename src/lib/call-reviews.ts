@@ -24,6 +24,7 @@ import { jeremySend, jeremyPoll } from "@/lib/jeremy";
 import { postAsCso } from "@/lib/slack";
 import { markRun, runLabel, runReport, sendAndMaybeCollect, upsertRun, type RunRow } from "@/lib/call-review-runs";
 import { finalizeSetterRun } from "@/lib/dm-reviews";
+import { deliverReport } from "@/lib/report-delivery";
 import { getRoster } from "@/lib/fathom-team-calls";
 import {
   addDays, callTypeFromTitle, closerCodeFromName, closerDisplayName, etDate, etDateFromIso,
@@ -32,7 +33,7 @@ import {
 } from "@/lib/call-review-context";
 import {
   APP_URL, CALL_FIELDS_SPEC, DIGEST_BODY_TEMPLATE, MARKETING_TEMPLATE, REVIEW_FLAG_RULES, WEEKLY_TEMPLATE,
-  clip, fitSlack, money, pct, renderCallPost, renderDigestHeader,
+  clip, money, pct, renderCallPost, renderDigestHeader,
 } from "@/lib/call-review-format";
 
 type Sb = SupabaseClient;
@@ -554,24 +555,33 @@ async function finalizeDigest(sb: Sb, run: RunRow, reply: string): Promise<strin
     digest_date: digestDate, digest_md: md, model: "jeremy", review_count: count ?? null,
   }, { onConflict: "digest_date" });
   if (error) throw new Error(error.message);
-  await postAsCso(fitSlack(md, 6000, `Full digest: ${APP_URL}/micromanager`)).catch(() => false);
-  return "digest saved";
+  const how = await deliverReport({
+    title: `Daily Sales Brief — ${digestDate}`, filename: `daily-sales-brief-${digestDate}.pdf`,
+    summary: `${header}\nFull reviews: ${APP_URL}/micromanager`, body: md,
+  });
+  return `digest saved, delivered as ${how}`;
 }
 
 async function finalizeMarketing(sb: Sb, run: RunRow, reply: string): Promise<string> {
   const date = String(run.fathom_id || "").replace(/^marketing:/, "") || etDate();
   const md = reply.trim();
   const err = await saveReport(sb, "marketing", date, md);
-  await postAsCso(fitSlack(md, 5000)).catch(() => false);
-  return `marketing brief posted${err ? ` (not stored: ${clip(err, 80)})` : ""}`;
+  const how = await deliverReport({
+    title: `Daily Marketing Brief — ${date}`, filename: `daily-marketing-brief-${date}.pdf`,
+    summary: md.split("\n").slice(0, 2).join("\n"), body: md,
+  });
+  return `marketing brief delivered as ${how}${err ? ` (not stored: ${clip(err, 80)})` : ""}`;
 }
 
 async function finalizeWeekly(sb: Sb, run: RunRow, reply: string): Promise<string> {
   const week = String(run.fathom_id || "").replace(/^weekly:/, "");
   const md = reply.trim();
   const err = await saveReport(sb, "weekly", week, md);
-  await postAsCso(fitSlack(md, 6000, `Deal Analysis: ${APP_URL}/micromanager`)).catch(() => false);
-  return `weekly report posted${err ? ` (not stored: ${clip(err, 80)})` : ""}`;
+  const how = await deliverReport({
+    title: `Weekly Pattern Report — week of ${week}`, filename: `weekly-pattern-report-${week}.pdf`,
+    summary: `${md.split("\n").slice(0, 4).join("\n")}\nDeal Analysis: ${APP_URL}/micromanager`, body: md,
+  });
+  return `weekly report delivered as ${how}${err ? ` (not stored: ${clip(err, 80)})` : ""}`;
 }
 
 async function finalizeRun(sb: Sb, run: RunRow, reply: string): Promise<string> {
@@ -735,6 +745,11 @@ async function digestHeaderFor(sb: Sb, date: string): Promise<string> {
   });
 }
 
+function reviewLink(r: ReviewRow): string {
+  const url = typeof r.fields?.fathom_share_url === "string" ? r.fields.fathom_share_url : null;
+  return url ? `Fathom: ${url}` : `Deal Analysis: ${APP_URL}/micromanager?deal=${r.fathom_id}`;
+}
+
 function reviewBlock(r: ReviewRow, i: number, mdCap: number): string {
   const f = r.fields || {};
   const structured = Object.keys(f).length
@@ -746,7 +761,7 @@ function reviewBlock(r: ReviewRow, i: number, mdCap: number): string {
       })}`
     : "";
   return [
-    `--- CALL ${i + 1}: ${r.closer || "unknown closer"} x ${r.prospect_name || "unknown prospect"} (${r.outcome || "outcome unclear"}, grade ${r.grade ?? "n/a"}, ${r.call_date}) ---`,
+    `--- CALL ${i + 1}: ${r.closer || "unknown closer"} x ${r.prospect_name || "unknown prospect"} (${r.outcome || "outcome unclear"}, grade ${r.grade ?? "n/a"}, ${r.call_date}) — ${reviewLink(r)} ---`,
     structured,
     mdCap > 0 ? r.review_md.slice(0, mdCap) : "",
   ].filter(Boolean).join("\n");
@@ -793,6 +808,13 @@ function buildDigestMessage(
   gaps: string[],
   guardrails: string | null
 ): string {
+  // Role-play pool: today's calls first, then the last 7 days, so Matt always
+  // gets two calls even on a one-call day.
+  const todayIds = new Set(todays.map((r) => r.fathom_id));
+  const pool = history
+    .filter((r) => !todayIds.has(r.fathom_id) && r.call_date && r.call_date >= addDays(digestDate, -7))
+    .slice(-12)
+    .map((r) => `- ${r.closer || "?"} x ${r.prospect_name || "?"} (${r.call_date}, ${r.outcome || "?"}, grade ${r.grade ?? "n/a"}) — ${reviewLink(r)}${r.fields?.review_flag && (r.fields.review_flag as { flag?: boolean }).flag ? ` — flagged: ${clip((r.fields.review_flag as { reason?: string }).reason, 120)}` : ""}`);
   const byCloser: Record<string, number[]> = {};
   for (const h of history) {
     const name = (h.closer || "").trim();
@@ -820,6 +842,10 @@ function buildDigestMessage(
     "",
     "14-DAY GRADE TREND:",
     ...(trendLines.length ? trendLines : ["- no reviewed calls in the last 14 days"]),
+    "",
+    "",
+    "RECENT CALLS (last 7 days, for the role-play picks when today has fewer than two):",
+    ...(pool.length ? pool : ["- none"]),
     "",
     `TODAY'S CALL REVIEWS (${todays.length}):`,
     ...todays.map((r, i) => reviewBlock(r, i, 4500)),

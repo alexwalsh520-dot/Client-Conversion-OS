@@ -55,3 +55,14 @@ test("renderShadowReport tallies agreement per column and lists asks", () => {
   assert.ok(text.includes("keyed to a GHL booking: 1"));
   assert.ok(text.includes("*WOULD HAVE ASKED* (1)"));
 });
+
+import { mrkdwnToMarkdown } from "./report-delivery";
+test("mrkdwnToMarkdown turns Slack labels into headings and keeps links readable", () => {
+  const md = mrkdwnToMarkdown("*DAILY SALES BRIEF* | 2026-09-18\n5 taken of 9 booked\n\n*PER-CLOSER*\n*Will* (1 call)\nStrong: rapport\n• bullet\n:rotating_light: *REVIEW* peptides\nFull: <https://x.y/z|Deal>");
+  assert.ok(md.includes("## DAILY SALES BRIEF — 2026-09-18"));
+  assert.ok(md.includes("## PER-CLOSER"));
+  assert.ok(md.includes("**Will** (1 call)"));
+  assert.ok(md.includes("- bullet"));
+  assert.ok(md.includes("!! **REVIEW** peptides"));
+  assert.ok(md.includes("Deal (https://x.y/z)"));
+});

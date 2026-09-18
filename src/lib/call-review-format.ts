@@ -148,6 +148,7 @@ export const DIGEST_BODY_TEMPLATE = `*DAY IN REVIEW*
 *{closer}* ({calls} calls, {close_rate} close, avg grade {grade})
 Strong: {strengths, tied to moments from today's calls}
 Fix: {weaknesses, tied to moments}
+Biggest opportunity: {the ONE change that would move the most cash for this rep right now, with the moment that proves it and the exact line to use}
 Drill: {the one drill this week}
 {repeat per closer who took calls today; skip closers with zero calls}
 
@@ -164,9 +165,9 @@ Drill: {the one drill this week}
 {systemic issues only: lead quality, setter expectation gaps, offer confusion, cross-closer objections that signal messaging, ad-to-call mismatch, recording gaps}
 {or "None today"}
 
-*CALLS TO REVIEW*
-{closer} x {prospect} — {reason}
-{or "None today"}
+*ROLE-PLAY CALLS* (exactly two — Matt runs a daily role-play with the team)
+1. {closer} x {prospect} — {Fathom link} — start at {mm:ss} — {what to watch, one line} — Role-play: {the scenario to run: who plays the prospect, the objection or moment to replay, what "good" sounds like}
+2. {same shape; pick from today first, then the last 7 days; never the same call two days running}
 
 *ACTION ITEMS*
 {who — what, by when}
@@ -236,9 +237,9 @@ Top prospect language of the week:
 {closer} — {reason}
 {or "No priority this week"}
 
-*REVIEW QUEUE*
-{closer} x {prospect} — {reason}
-{or "None this week"}`;
+*ROLE-PLAY CALLS* (exactly two for Monday's session)
+1. {closer} x {prospect} — {Fathom link} — start at {mm:ss} — {what to watch} — Role-play: {scenario}
+2. {same shape}`;
 
 /** Slack keeps long posts readable only up to a point; trim and link out. */
 export function fitSlack(text: string, max = 3800, link?: string): string {
