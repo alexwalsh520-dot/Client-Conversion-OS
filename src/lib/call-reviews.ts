@@ -474,8 +474,11 @@ async function markRun(sb: Sb, id: number, patch: Record<string, unknown>) {
   await sb.from("mm_review_runs").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id);
 }
 
-/** Non-call runs (marketing, weekly) key on fathom_id = "<kind>:<period>" so
- *  they never collide with the digest's unique digest_date — no migration needed. */
+/** Non-call runs (marketing, weekly) are stored with kind "digest" (the only
+ *  non-call value mm_review_runs_kind_check allows) and key on
+ *  fathom_id = "<report>:<period>" so they never collide with the sales
+ *  brief's unique digest_date — no migration needed. The prefix picks the
+ *  finalizer. */
 async function upsertRun(sb: Sb, row: Record<string, unknown>, onConflict: "fathom_id" | "digest_date") {
   const { error } = await sb.from("mm_review_runs").upsert({
     ...row,
@@ -575,7 +578,7 @@ async function finalizeDigest(sb: Sb, run: RunRow, reply: string): Promise<strin
     digest_date: digestDate, digest_md: md, model: "jeremy", review_count: count ?? null,
   }, { onConflict: "digest_date" });
   if (error) throw new Error(error.message);
-  await postAsCso(fitSlack(md, 3800, `Full digest: ${APP_URL}/micromanager`)).catch(() => false);
+  await postAsCso(fitSlack(md, 6000, `Full digest: ${APP_URL}/micromanager`)).catch(() => false);
   return "digest saved";
 }
 
@@ -583,7 +586,7 @@ async function finalizeMarketing(sb: Sb, run: RunRow, reply: string): Promise<st
   const date = String(run.fathom_id || "").replace(/^marketing:/, "") || etDate();
   const md = reply.trim();
   const err = await saveReport(sb, "marketing", date, md);
-  await postAsCso(fitSlack(md, 3800)).catch(() => false);
+  await postAsCso(fitSlack(md, 5000)).catch(() => false);
   return `marketing brief posted${err ? ` (not stored: ${clip(err, 80)})` : ""}`;
 }
 
@@ -591,12 +594,22 @@ async function finalizeWeekly(sb: Sb, run: RunRow, reply: string): Promise<strin
   const week = String(run.fathom_id || "").replace(/^weekly:/, "");
   const md = reply.trim();
   const err = await saveReport(sb, "weekly", week, md);
-  await postAsCso(fitSlack(md, 3800, `Deal Analysis: ${APP_URL}/micromanager`)).catch(() => false);
+  await postAsCso(fitSlack(md, 6000, `Deal Analysis: ${APP_URL}/micromanager`)).catch(() => false);
   return `weekly report posted${err ? ` (not stored: ${clip(err, 80)})` : ""}`;
 }
 
+/** "call" | "digest" | "marketing" | "weekly" — non-call reports share the
+ *  stored kind "digest" and are told apart by the fathom_id prefix. */
+function runReport(run: RunRow): string {
+  if (run.kind === "call") return "call";
+  const id = String(run.fathom_id || "");
+  if (id.startsWith("marketing:")) return "marketing";
+  if (id.startsWith("weekly:")) return "weekly";
+  return "digest";
+}
+
 async function finalizeRun(sb: Sb, run: RunRow, reply: string): Promise<string> {
-  switch (run.kind) {
+  switch (runReport(run)) {
     case "digest": return finalizeDigest(sb, run, reply);
     case "marketing": return finalizeMarketing(sb, run, reply);
     case "weekly": return finalizeWeekly(sb, run, reply);
@@ -605,7 +618,7 @@ async function finalizeRun(sb: Sb, run: RunRow, reply: string): Promise<string> 
 }
 
 function runLabel(run: RunRow): string {
-  return `${run.kind}:${run.fathom_id || run.digest_date}`;
+  return run.kind === "call" ? `call:${run.fathom_id}` : `${runReport(run)}:${run.digest_date || String(run.fathom_id || "").split(":")[1] || ""}`;
 }
 
 /** Check every running Jeremy turn; save what finished, fail what died. */
@@ -801,10 +814,12 @@ async function fathomCountsByCloser(sb: Sb, fromIso: string, toIso: string): Pro
   return out;
 }
 
+function groupLine(g: { booked: number; taken: number; noShows: number; pending: number; cancelled: number; closed: number; cashCents: number; closeRate: number | null; showRate: number | null }): string {
+  return `${g.taken} taken, ${g.noShows} no-show, ${g.pending} pending (not happened / not marked yet), ${g.cancelled} cancelled of ${g.booked} booked; ${g.closed} closed, ${money(g.cashCents)} cash, close ${pct(g.closeRate)}, show ${pct(g.showRate)}`;
+}
+
 function closerStatLines(stats: ReturnType<typeof trackerDayStats>): string[] {
-  return Object.entries(stats.byCloser).map(([code, g]) =>
-    `- ${closerDisplayName(code)}: ${g.taken} taken of ${g.booked} booked, ${g.closed} closed, ${money(g.cashCents)} cash, close ${pct(g.closeRate)}, show ${pct(g.showRate)}`
-  );
+  return Object.entries(stats.byCloser).map(([code, g]) => `- ${closerDisplayName(code)}: ${groupLine(g)}`);
 }
 
 function buildDigestMessage(
@@ -833,9 +848,10 @@ function buildDigestMessage(
     "WRITE EXACTLY THIS STRUCTURE (Slack mrkdwn: *bold* labels, short lines, no tables, no code blocks, no headings with #). Do NOT repeat the numeric header — it is prepended by the system:",
     DIGEST_BODY_TEMPLATE,
     "",
-    "Be blunt, specific, and short enough to read on a phone in 3 minutes. Every point ties to a moment from today's calls. Closer coaching never blames leads; lead/setter/ad issues belong under FLAG FOR MANAGEMENT only. Use 'Do this' language, never 'consider'.",
+    "Be blunt, specific, and short enough to read on a phone in 3 minutes: the whole body under 3,000 characters, every section present. Every point ties to a moment from today's calls. Closer coaching never blames leads; lead/setter/ad issues belong under FLAG FOR MANAGEMENT only. Use 'Do this' language, never 'consider'.",
+    "Numbers: use ONLY the tracker numbers below. 'pending' calls have not happened or are not marked yet — never call them no-shows.",
     "",
-    `TRACKER NUMBERS FOR ${digestDate} (source of truth): ${stats.taken} taken of ${stats.booked} booked, ${stats.closed} closed, ${money(stats.cashCents)} cash, close ${pct(stats.closeRate)}, show ${pct(stats.showRate)}.`,
+    `TRACKER NUMBERS FOR ${digestDate} (source of truth): ${groupLine(stats)}.`,
     ...closerStatLines(stats),
     gaps.length ? `RECORDING GAPS (put under FLAG FOR MANAGEMENT): ${gaps.join("; ")}` : "",
     "",
@@ -918,12 +934,23 @@ async function watchdog(sb: Sb, gaps: string[]): Promise<string[]> {
   return warnings;
 }
 
+/** True when this report already completed for the period — re-running a day
+ *  (?date=) must not post the same brief twice. */
+async function alreadyDone(sb: Sb, kind: string, key: string): Promise<boolean> {
+  const q = kind === "digest"
+    ? sb.from("mm_review_runs").select("id").eq("kind", "digest").eq("digest_date", key).eq("status", "completed")
+    : sb.from("mm_review_runs").select("id").eq("fathom_id", `${kind}:${key}`).eq("status", "completed");
+  const { data } = await q.limit(1);
+  return (data || []).length > 0;
+}
+
 /** Send a non-call run and give it ~100s to finish inline; otherwise the
  *  30-minute tick collects it. */
-async function sendAndMaybeCollect(sb: Sb, kind: string, key: string, message: string): Promise<string> {
+async function sendAndMaybeCollect(sb: Sb, kind: string, key: string, message: string, force = false): Promise<string> {
+  if (!force && (await alreadyDone(sb, kind, key))) return `${kind} already completed for ${key} (pass force=1 to redo)`;
   const res = await jeremySend(message);
   const row: Record<string, unknown> = {
-    kind, run_id: res.run_id || null, conversation_id: res.conversation_id || null, attempts: 1,
+    kind: "digest", run_id: res.run_id || null, conversation_id: res.conversation_id || null, attempts: 1,
   };
   if (kind === "digest") { row.digest_date = key; row.fathom_id = null; await upsertRun(sb, row, "digest_date"); }
   else { row.fathom_id = `${kind}:${key}`; row.digest_date = null; await upsertRun(sb, row, "fathom_id"); }
@@ -934,7 +961,7 @@ async function sendAndMaybeCollect(sb: Sb, kind: string, key: string, message: s
       if (poll.status === "completed" && poll.reply) {
         const q = kind === "digest"
           ? sb.from("mm_review_runs").select("*").eq("kind", "digest").eq("digest_date", key)
-          : sb.from("mm_review_runs").select("*").eq("fathom_id", `${kind}:${key}`);
+          : sb.from("mm_review_runs").select("*").eq("kind", "digest").eq("fathom_id", `${kind}:${key}`);
         const { data: run } = await q.maybeSingle();
         if (run) {
           const what = await finalizeRun(sb, run as RunRow, poll.reply);
@@ -950,9 +977,11 @@ async function sendAndMaybeCollect(sb: Sb, kind: string, key: string, message: s
 }
 
 /** The nightly Layer 2 run: sales brief + marketing brief, then the watchdog. */
-export async function runDailyDigest(sb: Sb, opts: { date?: string } = {}) {
+export async function runDailyDigest(sb: Sb, opts: { date?: string; force?: boolean; only?: "digest" | "marketing" } = {}) {
   const report: Record<string, unknown> = {};
   const digestDate = opts.date || etDate();
+  const force = !!opts.force;
+  const want = (k: "digest" | "marketing") => !opts.only || opts.only === k;
   let gaps: string[] = [];
   try {
     const [todays, history, scripts, dayRows, mtdRows, mtdReviews] = await Promise.all([
@@ -970,16 +999,25 @@ export async function runDailyDigest(sb: Sb, opts: { date?: string } = {}) {
     if (todays.length === 0 && dayStats.taken === 0) {
       report.digest = "no reviews and no taken calls today, skipped";
     } else {
-      report.digest = await sendAndMaybeCollect(
-        sb, "digest", digestDate,
-        buildDigestMessage(digestDate, todays, history, dayStats, gaps, scripts.guardrails)
-      );
-      report.marketing = todays.length === 0
-        ? "no reviews today, marketing brief skipped"
-        : await sendAndMaybeCollect(
-            sb, "marketing", digestDate,
-            buildMarketingMessage(digestDate, todays, trackerDayStats(mtdRows), mtdReviews, dayStats)
-          );
+      // Each brief is isolated: a failure in one never hides the other.
+      if (want("digest")) try {
+        report.digest = await sendAndMaybeCollect(
+          sb, "digest", digestDate,
+          buildDigestMessage(digestDate, todays, history, dayStats, gaps, scripts.guardrails), force
+        );
+      } catch (e) {
+        report.digest = `error: ${String(e).slice(0, 300)}`;
+      }
+      if (want("marketing")) try {
+        report.marketing = todays.length === 0
+          ? "no reviews today, marketing brief skipped"
+          : await sendAndMaybeCollect(
+              sb, "marketing", digestDate,
+              buildMarketingMessage(digestDate, todays, trackerDayStats(mtdRows), mtdReviews, dayStats), force
+            );
+      } catch (e) {
+        report.marketing = `error: ${String(e).slice(0, 300)}`;
+      }
     }
   } catch (e) {
     report.digest = `error: ${String(e).slice(0, 300)}`;
@@ -1026,8 +1064,8 @@ function buildWeeklyMessage(
     "",
     "Rules: strategic, not per-call. Name who is improving and who is declining with the numbers. Ad angle data is not available — write 'Insufficient data' there. Under 3,800 characters.",
     "",
-    `THIS WEEK (tracker): ${stats.taken} taken of ${stats.booked} booked, ${stats.closed} closed, ${money(stats.cashCents)} cash, close ${pct(stats.closeRate)}, show ${pct(stats.showRate)}.`,
-    `LAST WEEK (tracker): ${prevStats.taken} taken of ${prevStats.booked} booked, ${prevStats.closed} closed, ${money(prevStats.cashCents)} cash, close ${pct(prevStats.closeRate)}, show ${pct(prevStats.showRate)}.`,
+    `THIS WEEK (tracker): ${groupLine(stats)}.`,
+    `LAST WEEK (tracker): ${groupLine(prevStats)}.`,
     "PER CLOSER (tracker, this week):",
     ...closerStatLines(stats),
     "PER CLOSER (review grades):",
@@ -1045,7 +1083,7 @@ function buildWeeklyMessage(
 }
 
 /** Monday run: the previous Monday–Sunday week. */
-export async function runWeeklyReport(sb: Sb, opts: { weekStart?: string } = {}) {
+export async function runWeeklyReport(sb: Sb, opts: { weekStart?: string; force?: boolean } = {}) {
   const report: Record<string, unknown> = {};
   try {
     const today = etDate();
@@ -1067,7 +1105,8 @@ export async function runWeeklyReport(sb: Sb, opts: { weekStart?: string } = {})
     } else {
       report.weekly = await sendAndMaybeCollect(
         sb, "weekly", weekStart,
-        buildWeeklyMessage(weekStart, weekEnd, reviews, prevReviews, trackerDayStats(rows), trackerDayStats(prevRows))
+        buildWeeklyMessage(weekStart, weekEnd, reviews, prevReviews, trackerDayStats(rows), trackerDayStats(prevRows)),
+        !!opts.force
       );
     }
     report.week = { weekStart, weekEnd, reviews: reviews.length, trackerRows: rows.length };
