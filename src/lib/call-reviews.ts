@@ -598,7 +598,7 @@ async function finalizeRun(sb: Sb, run: RunRow, reply: string): Promise<string> 
 async function pollRuns(sb: Sb): Promise<string[]> {
   const notes: string[] = [];
   const { data: runs } = await sb.from("mm_review_runs")
-    .select("*").eq("status", "running").order("created_at", { ascending: true }).limit(6);
+    .select("*").eq("status", "running").order("created_at", { ascending: true }).limit(20);
   for (const run of (runs || []) as RunRow[]) {
     try {
       const res = await jeremyPoll({ runId: run.run_id, conversationId: run.conversation_id });

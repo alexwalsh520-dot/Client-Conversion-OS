@@ -47,12 +47,16 @@ function runKey(kind: string, key: string): { column: "digest_date" | "fathom_id
   return kind === "digest" ? { column: "digest_date", value: key } : { column: "fathom_id", value: `${kind}:${key}` };
 }
 
-/** True when this report already completed for the period — re-running a day
- *  must not post the same brief twice. */
+/** True when this report already completed for the period, or is in flight
+ *  with Jeremy right now (younger than 2h) — re-running a day must never post
+ *  the same brief twice or orphan a running turn. */
 export async function alreadyDone(sb: Sb, kind: string, key: string): Promise<boolean> {
   const k = runKey(kind, key);
-  const { data } = await sb.from("mm_review_runs").select("id").eq("kind", "digest").eq(k.column, k.value).eq("status", "completed").limit(1);
-  return (data || []).length > 0;
+  const { data } = await sb.from("mm_review_runs").select("status,created_at").eq("kind", "digest").eq(k.column, k.value).limit(1);
+  const run = data?.[0] as { status: string; created_at: string } | undefined;
+  if (!run) return false;
+  if (run.status === "completed") return true;
+  return run.status === "running" && Date.parse(run.created_at) > Date.now() - 2 * 3600e3;
 }
 
 /**
@@ -79,6 +83,7 @@ export async function sendAndMaybeCollect(
     fathom_id: k.column === "fathom_id" ? k.value : null,
   }, k.column);
   const deadline = Date.now() + (opts.waitMs ?? 100000);
+  if (deadline <= Date.now()) return `${kind} sent; the 30-min tick will collect it`;
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 20000));
     try {

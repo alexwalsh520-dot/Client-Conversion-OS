@@ -16,7 +16,7 @@
 //   appointment  -> GHL status        cancelled / rescheduled (later booking, same contact)
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { google } from "googleapis";
-import { postAsCso } from "@/lib/slack";
+import { deliverReport } from "@/lib/report-delivery";
 import { addDays, etDate, etDateFromIso, normalizeName, closerDisplayName } from "@/lib/call-review-context";
 import { clip, money, pct } from "@/lib/call-review-format";
 import { getThreadMessages } from "@/lib/sendblue";
@@ -446,7 +446,10 @@ export async function runShadow(sb: Sb, opts: { from?: string; to?: string; repo
     out.stored = (await storeProposals(sb, proposals)) || "ok";
     if (opts.report) {
       const text = renderShadowReport(from, to, proposals);
-      out.posted = await postAsCso(text.length > 3900 ? text.slice(0, 3900) + "\n(Trimmed for Slack.)" : text).catch(() => false);
+      out.posted = await deliverReport({
+        title: `Tracker Autofill — shadow report ${from} to ${to}`, filename: `tracker-autofill-shadow-${to}.pdf`,
+        summary: text.split("\n").slice(0, 2).join("\n"), body: text,
+      });
     }
   } catch (e) {
     out.error = String(e).slice(0, 300);
