@@ -89,6 +89,6 @@ review runs failed in the last 24h.
 ## Env
 
 `FATHOM_API_KEY_WILL`, `FATHOM_API_KEY_BROZ`, `FATHOM_API_KEY_CHRIS`,
-`FATHOM_API_KEY_WOBBE` (Vercel production, added 2026-09-19). Austin and Erin
-have no key yet. `FATHOM_API_KEY` (Matthew), `JEREMY_MCP_TOKEN`,
+`FATHOM_API_KEY_WOBBE` (Vercel production, added 2026-09-19). Austin's key is
+pending; Erin left the team (2026-09-19). `FATHOM_API_KEY` (Matthew), `JEREMY_MCP_TOKEN`,
 `SLACK_CHANNEL_SALES_MANAGER`, `CRON_SECRET` unchanged.
