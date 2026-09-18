@@ -17,6 +17,9 @@ import { CREATORS_BY_KEY, firstEnv, normalizeAdAccountId } from "@/lib/creators"
 
 const GRAPH = "https://graph.facebook.com/v21.0";
 const CACHE_MS = 10 * 60 * 1000;
+// The account also holds "Hammer Them / CC Bin - 7 Day DM" from January 2026
+// (paused). Only campaigns created on or after this day count as THE hammer.
+const HAMMER_SINCE = "2026-09-15";
 
 export type HammerStatus = "not_launched" | "live" | "paused";
 
@@ -183,6 +186,7 @@ async function readHammerUncached(now: Date): Promise<HammerPayload> {
       );
       const candidates = (list.data || [])
         .filter((c) => c.effective_status !== "ARCHIVED" && c.effective_status !== "DELETED")
+        .filter((c) => c.created_time.slice(0, 10) >= HAMMER_SINCE)
         .sort((a, b) => (a.created_time < b.created_time ? 1 : -1));
       campaign = candidates[0] || null;
     }
