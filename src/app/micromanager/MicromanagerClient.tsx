@@ -644,6 +644,19 @@ export default function MicromanagerClient() {
 
   useEffect(() => { load(days); }, [days, load]);
 
+  // Deep link from the per-call Slack post: /micromanager?deal=<fathomId>.
+  // Applied once, after the first load that contains the deal.
+  const [deepLinkApplied, setDeepLinkApplied] = useState(false);
+  useEffect(() => {
+    if (deepLinkApplied || !data) return;
+    const id = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("deal") : null;
+    if (!id) { setDeepLinkApplied(true); return; }
+    const hit = data.deals.find((d) => String(d.fathomId) === id);
+    if (hit) { setSelected(hit); setDeepLinkApplied(true); }
+    else if (days < 90) setDays(90); // older call: widen the window once
+    else setDeepLinkApplied(true);
+  }, [data, days, deepLinkApplied]);
+
   const closerNames = useMemo(
     () => Array.from(new Set((data?.deals || []).map((d) => d.closer).filter(Boolean))) as string[],
     [data]

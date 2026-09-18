@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
 import { looksLikeSalesCall } from "@/lib/call-reviews";
+import { closerDisplayName } from "@/lib/call-review-context";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -27,7 +28,9 @@ export async function GET(req: NextRequest) {
       .gte("call_date", sinceDate)
       .order("call_date", { ascending: false }),
     sb.from("fathom_calls")
-      .select("fathom_id,title,recorded_at,duration_sec,prospect_name,attendees,transcript")
+      // raw->ccos_closer = which closer's Fathom key fetched the call (v2 sync);
+      // it drives the sales-call classification, so the queue matches the engine.
+      .select("fathom_id,title,recorded_at,duration_sec,prospect_name,attendees,transcript,ccos_closer:raw->ccos_closer,recorded_by:raw->recorded_by")
       .gte("recorded_at", since)
       .not("transcript", "is", null)
       .order("recorded_at", { ascending: false })
@@ -73,14 +76,18 @@ export async function GET(req: NextRequest) {
   // Queued: recent sales calls with no review yet (the engine reaches them
   // newest-first, ~2 per half hour).
   const queued = (callsRes.data || [])
-    .filter((c) => !reviewedIds.has(String(c.fathom_id)) && looksLikeSalesCall(c))
+    .filter((c) => !reviewedIds.has(String(c.fathom_id)) && looksLikeSalesCall({
+      ...c,
+      closer_key: (c.ccos_closer as string | null) ?? null,
+      recorded_by_email: ((c.recorded_by as { email?: string } | null)?.email) ?? null,
+    }))
     .map((c) => ({
       fathomId: c.fathom_id,
       date: c.recorded_at ? String(c.recorded_at).slice(0, 10) : null,
       time: c.recorded_at as string | null,
       prospect: (c.prospect_name as string) || (c.title as string) || "Unknown prospect",
       title: c.title as string | null,
-      closer: null as string | null,
+      closer: closerDisplayName(c.ccos_closer as string | null),
       outcome: null as string | null,
       grade: null as number | null,
       adherence: null as number | null,

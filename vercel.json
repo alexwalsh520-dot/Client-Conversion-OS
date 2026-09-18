@@ -17,7 +17,11 @@
     },
     {
       "path": "/api/cron/call-reviews-digest",
-      "schedule": "30 23 * * *"
+      "schedule": "30 2 * * *"
+    },
+    {
+      "path": "/api/cron/call-reviews-weekly",
+      "schedule": "0 12 * * 1"
     },
     {
       "path": "/api/cron/instagram-token-refresh",
