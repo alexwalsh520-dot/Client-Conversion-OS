@@ -2605,222 +2605,53 @@ td.num.dm-click:hover {
 }
 
 /* ── Hammer Them section ──────────────────────────────────────────────────
-   Three pieces under one summary line. Status is always a WORD in a chip;
-   the tone only changes weight and border lightness, never meaning. */
+   Same language as the rest of the page: a campaign-table row, two Metrics
+   cards, a before/since table, one next-action line. Nothing else. */
 .adsv2 .hammer {
   margin-top: 28px;
 }
-.adsv2 .hm-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  margin: 0 0 8px;
+.adsv2 .hammer .panel + .panel,
+.adsv2 .hammer .hm-charts + .panel {
+  margin-top: 12px;
 }
-.adsv2 .hm-head-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.adsv2 .hm-charts {
+  margin-top: 12px;
 }
-.adsv2 .hm-summary {
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--text-2);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--text-4);
-  border-radius: 8px;
-  background: var(--panel);
-  padding: 10px 14px;
-  margin-bottom: 14px;
-}
-.adsv2 .hm-summary.tone-ok {
-  color: var(--text);
-  border-left-color: var(--green-dim);
-}
-.adsv2 .hm-summary.tone-warn {
-  color: var(--text);
-  border-left-color: var(--text-2);
-}
-.adsv2 .hm-summary.tone-act {
-  color: var(--text-1);
-  font-weight: 500;
-  border-left-color: var(--red-dim);
-}
-.adsv2 .hm-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-@media (max-width: 1100px) {
-  .adsv2 .hm-grid {
-    grid-template-columns: 1fr;
-  }
-}
-.adsv2 .hm-card .chart-head {
-  align-items: center;
-}
-.adsv2 .hm-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 22px;
-  padding: 0 9px;
-  border-radius: 99px;
-  border: 1px solid var(--border-2);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--text-2);
-  white-space: nowrap;
-}
-.adsv2 .hm-chip::before {
-  content: "";
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  border: 1.5px solid currentColor;
-  background: transparent;
-}
-.adsv2 .hm-chip.tone-ok {
-  color: var(--text);
-  border-color: var(--green-dim);
-}
-.adsv2 .hm-chip.tone-ok::before {
-  background: var(--green);
-  border-color: var(--green);
-}
-.adsv2 .hm-chip.tone-warn {
-  color: var(--text);
-  border-color: var(--text-3);
-}
-.adsv2 .hm-chip.tone-warn::before {
-  background: var(--text-2);
-  border-color: var(--text-2);
-}
-.adsv2 .hm-chip.tone-act {
-  color: var(--text-1);
-  border-color: var(--red-dim);
-}
-.adsv2 .hm-chip.tone-act::before {
-  background: var(--red);
-  border-color: var(--red);
-}
-.adsv2 .hm-stats {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  padding: 12px 0 14px;
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 12px;
-}
-@media (max-width: 700px) {
-  .adsv2 .hm-stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-.adsv2 .hm-stat-label {
-  font-size: 10.5px;
-  color: var(--text-3);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  margin-bottom: 4px;
-}
-.adsv2 .hm-stat-value {
-  font-size: 17px;
-  font-weight: 500;
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-}
-.adsv2 .hm-stat-sub {
-  font-size: 11px;
-  color: var(--text-4);
-  margin-top: 2px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.adsv2 .hm-empty {
-  padding: 28px 0;
-  text-align: center;
-  font-size: 12px;
-  color: var(--text-3);
-}
-.adsv2 .hm-foot {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--text-4);
-}
-.adsv2 table.hm-lift {
+.adsv2 table.hm-table {
   width: 100%;
-  border-collapse: collapse;
-  font-size: 12.5px;
-  margin-bottom: 12px;
+  table-layout: auto;
 }
-.adsv2 table.hm-lift th {
-  text-align: right;
-  font-size: 10.5px;
+.adsv2 table.hm-table thead th,
+.adsv2 table.hm-table tbody td {
+  position: static;
+}
+.adsv2 table.hm-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.adsv2 .hm-name {
   font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  color: var(--text);
+}
+.adsv2 .hm-label {
+  color: var(--text-2);
+}
+.adsv2 .hm-action-text {
+  text-align: left;
+  color: var(--text);
+  font-weight: 500;
+}
+.adsv2 table.hm-table td.dim {
   color: var(--text-3);
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--border);
 }
-.adsv2 table.hm-lift th:first-child {
-  text-align: left;
-}
-.adsv2 table.hm-lift td {
-  text-align: right;
-  padding: 8px;
-  border-bottom: 1px solid var(--border);
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-}
-.adsv2 table.hm-lift td.hm-lift-label {
-  text-align: left;
-  color: var(--text-2);
-}
-.adsv2 table.hm-lift td.hm-delta.tone-ok {
+.adsv2 table.hm-table td.pos {
   color: var(--green);
-  font-weight: 600;
 }
-.adsv2 table.hm-lift td.hm-delta.tone-act {
+.adsv2 table.hm-table td.neg {
   color: var(--red);
-  font-weight: 600;
 }
-.adsv2 table.hm-lift td.hm-delta.tone-warn {
-  color: var(--text-2);
-}
-.adsv2 .hm-rules {
-  margin-top: 16px;
-  padding: 16px 20px 14px;
-}
-.adsv2 .hm-rule {
-  display: grid;
-  grid-template-columns: 90px 190px 1fr 1.4fr;
-  gap: 14px;
-  align-items: center;
-  padding: 10px 0;
+.adsv2 .hm-err {
+  padding: 10px 20px;
   border-top: 1px solid var(--border);
-  font-size: 12.5px;
-}
-@media (max-width: 900px) {
-  .adsv2 .hm-rule {
-    grid-template-columns: 90px 1fr;
-  }
-}
-.adsv2 .hm-rule-name {
-  font-weight: 600;
-  color: var(--text);
-}
-.adsv2 .hm-rule-read {
-  color: var(--text-2);
-  font-size: 12px;
-}
-.adsv2 .hm-rule-action {
-  color: var(--text-2);
+  font-size: 11px;
+  color: var(--text-3);
 }

@@ -77,6 +77,8 @@ interface GraphCampaign {
   effective_status: string;
   start_time?: string;
   created_time: string;
+  /** Set when the campaign holds the budget (CBO); ad sets then have none. */
+  daily_budget?: string;
 }
 
 interface GraphAdset {
@@ -173,7 +175,7 @@ async function readHammerUncached(now: Date): Promise<HammerPayload> {
     const pinned = process.env.HAMMER_CAMPAIGN_ID;
     if (pinned) {
       campaign = await graph<GraphCampaign>(
-        `${pinned}?fields=id,name,status,effective_status,start_time,created_time`,
+        `${pinned}?fields=id,name,status,effective_status,start_time,created_time,daily_budget`,
         token,
       );
     } else {
@@ -181,7 +183,7 @@ async function readHammerUncached(now: Date): Promise<HammerPayload> {
         JSON.stringify([{ field: "name", operator: "CONTAIN", value: "Hammer Them" }]),
       );
       const list = await graph<{ data: GraphCampaign[] }>(
-        `${act}/campaigns?fields=id,name,status,effective_status,start_time,created_time&filtering=${filtering}&limit=50`,
+        `${act}/campaigns?fields=id,name,status,effective_status,start_time,created_time,daily_budget&filtering=${filtering}&limit=50`,
         token,
       );
       const candidates = (list.data || [])
@@ -199,7 +201,9 @@ async function readHammerUncached(now: Date): Promise<HammerPayload> {
     );
     const sets = adsets.data || [];
     const active = sets.filter((s) => s.effective_status === "ACTIVE");
-    const dailyBudgetCents = active.reduce((sum, s) => sum + parseInt(s.daily_budget || "0", 10), 0);
+    // CBO puts the daily budget on the campaign; ABO on each ad set. Read whichever holds it.
+    const adsetBudgetCents = active.reduce((sum, s) => sum + parseInt(s.daily_budget || "0", 10), 0);
+    const dailyBudgetCents = adsetBudgetCents || parseInt(campaign.daily_budget || "0", 10);
     const audienceId = sets.find((s) => s.targeting?.custom_audiences?.length)?.targeting?.custom_audiences?.[0]?.id;
 
     let audience: HammerAudience | null = null;
