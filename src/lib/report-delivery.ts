@@ -9,6 +9,24 @@ import { generatePDF } from "@/lib/pdf";
 import { postAsCso, uploadFileAsCso } from "@/lib/slack";
 import { fitSlack } from "@/lib/call-review-format";
 
+/**
+ * jsPDF's built-in Helvetica only knows WinAnsi. Anything outside it (emoji in
+ * Instagram names, variation selectors, box characters) makes jsPDF fall back
+ * to a 16-bit encoding for the whole line, which renders as spaced garbage —
+ * so strip those and normalise the dashes and quotes it can't map. Pure.
+ */
+export function sanitizeForPdf(text: string): string {
+  return text
+    .replace(/[\u2014\u2015]/g, " - ").replace(/\u2013/g, "-")
+    .replace(/[\u2018\u2019\u201A]/g, "'").replace(/[\u201C\u201D\u201E]/g, '"')
+    .replace(/\u2026/g, "...").replace(/\u00A0/g, " ")
+    .replace(/[\uFE00-\uFE0F\u200B-\u200D\u2060]/g, "")
+    .replace(/\p{Extended_Pictographic}/gu, "")
+    .replace(/[\u{10000}-\u{10FFFF}]/gu, "")
+    .replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF]/g, "")
+    .replace(/[ \t]{2,}/g, " ");
+}
+
 /** Slack mrkdwn -> the markdown subset pdf.ts renders. Pure. */
 export function mrkdwnToMarkdown(text: string): string {
   const out: string[] = [];
@@ -45,7 +63,7 @@ export interface ReportDelivery {
  */
 export async function deliverReport(r: ReportDelivery): Promise<"pdf" | "text" | "failed"> {
   try {
-    const pdf = generatePDF(r.title, mrkdwnToMarkdown(r.body));
+    const pdf = generatePDF(sanitizeForPdf(r.title), sanitizeForPdf(mrkdwnToMarkdown(r.body)));
     const ok = await uploadFileAsCso(pdf, r.filename, r.title, r.summary);
     if (ok) return "pdf";
   } catch (e) {
@@ -57,5 +75,5 @@ export async function deliverReport(r: ReportDelivery): Promise<"pdf" | "text" |
 
 /** Also handy for local previews: the PDF bytes for a brief. */
 export function renderReportPdf(title: string, body: string): Buffer {
-  return generatePDF(title, mrkdwnToMarkdown(body));
+  return generatePDF(sanitizeForPdf(title), sanitizeForPdf(mrkdwnToMarkdown(body)));
 }
