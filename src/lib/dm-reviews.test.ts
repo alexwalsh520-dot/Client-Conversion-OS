@@ -66,3 +66,9 @@ test("mrkdwnToMarkdown turns Slack labels into headings and keeps links readable
   assert.ok(md.includes("!! **REVIEW** peptides"));
   assert.ok(md.includes("Deal (https://x.y/z)"));
 });
+
+import { sanitizeForPdf } from "./report-delivery";
+test("sanitizeForPdf strips emoji and maps dashes/quotes to WinAnsi", () => {
+  assert.equal(sanitizeForPdf("PA\u{1F4CD}: \u201Cnothings holding me back\u201D \u2014 Joel\u2019s call"), "PA: \"nothings holding me back\" - Joel's call");
+  assert.equal(sanitizeForPdf("Dieananana \u{1F5E1}\uFE0F (@mochi)"), "Dieananana (@mochi)");
+});
