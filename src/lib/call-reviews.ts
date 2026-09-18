@@ -22,6 +22,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { SALES_MANAGER_PROMPT, mmSubmitCallReview } from "@/lib/micromanager";
 import { jeremySend, jeremyPoll } from "@/lib/jeremy";
 import { postAsCso } from "@/lib/slack";
+import { markRun, runLabel, runReport, sendAndMaybeCollect, upsertRun, type RunRow } from "@/lib/call-review-runs";
+import { finalizeSetterRun } from "@/lib/dm-reviews";
+import { deliverReport } from "@/lib/report-delivery";
 import { getRoster } from "@/lib/fathom-team-calls";
 import {
   addDays, callTypeFromTitle, closerCodeFromName, closerDisplayName, etDate, etDateFromIso,
@@ -30,7 +33,7 @@ import {
 } from "@/lib/call-review-context";
 import {
   APP_URL, CALL_FIELDS_SPEC, DIGEST_BODY_TEMPLATE, MARKETING_TEMPLATE, REVIEW_FLAG_RULES, WEEKLY_TEMPLATE,
-  clip, fitSlack, money, pct, renderCallPost, renderDigestHeader,
+  clip, money, pct, renderCallPost, renderDigestHeader,
 } from "@/lib/call-review-format";
 
 type Sb = SupabaseClient;
@@ -464,32 +467,6 @@ export function parseReviewReply(reply: string): {
 
 /* ------------------------------ run tracking ------------------------------ */
 
-interface RunRow {
-  id: number; kind: string; fathom_id: string | null; digest_date: string | null;
-  run_id: string | null; conversation_id: string | null;
-  status: string; attempts: number; created_at: string;
-}
-
-async function markRun(sb: Sb, id: number, patch: Record<string, unknown>) {
-  await sb.from("mm_review_runs").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id);
-}
-
-/** Non-call runs (marketing, weekly) are stored with kind "digest" (the only
- *  non-call value mm_review_runs_kind_check allows) and key on
- *  fathom_id = "<report>:<period>" so they never collide with the sales
- *  brief's unique digest_date — no migration needed. The prefix picks the
- *  finalizer. */
-async function upsertRun(sb: Sb, row: Record<string, unknown>, onConflict: "fathom_id" | "digest_date") {
-  const { error } = await sb.from("mm_review_runs").upsert({
-    ...row,
-    status: "running",
-    last_error: null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  }, { onConflict });
-  if (error) throw new Error(error.message);
-}
-
 /** Store a report. mm_reports is created by migration 20260919120000; until it
  *  is pasted, the Slack post is still the deliverable, so failures are soft. */
 async function saveReport(sb: Sb, kind: string, periodKey: string, md: string, fields?: unknown): Promise<string | null> {
@@ -578,34 +555,33 @@ async function finalizeDigest(sb: Sb, run: RunRow, reply: string): Promise<strin
     digest_date: digestDate, digest_md: md, model: "jeremy", review_count: count ?? null,
   }, { onConflict: "digest_date" });
   if (error) throw new Error(error.message);
-  await postAsCso(fitSlack(md, 6000, `Full digest: ${APP_URL}/micromanager`)).catch(() => false);
-  return "digest saved";
+  const how = await deliverReport({
+    title: `Daily Sales Brief — ${digestDate}`, filename: `daily-sales-brief-${digestDate}.pdf`,
+    summary: `${header}\nFull reviews: ${APP_URL}/micromanager`, body: md,
+  });
+  return `digest saved, delivered as ${how}`;
 }
 
 async function finalizeMarketing(sb: Sb, run: RunRow, reply: string): Promise<string> {
   const date = String(run.fathom_id || "").replace(/^marketing:/, "") || etDate();
   const md = reply.trim();
   const err = await saveReport(sb, "marketing", date, md);
-  await postAsCso(fitSlack(md, 5000)).catch(() => false);
-  return `marketing brief posted${err ? ` (not stored: ${clip(err, 80)})` : ""}`;
+  const how = await deliverReport({
+    title: `Daily Marketing Brief — ${date}`, filename: `daily-marketing-brief-${date}.pdf`,
+    summary: md.split("\n").slice(0, 2).join("\n"), body: md,
+  });
+  return `marketing brief delivered as ${how}${err ? ` (not stored: ${clip(err, 80)})` : ""}`;
 }
 
 async function finalizeWeekly(sb: Sb, run: RunRow, reply: string): Promise<string> {
   const week = String(run.fathom_id || "").replace(/^weekly:/, "");
   const md = reply.trim();
   const err = await saveReport(sb, "weekly", week, md);
-  await postAsCso(fitSlack(md, 6000, `Deal Analysis: ${APP_URL}/micromanager`)).catch(() => false);
-  return `weekly report posted${err ? ` (not stored: ${clip(err, 80)})` : ""}`;
-}
-
-/** "call" | "digest" | "marketing" | "weekly" — non-call reports share the
- *  stored kind "digest" and are told apart by the fathom_id prefix. */
-function runReport(run: RunRow): string {
-  if (run.kind === "call") return "call";
-  const id = String(run.fathom_id || "");
-  if (id.startsWith("marketing:")) return "marketing";
-  if (id.startsWith("weekly:")) return "weekly";
-  return "digest";
+  const how = await deliverReport({
+    title: `Weekly Pattern Report — week of ${week}`, filename: `weekly-pattern-report-${week}.pdf`,
+    summary: `${md.split("\n").slice(0, 4).join("\n")}\nDeal Analysis: ${APP_URL}/micromanager`, body: md,
+  });
+  return `weekly report delivered as ${how}${err ? ` (not stored: ${clip(err, 80)})` : ""}`;
 }
 
 async function finalizeRun(sb: Sb, run: RunRow, reply: string): Promise<string> {
@@ -613,12 +589,9 @@ async function finalizeRun(sb: Sb, run: RunRow, reply: string): Promise<string> 
     case "digest": return finalizeDigest(sb, run, reply);
     case "marketing": return finalizeMarketing(sb, run, reply);
     case "weekly": return finalizeWeekly(sb, run, reply);
+    case "setter": return finalizeSetterRun(sb, run, reply);
     default: return finalizeCallReview(sb, run, reply);
   }
-}
-
-function runLabel(run: RunRow): string {
-  return run.kind === "call" ? `call:${run.fathom_id}` : `${runReport(run)}:${run.digest_date || String(run.fathom_id || "").split(":")[1] || ""}`;
 }
 
 /** Check every running Jeremy turn; save what finished, fail what died. */
@@ -772,6 +745,11 @@ async function digestHeaderFor(sb: Sb, date: string): Promise<string> {
   });
 }
 
+function reviewLink(r: ReviewRow): string {
+  const url = typeof r.fields?.fathom_share_url === "string" ? r.fields.fathom_share_url : null;
+  return url ? `Fathom: ${url}` : `Deal Analysis: ${APP_URL}/micromanager?deal=${r.fathom_id}`;
+}
+
 function reviewBlock(r: ReviewRow, i: number, mdCap: number): string {
   const f = r.fields || {};
   const structured = Object.keys(f).length
@@ -783,7 +761,7 @@ function reviewBlock(r: ReviewRow, i: number, mdCap: number): string {
       })}`
     : "";
   return [
-    `--- CALL ${i + 1}: ${r.closer || "unknown closer"} x ${r.prospect_name || "unknown prospect"} (${r.outcome || "outcome unclear"}, grade ${r.grade ?? "n/a"}, ${r.call_date}) ---`,
+    `--- CALL ${i + 1}: ${r.closer || "unknown closer"} x ${r.prospect_name || "unknown prospect"} (${r.outcome || "outcome unclear"}, grade ${r.grade ?? "n/a"}, ${r.call_date}) — ${reviewLink(r)} ---`,
     structured,
     mdCap > 0 ? r.review_md.slice(0, mdCap) : "",
   ].filter(Boolean).join("\n");
@@ -830,6 +808,13 @@ function buildDigestMessage(
   gaps: string[],
   guardrails: string | null
 ): string {
+  // Role-play pool: today's calls first, then the last 7 days, so Matt always
+  // gets two calls even on a one-call day.
+  const todayIds = new Set(todays.map((r) => r.fathom_id));
+  const pool = history
+    .filter((r) => !todayIds.has(r.fathom_id) && r.call_date && r.call_date >= addDays(digestDate, -7))
+    .slice(-12)
+    .map((r) => `- ${r.closer || "?"} x ${r.prospect_name || "?"} (${r.call_date}, ${r.outcome || "?"}, grade ${r.grade ?? "n/a"}) — ${reviewLink(r)}${r.fields?.review_flag && (r.fields.review_flag as { flag?: boolean }).flag ? ` — flagged: ${clip((r.fields.review_flag as { reason?: string }).reason, 120)}` : ""}`);
   const byCloser: Record<string, number[]> = {};
   for (const h of history) {
     const name = (h.closer || "").trim();
@@ -857,6 +842,10 @@ function buildDigestMessage(
     "",
     "14-DAY GRADE TREND:",
     ...(trendLines.length ? trendLines : ["- no reviewed calls in the last 14 days"]),
+    "",
+    "",
+    "RECENT CALLS (last 7 days, for the role-play picks when today has fewer than two):",
+    ...(pool.length ? pool : ["- none"]),
     "",
     `TODAY'S CALL REVIEWS (${todays.length}):`,
     ...todays.map((r, i) => reviewBlock(r, i, 4500)),
@@ -935,48 +924,6 @@ async function watchdog(sb: Sb, gaps: string[]): Promise<string[]> {
   return warnings;
 }
 
-/** True when this report already completed for the period — re-running a day
- *  (?date=) must not post the same brief twice. */
-async function alreadyDone(sb: Sb, kind: string, key: string): Promise<boolean> {
-  const q = kind === "digest"
-    ? sb.from("mm_review_runs").select("id").eq("kind", "digest").eq("digest_date", key).eq("status", "completed")
-    : sb.from("mm_review_runs").select("id").eq("fathom_id", `${kind}:${key}`).eq("status", "completed");
-  const { data } = await q.limit(1);
-  return (data || []).length > 0;
-}
-
-/** Send a non-call run and give it ~100s to finish inline; otherwise the
- *  30-minute tick collects it. */
-async function sendAndMaybeCollect(sb: Sb, kind: string, key: string, message: string, force = false): Promise<string> {
-  if (!force && (await alreadyDone(sb, kind, key))) return `${kind} already completed for ${key} (pass force=1 to redo)`;
-  const res = await jeremySend(message);
-  const row: Record<string, unknown> = {
-    kind: "digest", run_id: res.run_id || null, conversation_id: res.conversation_id || null, attempts: 1,
-  };
-  if (kind === "digest") { row.digest_date = key; row.fathom_id = null; await upsertRun(sb, row, "digest_date"); }
-  else { row.fathom_id = `${kind}:${key}`; row.digest_date = null; await upsertRun(sb, row, "fathom_id"); }
-  for (let i = 0; i < 5; i++) {
-    await new Promise((r) => setTimeout(r, 20000));
-    try {
-      const poll = await jeremyPoll({ runId: res.run_id, conversationId: res.conversation_id });
-      if (poll.status === "completed" && poll.reply) {
-        const q = kind === "digest"
-          ? sb.from("mm_review_runs").select("*").eq("kind", "digest").eq("digest_date", key)
-          : sb.from("mm_review_runs").select("*").eq("kind", "digest").eq("fathom_id", `${kind}:${key}`);
-        const { data: run } = await q.maybeSingle();
-        if (run) {
-          const what = await finalizeRun(sb, run as RunRow, poll.reply);
-          await markRun(sb, (run as RunRow).id, { status: "completed" });
-          return `${kind} ${what} (inline)`;
-        }
-        return `${kind} completed but run row missing`;
-      }
-      if (poll.status !== "running") return `${kind} failed (${poll.status}); tick will record it`;
-    } catch { /* transient; retry */ }
-  }
-  return `${kind} running; the 30-min tick will collect it`;
-}
-
 /** The nightly Layer 2 run: sales brief + marketing brief, then the watchdog. */
 export async function runDailyDigest(sb: Sb, opts: { date?: string; force?: boolean; only?: "digest" | "marketing" } = {}) {
   const report: Record<string, unknown> = {};
@@ -1004,7 +951,8 @@ export async function runDailyDigest(sb: Sb, opts: { date?: string; force?: bool
       if (want("digest")) try {
         report.digest = await sendAndMaybeCollect(
           sb, "digest", digestDate,
-          buildDigestMessage(digestDate, todays, history, dayStats, gaps, scripts.guardrails), force
+          buildDigestMessage(digestDate, todays, history, dayStats, gaps, scripts.guardrails),
+          (run, reply) => finalizeRun(sb, run, reply), { force }
         );
       } catch (e) {
         report.digest = `error: ${String(e).slice(0, 300)}`;
@@ -1014,7 +962,8 @@ export async function runDailyDigest(sb: Sb, opts: { date?: string; force?: bool
           ? "no reviews today, marketing brief skipped"
           : await sendAndMaybeCollect(
               sb, "marketing", digestDate,
-              buildMarketingMessage(digestDate, todays, trackerDayStats(mtdRows), mtdReviews, dayStats), force
+              buildMarketingMessage(digestDate, todays, trackerDayStats(mtdRows), mtdReviews, dayStats),
+              (run, reply) => finalizeRun(sb, run, reply), { force }
             );
       } catch (e) {
         report.marketing = `error: ${String(e).slice(0, 300)}`;
@@ -1107,7 +1056,7 @@ export async function runWeeklyReport(sb: Sb, opts: { weekStart?: string; force?
       report.weekly = await sendAndMaybeCollect(
         sb, "weekly", weekStart,
         buildWeeklyMessage(weekStart, weekEnd, reviews, prevReviews, trackerDayStats(rows), trackerDayStats(prevRows)),
-        !!opts.force
+        (run, reply) => finalizeRun(sb, run, reply), { force: !!opts.force }
       );
     }
     report.week = { weekStart, weekEnd, reviews: reviews.length, trackerRows: rows.length };
