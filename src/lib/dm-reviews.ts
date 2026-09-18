@@ -1,10 +1,18 @@
 // Setter DM Review — Jeremy grades every engaged Instagram conversation, per
-// setter, once a night, and writes a SETTER BRIEF for Matt.
+// setter, once a night, and Matt gets exactly ONE "DM Brief — {date}" PDF in
+// #a-sales-manager (owner's rule: never per-setter posts, never part 1/2/3).
 //
-// No Claude-in-the-middle: the day's conversations for one setter are sent to
-// Jeremy raw (one message per setter, split only when a setter's day exceeds
-// the size cap). Jeremy returns the brief plus a JSON footer with a grade per
-// conversation, which lands in mm_dm_conversation_reviews for trends.
+// Two stages:
+//   1. Per-setter-batch grading runs (silent). The day's conversations for one
+//      setter are sent to Jeremy raw (one message per setter, split only when
+//      a setter's day exceeds the size cap). Jeremy returns review notes plus
+//      a JSON footer with a grade per conversation, which lands in
+//      mm_dm_conversation_reviews for trends; the notes land in mm_reports
+//      (kind "setter") for the combiner. Nothing is posted to Slack.
+//   2. The combiner. When the LAST setter run of the date finalizes (inline or
+//      via the 30-min call-reviews tick), one final Jeremy run gets the day
+//      totals plus every stored setter note and writes THE DM BRIEF; its
+//      finalize is the pipeline's only deliverReport call.
 //
 // Attribution (measured Sep 2026: every two-way conversation links to its
 // ManyChat lead, and ~all carry a setter on the ManyChat tag events):
@@ -300,17 +308,157 @@ export async function finalizeSetterRun(sb: Sb, run: RunRow, reply: string): Pro
     const { error } = await sb.from("mm_dm_conversation_reviews").upsert(rows, { onConflict: "review_date,ig_subscriber_id" });
     if (error) storeErr = error.message; else stored = rows.length;
   }
+  // The setter notes are stored for the combiner, never posted on their own.
   const full = `${header}\n\n${md}`;
   const { error: repErr } = await sb.from("mm_reports").upsert({
     kind: "setter", period_key: `${date}:${setter}${partN > 1 ? `:p${partN}` : ""}`, report_md: full,
     fields: { ...fields, conversations_matched: stored, conversations_sent: convs.length }, model: "jeremy", created_at: new Date().toISOString(),
   }, { onConflict: "kind,period_key" });
-  const how = await deliverReport({
-    title: `Setter Brief — ${setter} — ${date}${partN > 1 ? ` (part ${partN})` : ""}`,
-    filename: `setter-brief-${date}-${setter.toLowerCase()}${partN > 1 ? `-p${partN}` : ""}.pdf`,
-    summary: header, body: full,
+  // Was this the day's last setter run? Then dispatch the one combined brief.
+  let combine: string;
+  try {
+    combine = await maybeDispatchDmCombine(sb, date, { bySetter, totals }, run.id);
+  } catch (e) {
+    combine = `error: ${String(e).slice(0, 160)}`;
+  }
+  return `setter notes stored silently (${stored}/${graded.length} grades stored${storeErr ? `; grades not stored: ${clip(storeErr, 60)}` : ""}${repErr ? `; notes not stored: ${clip(repErr.message, 60)}` : ""}); combine: ${combine}`;
+}
+
+/* ------------------------------- combiner ---------------------------------- */
+// Owner's rule (2026-09-18): the whole pipeline posts exactly ONE Slack
+// message per day — "DM Brief — {date}" as a PDF. The per-setter runs above
+// only grade and store; when the last of them finishes, one more Jeremy run
+// merges everything into the single brief.
+
+/** Every run key the day's dispatch loop creates, as mm_review_runs.fathom_id. */
+export function setterRunKeys(date: string, bySetter: Record<string, SetterConversation[]>): string[] {
+  const keys: string[] = [];
+  for (const setter of Object.keys(bySetter).sort()) {
+    const batches = splitBatches(bySetter[setter]);
+    for (let i = 0; i < batches.length; i++) keys.push(`setter:${date}:${setter}${i > 0 ? `:p${i + 1}` : ""}`);
+  }
+  return keys;
+}
+
+/** Two-line day header for the combined brief; rendered by code, never by the model. */
+export function renderDmBriefHeader(date: string, bySetter: Record<string, SetterConversation[]>, totals: { active: number; engaged: number }): string {
+  const all = Object.values(bySetter).flat();
+  const links = all.filter((c) => c.callLinkSent).length;
+  const booked = all.filter((c) => c.inTracker).length;
+  const resp = median(all.map((c) => c.medianResponseMin).filter((x): x is number => x != null));
+  const perSetter = Object.keys(bySetter).sort().map((s) => `${s} ${bySetter[s].length}`).join(", ");
+  return [
+    `*DM BRIEF* | ${date}`,
+    `${totals.engaged} engaged of ${totals.active} active conversations | ${links} call links sent | ${booked} booked | median reply ${resp != null ? `${resp} min` : "—"}${perSetter ? ` | ${perSetter}` : ""}`,
+  ].join("\n");
+}
+
+function setterStatLines(bySetter: Record<string, SetterConversation[]>): string[] {
+  return Object.keys(bySetter).sort().map((s) => {
+    const convs = bySetter[s];
+    const links = convs.filter((c) => c.callLinkSent).length;
+    const booked = convs.filter((c) => c.inTracker).length;
+    const resp = median(convs.map((c) => c.medianResponseMin).filter((x): x is number => x != null));
+    return `- ${s}: ${convs.length} engaged, ${links} call links sent, ${booked} booked, median reply ${resp != null ? `${resp} min` : "—"}`;
   });
-  return `setter brief delivered as ${how} (${stored}/${graded.length} grades stored${storeErr ? `; grades not stored: ${clip(storeErr, 60)}` : ""}${repErr ? `; report not stored: ${clip(repErr.message, 60)}` : ""})`;
+}
+
+export function buildDmCombineMessage(date: string, header: string, setterLines: string[], briefs: { key: string; md: string }[]): string {
+  return [
+    `You are our head of sales (Jeremy). Below are the day's Instagram DM numbers and your own per-setter review notes for ${date}. Write THE DM BRIEF for the sales manager (Matt) — one document for the whole day.`,
+    "",
+    "WRITE (Slack mrkdwn: *bold* labels, short lines, no tables, no code blocks, no # headings). Do NOT repeat the numeric header — the system prepends it. Structure:",
+    "- A headline paragraph on the day's DM performance.",
+    "- Team numbers.",
+    "- A short section per setter (2-5 sentences each: their number of engaged conversations and bookings, and the ONE thing to fix).",
+    "- Standout conversations worth reading (lead name + why).",
+    "- 3 action items.",
+    "No per-setter sub-briefs, no parts, no JSON footer. Be blunt and specific; 'Do this', never 'consider'. Keep the whole document under 3,500 characters.",
+    "",
+    "DAY NUMBERS:",
+    header,
+    "PER SETTER:",
+    ...(setterLines.length ? setterLines : ["- none"]),
+    "",
+    briefs.length
+      ? `YOUR PER-SETTER REVIEW NOTES (${briefs.length} — condense them, do not copy them):`
+      : "PER-SETTER REVIEW NOTES: none stored — write from the day numbers alone and say the conversation detail is missing.",
+    ...briefs.map((b) => `--- NOTES ${b.key} ---\n${b.md}`),
+  ].join("\n");
+}
+
+/**
+ * If every setter-batch run expected for `date` is finished (the run calling
+ * this counts as finished — its row is still "running" while we finalize it),
+ * dispatch the single combined DM BRIEF run. sendAndMaybeCollect's alreadyDone
+ * guard (run kind "dm-combine", keyed by date) makes the dispatch idempotent.
+ */
+export async function maybeDispatchDmCombine(
+  sb: Sb,
+  date: string,
+  day: { bySetter: Record<string, SetterConversation[]>; totals: { active: number; engaged: number } },
+  currentRunId?: number
+): Promise<string> {
+  const expected = setterRunKeys(date, day.bySetter);
+  if (expected.length === 0) return "no setter runs expected for the day";
+  const { data, error } = await sb.from("mm_review_runs")
+    .select("id,fathom_id,status").eq("kind", "digest").in("fathom_id", expected);
+  if (error) return `run check failed: ${error.message}`;
+  const byKey: Record<string, { id: number; status: string }> = {};
+  for (const r of (data || []) as { id: number; fathom_id: string; status: string }[]) byKey[r.fathom_id] = r;
+  // A run is done when it completed, failed for good, or is the one being
+  // finalized right now. A key with no row was never dispatched (?setter=
+  // debug, or the nightly cron has not run) — the day is not complete.
+  const pending = expected.filter((k) => {
+    const r = byKey[k];
+    return !(r && (r.id === currentRunId || r.status === "completed" || r.status === "failed"));
+  });
+  if (pending.length > 0) return `waiting on ${pending.length}/${expected.length} setter runs`;
+
+  // Per-setter notes from mm_reports; tolerate the table not existing yet.
+  let briefs: { key: string; md: string }[] = [];
+  let briefsNote = "";
+  try {
+    const { data: reps, error: repErr } = await sb.from("mm_reports")
+      .select("period_key,report_md").eq("kind", "setter")
+      .like("period_key", `${date}:%`).order("period_key");
+    if (repErr) briefsNote = ` (notes unavailable: ${clip(repErr.message, 60)})`;
+    else briefs = (reps || []).map((r) => ({ key: String(r.period_key), md: String(r.report_md || "") }));
+  } catch (e) {
+    briefsNote = ` (notes unavailable: ${clip(String(e), 60)})`;
+  }
+  const header = renderDmBriefHeader(date, day.bySetter, day.totals);
+  const how = await sendAndMaybeCollect(
+    sb, "dm-combine", date,
+    buildDmCombineMessage(date, header, setterStatLines(day.bySetter), briefs),
+    (run, reply) => finalizeDmCombine(sb, run, reply),
+    { waitMs: 0 }
+  );
+  return `${how}${briefsNote}`;
+}
+
+/** The pipeline's ONLY Slack post: "DM Brief — {date}" as one PDF. */
+export async function finalizeDmCombine(sb: Sb, run: RunRow, reply: string): Promise<string> {
+  const date = String(run.fathom_id || "").replace(/^dm-combine:/, "") || etDate();
+  const md = reply.trim();
+  if (!md || md.length < 120) throw new Error("reply too short to be a DM brief");
+  let header = `*DM BRIEF* | ${date}`;
+  try {
+    const { bySetter, totals } = await collectSetterDay(sb, date);
+    header = renderDmBriefHeader(date, bySetter, totals);
+  } catch { /* header degrades to the title line */ }
+  const full = `${header}\n\n${md}`;
+  const { error: repErr } = await sb.from("mm_reports").upsert({
+    kind: "dm-brief", period_key: date, report_md: full, fields: null, model: "jeremy",
+    created_at: new Date().toISOString(),
+  }, { onConflict: "kind,period_key" });
+  const how = await deliverReport({
+    title: `DM Brief — ${date}`,
+    filename: `dm-brief-${date}.pdf`,
+    summary: header,
+    body: full,
+  });
+  return `DM brief delivered as ${how}${repErr ? ` (not stored: ${clip(repErr.message, 60)})` : ""}`;
 }
 
 /* ---------------------------------- run ----------------------------------- */
@@ -326,9 +474,16 @@ export async function runDmReviews(sb: Sb, opts: { date?: string; force?: boolea
     report.totals = totals;
     const setters = Object.keys(bySetter).filter((s) => !opts.setter || s.toLowerCase() === opts.setter.toLowerCase()).sort();
     const results: Record<string, string> = {};
+    // force on a full-day run redoes the whole day, including the one Slack
+    // post: clear the combine run so the last re-collected setter run
+    // re-dispatches it. A ?setter= debug run never touches the combine.
+    if (opts.force && !opts.setter) {
+      await sb.from("mm_review_runs").delete().eq("kind", "digest").eq("fathom_id", `dm-combine:${date}`);
+    }
     // Fire every batch without waiting (a night is 8-12 Jeremy turns of 2-5
     // min each — far beyond one function invocation); the 30-minute
-    // call-reviews tick collects them and each brief posts as it lands.
+    // call-reviews tick collects them silently, and the last one to finish
+    // dispatches the single combined DM BRIEF.
     const waitEach = 0;
     for (const setter of setters) {
       const batches = splitBatches(bySetter[setter]);
@@ -348,6 +503,16 @@ export async function runDmReviews(sb: Sb, opts: { date?: string; force?: boolea
     }
     report.setters = results;
     if (setters.length === 0) report.note = "no engaged conversations today";
+    // Safety net: if every setter run already finished (e.g. a re-run after a
+    // crash) the finalize path never fires again, so check the combine here
+    // too. Harmless mid-night — it just reports "waiting on n/m setter runs".
+    if (!opts.setter && setters.length > 0) {
+      try {
+        report.combine = await maybeDispatchDmCombine(sb, date, { bySetter, totals });
+      } catch (e) {
+        report.combine = `error: ${String(e).slice(0, 200)}`;
+      }
+    }
   } catch (e) {
     report.error = String(e).slice(0, 300);
   }

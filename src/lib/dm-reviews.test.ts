@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildSetterMessage, etDayRangeUtc, renderSetterHeader, type SetterConversation } from "./dm-reviews";
+import { buildDmCombineMessage, buildSetterMessage, etDayRangeUtc, renderDmBriefHeader, renderSetterHeader, setterRunKeys, type SetterConversation } from "./dm-reviews";
 import { renderShadowReport, type Proposal, COLUMNS } from "./tracker-autofill";
 
 test("etDayRangeUtc covers the ET day, DST-aware", () => {
@@ -35,6 +35,34 @@ test("renderSetterHeader counts links, bookings and median reply", () => {
   assert.ok(h.startsWith("*SETTER BRIEF* | 2026-09-18 | Amara"));
   assert.ok(h.includes("2 engaged conversations reviewed | 1 call links sent | 1 booked | median reply 10 min"));
   assert.ok(h.includes("40 engaged of 300 active"));
+});
+
+test("setterRunKeys matches the dispatch loop's mm_review_runs keys", () => {
+  const keys = setterRunKeys("2026-09-17", { Debbie: [conv({ setter: "Debbie" })], Amara: [conv({})] });
+  assert.deepEqual(keys, ["setter:2026-09-17:Amara", "setter:2026-09-17:Debbie"]);
+});
+
+test("renderDmBriefHeader is two lines with team totals and per-setter counts", () => {
+  const h = renderDmBriefHeader("2026-09-17", {
+    Amara: [conv({ callLinkSent: true, inTracker: true, medianResponseMin: 4 })],
+    Debbie: [conv({ setter: "Debbie", medianResponseMin: 10 })],
+  }, { active: 300, engaged: 2 });
+  assert.equal(h.split("\n").length, 2);
+  assert.ok(h.startsWith("*DM BRIEF* | 2026-09-17"));
+  assert.ok(h.includes("2 engaged of 300 active conversations | 1 call links sent | 1 booked | median reply 10 min"));
+  assert.ok(h.includes("Amara 1, Debbie 1"));
+});
+
+test("buildDmCombineMessage asks for one document and carries the stored notes", () => {
+  const msg = buildDmCombineMessage("2026-09-17", "*DM BRIEF* | 2026-09-17\n2 engaged", ["- Amara: 1 engaged"], [
+    { key: "2026-09-17:Amara", md: "*SETTER BRIEF* | 2026-09-17 | Amara\nnotes" },
+  ]);
+  assert.ok(msg.includes("Write THE DM BRIEF for the sales manager (Matt) — one document for the whole day."));
+  assert.ok(msg.includes("No per-setter sub-briefs, no parts"));
+  assert.ok(msg.includes("--- NOTES 2026-09-17:Amara ---"));
+  assert.ok(msg.includes("- Amara: 1 engaged"));
+  const empty = buildDmCombineMessage("2026-09-17", "*DM BRIEF* | 2026-09-17", [], []);
+  assert.ok(empty.includes("none stored"));
 });
 
 test("renderShadowReport tallies agreement per column and lists asks", () => {

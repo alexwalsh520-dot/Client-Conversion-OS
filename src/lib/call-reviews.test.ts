@@ -73,7 +73,7 @@ test("closer names: tracker codes, Fathom account names and emails all resolve",
 test("fathomKeys: one entry per closer key plus the shared TEAM key, onboarding key ignored", () => {
   const keys = fathomKeys({
     FATHOM_API_KEY: "team", FATHOM_API_KEY_WILL: "w", FATHOM_API_KEY_BROZ: "b", FATHOM_API_KEY_ONBOARDING: "n", FATHOM_API_KEY_EMPTY: "",
-  } as NodeJS.ProcessEnv);
+  } as unknown as NodeJS.ProcessEnv);
   assert.deepEqual(keys.map((k) => k.label), ["BROZ", "WILL", "TEAM"]);
   assert.equal(keys.find((k) => k.label === "TEAM")?.closerCode, null);
   assert.equal(keys.find((k) => k.label === "WILL")?.closerCode, "WILL");

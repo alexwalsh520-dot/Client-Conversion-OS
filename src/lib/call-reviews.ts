@@ -23,7 +23,7 @@ import { SALES_MANAGER_PROMPT, mmSubmitCallReview } from "@/lib/micromanager";
 import { jeremySend, jeremyPoll } from "@/lib/jeremy";
 import { postAsCso } from "@/lib/slack";
 import { markRun, runLabel, runReport, sendAndMaybeCollect, upsertRun, type RunRow } from "@/lib/call-review-runs";
-import { finalizeSetterRun } from "@/lib/dm-reviews";
+import { finalizeDmCombine, finalizeSetterRun } from "@/lib/dm-reviews";
 import { deliverReport } from "@/lib/report-delivery";
 import { getRoster } from "@/lib/fathom-team-calls";
 import {
@@ -590,6 +590,7 @@ async function finalizeRun(sb: Sb, run: RunRow, reply: string): Promise<string> 
     case "marketing": return finalizeMarketing(sb, run, reply);
     case "weekly": return finalizeWeekly(sb, run, reply);
     case "setter": return finalizeSetterRun(sb, run, reply);
+    case "dm-combine": return finalizeDmCombine(sb, run, reply);
     default: return finalizeCallReview(sb, run, reply);
   }
 }
