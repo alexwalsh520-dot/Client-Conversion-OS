@@ -917,7 +917,8 @@ async function watchdog(sb: Sb, gaps: string[]): Promise<string[]> {
       warnings.push(`Fathom key ${k.label} probe error: ${String(e).slice(0, 80)}`);
     }
   }
-  const missing = ["WILL", "BROZ", "CHRIS", "WOBBE", "AUSTIN", "ERIN"].filter(
+  // Active closers (Matthew, 2026-09-19): Erin is off the team; Austin's key is pending.
+  const missing = ["WILL", "BROZ", "CHRIS", "WOBBE", "AUSTIN"].filter(
     (c) => !fathomKeys().some((k) => k.closerCode === c)
   );
   if (missing.length) warnings.push(`No Fathom key on file for: ${missing.map(closerDisplayName).join(", ")} — their calls cannot be reviewed.`);
