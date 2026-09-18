@@ -86,6 +86,8 @@ export default function LineChart({
   fmtRight,
   idBase,
   leftMax,
+  band,
+  marker,
 }: {
   series: LineSeries[];
   labels: string[];
@@ -98,6 +100,10 @@ export default function LineChart({
   /** Hard ceiling for the left axis (e.g. 1 for a share): the scale never
    *  shows headroom above a value the metric cannot reach. */
   leftMax?: number;
+  /** A shaded target zone on the left axis (Hammer: the 15 to 20 frequency band). */
+  band?: { from: number; to: number; label?: string };
+  /** A vertical line at one label index (Hammer: the day the campaign went live). */
+  marker?: { index: number; label: string };
 }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const hasRight = series.some((s) => s.axis === "right");
@@ -120,6 +126,7 @@ export default function LineChart({
   };
   const notNull = (vals: (number | null)[]) => vals.filter((v): v is number => v != null && Number.isFinite(v));
   const leftVals = notNull(series.filter((s) => s.axis !== "right").flatMap((s) => s.values));
+  if (band) leftVals.push(band.from, band.to);
   const rightVals = notNull(series.filter((s) => s.axis === "right").flatMap((s) => s.values));
   const leftScale = buildScale(leftVals.length ? leftVals : [0, 1], leftMax);
   const rightScale = hasRight ? buildScale(rightVals.length ? rightVals : [0, 1]) : leftScale;
@@ -255,6 +262,55 @@ export default function LineChart({
             </text>
           );
         })}
+        {band && (
+          <g>
+            <rect
+              x={pad.l}
+              y={yOfScale(band.to, leftScale)}
+              width={innerW}
+              height={Math.max(0, yOfScale(band.from, leftScale) - yOfScale(band.to, leftScale))}
+              fill="var(--text)"
+              fillOpacity="0.06"
+            />
+            {band.label && (
+              <text
+                x={pad.l + innerW - 4}
+                y={yOfScale(band.to, leftScale) + 11}
+                textAnchor="end"
+                fontSize="8.5"
+                fill="var(--text-3)"
+                fontFamily="'JetBrains Mono',monospace"
+                letterSpacing="0.05em"
+              >
+                {band.label}
+              </text>
+            )}
+          </g>
+        )}
+        {marker && marker.index >= 0 && marker.index < n && (
+          <g>
+            <line
+              x1={xOf(marker.index)}
+              x2={xOf(marker.index)}
+              y1={pad.t}
+              y2={pad.t + innerH}
+              stroke="var(--text-2)"
+              strokeWidth="1"
+              strokeDasharray="2 3"
+            />
+            <text
+              x={xOf(marker.index) + 4}
+              y={pad.t + 9}
+              textAnchor="start"
+              fontSize="8.5"
+              fill="var(--text-2)"
+              fontFamily="'JetBrains Mono',monospace"
+              letterSpacing="0.05em"
+            >
+              {marker.label}
+            </text>
+          </g>
+        )}
         {series.map((s, i) => {
           if (!s.isPrimary) return null;
           const baseline = yOfScale(scaleFor(s).yMin, scaleFor(s));

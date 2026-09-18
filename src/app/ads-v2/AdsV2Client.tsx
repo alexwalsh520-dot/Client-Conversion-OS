@@ -9,6 +9,7 @@ import MetricsBoard from "./MetricsBoard";
 import SettingsGear from "./SettingsGear";
 import AccuracyBadge from "./AccuracyBadge";
 import AttributionPlus from "./AttributionPlus";
+import HammerSection from "./HammerSection";
 
 function keyOf(account: AdsV2Account, status: AdsV2Status, range: DayRange): string {
   return `${account}|${status}|${range.from}|${range.to}`;
@@ -208,6 +209,7 @@ export default function AdsV2Client({ publicToken, lockedAccount }: AdsV2ClientP
             dateTo={range.to}
             tableVersion={payload.dataVersion}
           />
+          <HammerSection account={account} publicToken={publicToken} />
         </>
       ) : (
         <div className="panel">
