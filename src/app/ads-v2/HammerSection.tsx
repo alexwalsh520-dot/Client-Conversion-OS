@@ -133,13 +133,17 @@ export default function HammerSection({ account, publicToken }: { account: AdsV2
   const baselineFrom = shiftDay(baselineTo, -(BASELINE_DAYS - 1));
 
   const fetchMetrics = useCallback(async (from: string, to: string): Promise<AdsV2MetricsPayload | null> => {
-    for (let attempt = 0; attempt < 6; attempt++) {
+    // The baseline is a custom window the server has usually never built, so
+    // the first read says "preparing" and a background build follows. That
+    // build can take a while on a cold window: keep asking for up to ~2 min.
+    for (let attempt = 0; attempt < 48; attempt++) {
       const res = await fetch(`/api/ads-v2/metrics?account=tyson&status=all&dateFrom=${from}&dateTo=${to}`, {
         cache: "no-store",
       });
-      if (!res.ok) return null;
-      const data = (await res.json()) as AdsV2MetricsPayload;
-      if (!data.preparing) return data;
+      if (res.ok) {
+        const data = (await res.json()) as AdsV2MetricsPayload;
+        if (!data.preparing) return data;
+      }
       await new Promise((r) => setTimeout(r, 2500));
     }
     return null;
