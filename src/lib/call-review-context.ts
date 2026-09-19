@@ -281,26 +281,57 @@ export function gradeTrend(grades: number[]): "improving" | "declining" | "stabl
   return "stable";
 }
 
+/** The closer's most recent review, condensed: Jeremy asked for it (2026-09-20)
+ *  so each review can say whether the closer applied the previous fix. */
+export interface PreviousReview {
+  date: string | null;
+  prospect: string | null;
+  grade: number | null;
+  stop: string | null;
+  start: string | null;
+  drill: string | null;
+  pattern: string | null;
+  phaseFixes: string[]; // "discovery: <fix>" for phases scored under 70
+}
+
 export interface CloserHistory {
   count: number;
   avg: number | null;
   last5: number[];
   trend: ReturnType<typeof gradeTrend>;
   flags: string[]; // prior review_flag reasons, newest first
+  previous: PreviousReview | null;
+}
+
+export function previousReviewFrom(row: { call_date?: string | null; prospect_name?: string | null; grade?: number | null; fields?: Record<string, unknown> | null } | null | undefined): PreviousReview | null {
+  if (!row) return null;
+  const f = (row.fields || {}) as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+  const phases = Array.isArray(f.phases) ? (f.phases as Record<string, unknown>[]) : [];
+  const phaseFixes = phases
+    .filter((p) => typeof p?.score === "number" && (p.score as number) < 70 && str(p.fix))
+    .map((p) => `${String(p.key)}: ${str(p.fix)}`);
+  return {
+    date: row.call_date ?? null,
+    prospect: row.prospect_name ?? null,
+    grade: typeof row.grade === "number" ? row.grade : null,
+    stop: str(f.stop), start: str(f.start), drill: str(f.drill), pattern: str(f.pattern),
+    phaseFixes,
+  };
 }
 
 export async function loadCloserHistory(sb: Sb, closerDisplay: string | null, days = 14): Promise<CloserHistory> {
-  const empty: CloserHistory = { count: 0, avg: null, last5: [], trend: "insufficient", flags: [] };
+  const empty: CloserHistory = { count: 0, avg: null, last5: [], trend: "insufficient", flags: [], previous: null };
   if (!closerDisplay) return empty;
   const since = addDays(etDate(), -days);
   const { data } = await sb.from("mm_call_reviews")
-    .select("grade,call_date,created_at,fields")
+    .select("grade,call_date,created_at,prospect_name,fields")
     .ilike("closer", closerDisplay)
     .gte("call_date", since)
     .order("call_date", { ascending: true })
     .order("created_at", { ascending: true })
     .limit(60);
-  const rows = (data || []) as { grade: number | null; fields?: Record<string, unknown> | null }[];
+  const rows = (data || []) as { grade: number | null; call_date?: string | null; prospect_name?: string | null; fields?: Record<string, unknown> | null }[];
   const grades = rows.map((r) => r.grade).filter((g): g is number => typeof g === "number");
   const flags = rows
     .map((r) => (r.fields as { review_flag?: { flag?: boolean; reason?: string } } | null)?.review_flag)
@@ -314,6 +345,7 @@ export async function loadCloserHistory(sb: Sb, closerDisplay: string | null, da
     last5: grades.slice(-5),
     trend: gradeTrend(grades),
     flags,
+    previous: previousReviewFrom(rows[rows.length - 1]),
   };
 }
 

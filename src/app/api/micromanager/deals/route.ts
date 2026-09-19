@@ -1,15 +1,20 @@
-// Deal Analysis: period-wide list of reviewed + queued sales calls, per-closer
-// rollup, latest digest, and queue status. Powers the Deal Analysis page hero.
+// Deal Analysis: every closer call in the window, reviewed (with Jeremy's
+// verdict + phase scores) or still in the queue, plus a per-closer rollup.
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
 import { looksLikeSalesCall } from "@/lib/call-reviews";
 import { closerDisplayName } from "@/lib/call-review-context";
+import { phaseResults } from "@/lib/call-phases";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const OWNER_EMAILS = ["alexwalsh520@gmail.com", "matthew@clientconversion.io"];
+
+function str(v: unknown): string | null {
+  return typeof v === "string" && v.trim() ? v.trim() : null;
+}
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -22,42 +27,42 @@ export async function GET(req: NextRequest) {
   const sinceDate = since.slice(0, 10);
   const sb = getServiceSupabase();
 
-  const [reviewsRes, callsRes, digestRes, runningRes] = await Promise.all([
+  const [reviewsRes, callsRes, runningRes] = await Promise.all([
     sb.from("mm_call_reviews")
-      .select("fathom_id,call_date,prospect_name,closer,outcome,grade,adherence_score,model,created_at")
+      .select("fathom_id,call_date,prospect_name,closer,outcome,grade,adherence_score,model,created_at,fields")
       .gte("call_date", sinceDate)
       .order("call_date", { ascending: false }),
     sb.from("fathom_calls")
       // raw->ccos_closer = which closer's Fathom key fetched the call (v2 sync);
       // it drives the sales-call classification, so the queue matches the engine.
-      .select("fathom_id,title,recorded_at,duration_sec,prospect_name,attendees,transcript,ccos_closer:raw->ccos_closer,recorded_by:raw->recorded_by")
+      .select("fathom_id,title,recorded_at,duration_sec,prospect_name,attendees,transcript,ccos_closer:raw->ccos_closer,recorded_by:raw->recorded_by,share_url:raw->share_url")
       .gte("recorded_at", since)
       .not("transcript", "is", null)
       .order("recorded_at", { ascending: false })
       .limit(400),
-    sb.from("mm_daily_digests")
-      .select("digest_date,digest_md,review_count")
-      .order("digest_date", { ascending: false })
-      .limit(1),
     sb.from("mm_review_runs")
       .select("fathom_id", { count: "exact", head: true })
       .eq("status", "running").eq("kind", "call"),
   ]);
 
-  const callById: Record<string, { title: string | null; recorded_at: string | null; duration_sec: number | null }> = {};
+  const callById: Record<string, { title: string | null; recorded_at: string | null; duration_sec: number | null; share_url: string | null }> = {};
   for (const c of callsRes.data || []) {
     callById[String(c.fathom_id)] = {
       title: c.title as string | null,
       recorded_at: c.recorded_at as string | null,
       duration_sec: c.duration_sec as number | null,
+      share_url: (c.share_url as string | null) ?? null,
     };
   }
 
   const reviewedIds = new Set((reviewsRes.data || []).map((r) => String(r.fathom_id)));
 
-  // Reviewed deals in the window.
+  // Reviewed calls in the window.
   const deals = (reviewsRes.data || []).map((r) => {
     const call = callById[String(r.fathom_id)];
+    const f = (r.fields && typeof r.fields === "object" ? r.fields : {}) as Record<string, unknown>;
+    const flag = (f.review_flag && typeof f.review_flag === "object" ? f.review_flag : {}) as { flag?: boolean; reason?: string };
+    const cash = typeof f.cash_collected === "number" ? f.cash_collected : null;
     return {
       fathomId: r.fathom_id,
       date: r.call_date,
@@ -65,16 +70,23 @@ export async function GET(req: NextRequest) {
       prospect: (r.prospect_name as string) || call?.title || "Unknown prospect",
       title: call?.title ?? null,
       closer: (r.closer as string) || null,
+      callType: str(f.call_type),
+      setter: str(f.setter),
       outcome: (r.outcome as string) || null,
+      cash,
       grade: (r.grade as number) ?? null,
       adherence: (r.adherence_score as number) ?? null,
+      verdict: str(f.verdict) || str(f.call_summary),
+      phases: phaseResults(f).map((p) => ({ key: p.key, short: p.short, score: p.score, ran: p.ran })),
+      flag: flag.flag ? str(flag.reason) || "Listen to this one" : null,
+      fathomUrl: str(f.fathom_share_url) || call?.share_url || null,
       durationMin: call?.duration_sec ? Math.round((call.duration_sec as number) / 60) : null,
       reviewed: true,
     };
   });
 
-  // Queued: recent sales calls with no review yet (the engine reaches them
-  // newest-first, ~2 per half hour).
+  // Queued: closer calls with no review yet (the engine reaches them
+  // newest-first, a couple per tick).
   const queued = (callsRes.data || [])
     .filter((c) => !reviewedIds.has(String(c.fathom_id)) && looksLikeSalesCall({
       ...c,
@@ -88,9 +100,16 @@ export async function GET(req: NextRequest) {
       prospect: (c.prospect_name as string) || (c.title as string) || "Unknown prospect",
       title: c.title as string | null,
       closer: closerDisplayName(c.ccos_closer as string | null),
+      callType: null as string | null,
+      setter: null as string | null,
       outcome: null as string | null,
+      cash: null as number | null,
       grade: null as number | null,
       adherence: null as number | null,
+      verdict: null as string | null,
+      phases: [] as { key: string; short: string; score: number | null; ran: boolean }[],
+      flag: null as string | null,
+      fathomUrl: (c.share_url as string | null) ?? null,
       durationMin: c.duration_sec ? Math.round((c.duration_sec as number) / 60) : null,
       reviewed: false,
     }));
@@ -136,8 +155,5 @@ export async function GET(req: NextRequest) {
       closeRate: decided.length > 0 ? Math.round((won / decided.length) * 100) : null,
     },
     closers,
-    digest: digestRes.data?.[0]
-      ? { date: digestRes.data[0].digest_date, md: digestRes.data[0].digest_md, reviewCount: digestRes.data[0].review_count }
-      : null,
   }, { headers: { "Cache-Control": "no-store" } });
 }

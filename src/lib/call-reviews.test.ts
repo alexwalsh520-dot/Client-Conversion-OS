@@ -6,6 +6,7 @@ import {
   pickTrackerRow, trackerDayStats, type TrackerRow,
 } from "./call-review-context";
 import { fitSlack, renderCallPost } from "./call-review-format";
+import { phaseResults } from "./call-phases";
 
 const longTranscript = "Will: Hey man, how are you doing today?\nProspect: Good, good. ".repeat(60);
 
@@ -23,17 +24,16 @@ test("looksLikeSalesCall: closer-recorded Onboarding Call (the $50-app upsell) c
   assert.equal(looksLikeSalesCall({ ...base, title: "Onboarding Call - Cameron <> Nicole", closer_key: null }), false);
 });
 
-test("looksLikeSalesCall: Matthew's non-sales calls are out even with an external attendee", () => {
-  // The 2026-09-15 false positive: a setter interview graded as a sales call.
+test("looksLikeSalesCall: anything from Matthew's shared key is out, even titled like a sales call", () => {
+  const t = longTranscript;
   assert.equal(looksLikeSalesCall({
-    title: "Daniel Toms", duration_sec: 32 * 60, transcript: longTranscript,
+    title: "Daniel Toms", duration_sec: 32 * 60, transcript: t,
     attendees: [{ email: "daniel@gmail.com" }, { email: "matthew@clientconversion.io" }], closer_key: null,
   }), false);
-  // But a booked sales call recorded from the shared key still counts.
   assert.equal(looksLikeSalesCall({
-    title: "Strategy Session - Jane Doe <> Will (TS)", duration_sec: 32 * 60, transcript: longTranscript,
+    title: "Strategy Session - Jane Doe <> Will (TS)", duration_sec: 40 * 60, transcript: t,
     attendees: [{ email: "jane@gmail.com" }, { email: "matthew@clientconversion.io" }], closer_key: null,
-  }), true);
+  }), false);
 });
 
 test("looksLikeSalesCall: Fathom's demo call, internal calls, short calls and client calls are out", () => {
@@ -46,11 +46,13 @@ test("looksLikeSalesCall: Fathom's demo call, internal calls, short calls and cl
 });
 
 test("parseReviewReply splits the markdown from the trailing json footer", () => {
-  const reply = "1. Call Summary\nGood call.\n\n2. STOP Doing\n- x\n```json\n{\"grade\": 71, \"sub_scores\": {\"close\": 60}}\n```";
+  const reply = "## Verdict\nGood call.\n\n## Phase breakdown\n- x\n```json\n{\"grade\": 71, \"phases\": [{\"key\": \"close\", \"score\": 60}]}\n```";
   const { review_md, fields } = parseReviewReply(reply);
   assert.equal(fields.grade, 71);
-  assert.deepEqual(fields.sub_scores, { close: 60 });
-  assert.ok(review_md.startsWith("1. Call Summary"));
+  assert.deepEqual(fields.phases, [{ key: "close", score: 60 }]);
+  assert.equal(phaseResults(fields)[5].score, 60);
+  assert.equal(phaseResults(fields)[0].score, null);
+  assert.ok(review_md.startsWith("## Verdict"));
   assert.ok(!review_md.includes("```json"));
 });
 
@@ -153,7 +155,11 @@ test("renderCallPost stays phone-sized and links to the deal", () => {
     cashCents: 300000, grade: 78, trend: "improving", avg14: 71, history: 6,
     fields: {
       keep: "K".repeat(400), stop: "S".repeat(400), start: "T".repeat(400), drill: "D".repeat(400),
-      sub_scores: { qualification: 70, discovery: 80, pitch: 75, objections: 60, close: 85 },
+      verdict: "V".repeat(500),
+      phases: [
+        { key: "agenda", score: 70 }, { key: "discovery", score: 80 }, { key: "problem_label", score: 40 },
+        { key: "transition", score: 60 }, { key: "pitch", score: 75 }, { key: "close", score: 85 },
+      ],
       objections_raised: [{ category: "price", verbatim_quote: "Q".repeat(300), handling_quality: "partial" }],
       review_flag: { flag: true, reason: "new objection category" },
     },
@@ -162,7 +168,8 @@ test("renderCallPost stays phone-sized and links to the deal", () => {
   assert.ok(post.length < 2000, `post is ${post.length} chars`);
   assert.ok(post.includes("*Will* | Irbin Benitez | Strategy Session"));
   assert.ok(post.includes("*Cash* $3,000"));
-  assert.ok(post.includes("Q70 D80 P75 O60 C85"));
+  assert.ok(post.includes("Agenda 70 · Discovery 80 · Label 40 · Transition 60 · Pitch 75 · Close 85"));
+  assert.ok(post.includes("*Verdict*"));
   assert.ok(post.includes("REVIEW"));
   assert.ok(post.includes("no DM transcript"));
   assert.ok(post.includes("/micromanager?deal=184557725"));

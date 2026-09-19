@@ -12,19 +12,31 @@ export const APP_URL = "https://client-conversion-os.vercel.app";
 
 /** The JSON footer Jeremy must emit after the markdown review. */
 export const CALL_FIELDS_SPEC = `{
-  "grade": <0-100 overall rep performance>,
-  "adherence_score": <0-100, ONLY when a closer script is provided; otherwise omit>,
-  "adherence_notes": "<one sentence, only with a script>",
+  "grade": <0-100 overall: how well the closer ran OUR script to close THIS person>,
+  "adherence_score": <0-100 how closely the closer followed the script overall: strict on word-for-word lines, checklist coverage on framework phases>,
+  "adherence_notes": "<one sentence>",
   "closer": "<rep first name as spoken>",
   "prospect_name": "<prospect full name>",
   "call_type": "Strategy Session | Onboarding Call",
   "outcome": "won | lost | follow-up | no-show | unclear",
-  "sub_scores": { "qualification": <0-100>, "discovery": <0-100>, "pitch": <0-100>, "objections": <0-100>, "close": <0-100> },
+  "verdict": "<2-3 sentences: what happened, why it ended that way, the ONE thing that decided it>",
+  "phases": [
+    { "key": "agenda", "score": <0-100>, "ran": <true|false>, "started_at": "<mm:ss in the recording, or null>", "minutes": <how long it ran, or null>, "what_happened": "<1-2 sentences, quote the rep with mm:ss>", "fix": "<one instruction with the exact line to say next time, or 'Keep it.'>" },
+    { "key": "discovery", "score": <0-100>, "ran": <true|false>, "started_at": "<mm:ss>", "minutes": <n>, "what_happened": "<...>", "fix": "<...>" },
+    { "key": "problem_label", "score": <0-100>, "ran": <true|false>, "started_at": "<mm:ss>", "minutes": <n>, "what_happened": "<...>", "fix": "<...>" },
+    { "key": "transition", "score": <0-100>, "ran": <true|false>, "started_at": "<mm:ss>", "minutes": <n>, "what_happened": "<...>", "fix": "<...>" },
+    { "key": "pitch", "score": <0-100>, "ran": <true|false>, "started_at": "<mm:ss>", "minutes": <n>, "what_happened": "<...>", "fix": "<...>" },
+    { "key": "close", "score": <0-100>, "ran": <true|false>, "started_at": "<mm:ss>", "minutes": <n>, "what_happened": "<...>", "fix": "<...>" }
+  ],
+  "pattern": "<a behaviour repeated across this closer's recent reviews, named plainly ('third call in a row with no snap-back question'), or null>",
+  "applied_last_fix": <true|false|null: did the closer do what their previous review told them to>,
+  "manager_note": "<manager-only: ad angle / traffic quality / anything upstream Matthew should know, or null>",
   "objections_raised": [
     { "category": "price | timing | spouse | skepticism | competitor | identity | authority | fit | other",
       "verbatim_quote": "<exact prospect words>", "timestamp": "<mm:ss>",
       "how_handled": "addressed | deflected | ignored | missed",
-      "handling_quality": "effective | partial | ineffective" }
+      "handling_quality": "effective | partial | ineffective",
+      "say_instead": "<the line the closer should have used>" }
   ],
   "prospect_language": ["<3-6 verbatim prospect quotes that describe their pain, desire or doubt>"],
   "ad_to_call_mismatch": { "flag": <true|false>, "note": "<what the prospect expected vs what the call was, or null>" },
@@ -44,8 +56,60 @@ export const CALL_FIELDS_SPEC = `{
   "red_flags": ["<closer behaviours that consistently kill deals>"]
 }`;
 
+/** The per-call review Jeremy writes: a phase-by-phase breakdown against the
+ *  script (owner, 2026-09-20: "keep it super simple, a breakdown of every
+ *  call"). The Deal Analysis page renders the JSON footer; this markdown is
+ *  the human-readable copy that ships in the PDF and the "Full review" view. */
+export const CALL_BREAKDOWN_PROMPT = `Review this call against OUR SCRIPT, phase by phase. Simple and blunt. The closer reads it first, the sales manager second.
+
+WRITE EXACTLY THIS MARKDOWN (nothing else before the JSON footer):
+
+## Verdict
+**Grade {grade}/100.** {2-3 sentences: what happened, why it ended the way it did, the ONE thing that decided it}
+Pattern: {a behaviour repeated across this closer's recent reviews, or "None."}
+
+## Phase breakdown
+### 1. Agenda set — {score}/100 · started {mm:ss}, ran {n} min
+What happened: {1-2 sentences; quote the rep with the mm:ss so they can go back and listen}
+Fix: {one instruction with the exact line to say next time, or "Keep it."}
+### 2. Discovery — {score}/100
+{same shape}
+### 3. Problem label — {score}/100
+{same shape}
+### 4. Transition — {score}/100
+{same shape}
+### 5. Pitch — {score}/100
+{same shape}
+### 6. Close — {score}/100
+{same shape}
+
+## Objections
+- "{prospect's exact words}" ({category}, {mm:ss}) — rep did: {one line} — say instead: "{line}"
+{or: None raised.}
+
+## Stop / Start / Keep
+**Stop:** {the one behaviour}
+**Start:** {the one behaviour, with the exact phrasing}
+**Keep:** {the one behaviour}
+
+## Drill
+{one drill the closer can run in under 15 minutes before the next call: the exact scenario, the exact line, the rep count}
+
+SCORING RULES
+- Scripted phases (1 Agenda, 3 Problem label, 4 Transition, the pitch opener and closing question in 5, the commitment tie-down and price line in 6): strict on the word-for-word lines (wrapped in **double asterisks** in the script). Paraphrased = partial credit. Skipped = 0, and write "Skipped." as what happened.
+- Framework phases (2 Discovery, 6 Close): score on checklist coverage. Discovery must hit all six beats: initial motivation, current situation, 12-month future pace, probing to the third why (emotion), the 12-month snap-back, past attempts with the knowledge-vs-consistency probe. Close must gauge interest, run the tie-down, present the program and price, and handle objections without dropping the price.
+- A weak problem label or hesitation at the transition means discovery was poor: say so in the discovery fix.
+- Onboarding Call (second call, the $50-app upsell): the same six phases apply to the upsell; grade each against its intent.
+- Every fix is ONE instruction with the line to say, pinned to the mm:ss where it broke. No lists of options. Never "consider".
+- Phase timing is a diagnosis on its own: discovery should be the longest phase (8-12 min). Say so when it is not.
+- If the PREVIOUS REVIEW block is present, state whether the closer applied that fix; a repeated miss is the pattern line.
+- Ad angle, traffic quality and anything upstream of the closer go ONLY in manager_note / systemic_flags / ad_to_call_mismatch, never in the closer-facing text.
+- Under 900 words before the JSON footer.`;
+
 export const REVIEW_FLAG_RULES =
   "Set review_flag.flag=true only when: grade < 50, OR an objection category not seen in this closer's last 14 days, OR any systemic_flags entry, OR cash collected far outside the normal $1,200-$3,000 range, OR any red_flags entry.";
+
+import { phaseResults } from "@/lib/call-phases";
 
 /* --------------------------------- helpers --------------------------------- */
 
@@ -61,10 +125,6 @@ export function money(cents: number | null | undefined): string {
 
 export function pct(v: number | null | undefined): string {
   return typeof v === "number" ? `${v}%` : "—";
-}
-
-function num(v: unknown): number | null {
-  return typeof v === "number" && Number.isFinite(v) ? Math.round(v) : null;
 }
 
 function str(v: unknown): string | null {
@@ -92,7 +152,6 @@ export interface CallPostInput {
 /** Jeremy's per-call post (artifact 2). */
 export function renderCallPost(i: CallPostInput): string {
   const f = i.fields;
-  const sub = (f.sub_scores || {}) as Record<string, unknown>;
   const objections = Array.isArray(f.objections_raised) ? (f.objections_raised as Record<string, unknown>[]) : [];
   const top = objections[0];
   const flag = (f.review_flag || {}) as { flag?: boolean; reason?: string };
@@ -104,11 +163,12 @@ export function renderCallPost(i: CallPostInput): string {
     `*Outcome* ${i.outcome || "unclear"} | *Cash* ${cash} | *Grade* ${i.grade ?? "—"}/100`,
     `*Trend* ${trend} (${avg})`,
     "",
+    ...(str(f.verdict) ? [`*Verdict* ${clip(f.verdict, 400)}`, ""] : []),
     `*KEEP* ${clip(f.keep, 220) || "—"}`,
     `*STOP* ${clip(f.stop, 220) || "—"}`,
     `*START* ${clip(f.start, 260) || "—"}`,
     "",
-    `*Sub-scores* Q${num(sub.qualification) ?? "-"} D${num(sub.discovery) ?? "-"} P${num(sub.pitch) ?? "-"} O${num(sub.objections) ?? "-"} C${num(sub.close) ?? "-"}`,
+    `*Phases* ${phaseResults(f).map((p) => `${p.short} ${p.score ?? "-"}`).join(" · ")}`,
   ];
   if (top) {
     lines.push("", `*Top objection* "${clip(top.verbatim_quote, 160)}" (${str(top.category) || "other"}) — handled: ${str(top.handling_quality) || "?"}`);

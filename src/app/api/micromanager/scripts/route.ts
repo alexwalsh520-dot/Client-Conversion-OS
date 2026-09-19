@@ -1,5 +1,6 @@
-// Micromanager scripts: the closer call script + setter DM script that adherence
-// grading runs against (grading itself happens in Utari via the MCP tools).
+// Deal Analysis scripts: the closer call script Jeremy grades every call
+// against, the offer & price sheet he needs to judge the pitch, and the setter
+// DM script the nightly DM reviews use.
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
@@ -20,15 +21,15 @@ export async function GET() {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   const byRole: Record<string, { content: string; updatedAt: string }> = {};
   for (const s of data || []) byRole[s.role as string] = { content: s.content as string, updatedAt: s.updated_at as string };
-  return NextResponse.json({ closer: byRole.closer || null, setter: byRole.setter || null });
+  return NextResponse.json({ closer: byRole.closer || null, offer: byRole.offer || null, setter: byRole.setter || null });
 }
 
 export async function PUT(req: NextRequest) {
   if (!(await ownerOnly())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json().catch(() => null);
   const role = body?.role;
-  if (role !== "closer" && role !== "setter") {
-    return NextResponse.json({ error: "role must be 'closer' or 'setter'" }, { status: 400 });
+  if (role !== "closer" && role !== "offer" && role !== "setter") {
+    return NextResponse.json({ error: "role must be 'closer', 'offer' or 'setter'" }, { status: 400 });
   }
   const sb = getServiceSupabase();
   const { error } = await sb.from("mm_scripts").upsert(

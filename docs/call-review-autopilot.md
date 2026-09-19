@@ -93,6 +93,41 @@ review runs failed in the last 24h.
 pending; Erin left the team (2026-09-19). `FATHOM_API_KEY` (Matthew), `JEREMY_MCP_TOKEN`,
 `SLACK_CHANNEL_SALES_MANAGER`, `CRON_SECRET` unchanged.
 
+## v2.1: phase breakdown + Jeremy's asks (2026-09-20)
+
+Owner's brief: "the deal analysis page is just a breakdown of every call, keep
+it super simple; Matthew is not a closer, stop reviewing his calls; Jeremy does
+the reviews." Changes:
+
+- **Only closer-key calls are reviewed.** `looksLikeSalesCall` returns false
+  for anything without `raw.ccos_closer`. The shared `FATHOM_API_KEY`
+  (Matthew's account) still syncs for the Sales Hub's team-call features but
+  can never feed a review. The five reviews of Matthew's own calls (Jul 6 to
+  Sep 15) were deleted from `mm_call_reviews` / `mm_review_runs`.
+- **The closer script is on file**: `docs/sales-call-script.md` is the
+  canonical copy, stored in `mm_scripts` role `closer` (edit it on the page
+  under "What Jeremy grades against"). `mm_scripts` role `offer` (the offer
+  and price sheet) is read when present; Jeremy asked for it to judge the
+  pitch. Role `guardrails` unchanged.
+- **Per-call format** (`CALL_BREAKDOWN_PROMPT` in `call-review-format.ts`):
+  Verdict with the composite grade and a Pattern line, six phases
+  (agenda, discovery, problem_label, transition, pitch, close) each with
+  score, `started_at` mm:ss, `minutes`, what happened, one fix pinned to the
+  moment, objections with verbatim quote and `say_instead`, Stop/Start/Keep,
+  a drill executable in under 15 minutes. JSON footer adds `verdict`,
+  `phases[]`, `pattern`, `applied_last_fix`, `manager_note`; `sub_scores` is
+  gone. `src/lib/call-phases.ts` is the one list of phases (prompt, Slack
+  post, API, page).
+- **Context Jeremy asked for**: the closer's previous review (stop/start/
+  drill/pattern + fixes for phases under 70) rides in `historyBlock` so each
+  review can say whether the last fix was applied. Ad-angle observations go
+  to `manager_note` only (closer-facing rule unchanged).
+- **Page** (`/micromanager`, alias `/deal-analysis`): one card per call with
+  grade ring, outcome, cash, verdict and the six phase bars; click expands
+  the breakdown inline. Closer chips filter. Day ops, rep table and digest
+  block were removed from this page (briefs ship as PDFs). Reviews written
+  before 2026-09-20 have no phases and fall back to the full markdown.
+
 ## Setter DM Review (added 2026-09-19)
 
 `/api/cron/dm-reviews` at `15 3 * * *` UTC (11:15pm ET). For the ET day it
