@@ -168,6 +168,9 @@ export default function HammerSection({ account, publicToken }: { account: AdsV2
   const action = useMemo((): { text: string; why: string } => {
     if (!launched) return { text: "Not launched", why: "" };
     if (freq == null) return { text: "Hold", why: "No 72h read yet" };
+    // The frequency rule needs a full 72 hours of delivery. Before day 3 the
+    // number is a partial window and no budget move is justified by it.
+    if (daysLive < 3) return { text: "Hold", why: `Day ${daysLive}. First full 72h read ${launch ? fmtMD(shiftDay(launch, 2)) : ""}` };
     const target = `Frequency ${one(freq)}, target ${HAMMER_RULES.freqMin}–${HAMMER_RULES.freqMax}`;
     if (freq < HAMMER_RULES.freqMin) return { text: `Raise budget $${budgetUsd} → $${budgetUsd + HAMMER_RULES.budgetStepUsd}`, why: target };
     if (freq > HAMMER_RULES.freqMax) return { text: `Lower budget $${budgetUsd} → $${Math.max(1, budgetUsd - HAMMER_RULES.budgetStepUsd)}`, why: target };
@@ -176,7 +179,7 @@ export default function HammerSection({ account, publicToken }: { account: AdsV2
     const anyUp = lifts.some((v) => v != null && v > HAMMER_RULES.liftRel);
     if (daysLive >= HAMMER_RULES.verdictDays && !anyUp) return { text: "Look at the setter conversation", why: `Day ${daysLive}, no funnel rate up 10%` };
     return { text: "Hold", why: target };
-  }, [launched, freq, cpm, budgetUsd, base, now, daysLive]);
+  }, [launched, freq, cpm, budgetUsd, base, now, daysLive, launch]);
 
   // Charts.
   const freqDays = (hammer?.days ?? []).slice(-7);

@@ -264,9 +264,17 @@ async function readHammerUncached(now: Date): Promise<HammerPayload> {
         freq72: freqByDay.get(d) ?? null,
       });
     }
-    const last = windows[windows.length - 1];
     const firstSpendDay = days.find((d) => d.spendCents > 0)?.day || null;
     const launchDay = firstSpendDay || (campaign.start_time ? accountDay(new Date(campaign.start_time)) : null);
+    // The 72h read never reaches before launch day: a pre-launch zero day
+    // would dilute it. Until three days have run, this is a partial read.
+    const from72 = launchDay && launchDay > shift(to, -2) ? launchDay : shift(to, -2);
+    const last = from72 === shift(to, -2)
+      ? windows[windows.length - 1]
+      : (await graph<{ data: GraphInsight[] }>(
+          `${campaign.id}/insights?time_range=${encodeURIComponent(JSON.stringify({ since: from72, until: to }))}&fields=spend,impressions,reach,frequency,cpm`,
+          token,
+        )).data?.[0] || null;
     const isLive = campaign.effective_status === "ACTIVE" && active.length > 0;
 
     return {
@@ -280,7 +288,7 @@ async function readHammerUncached(now: Date): Promise<HammerPayload> {
       audience,
       last72: last
         ? {
-            from: shift(to, -2),
+            from: from72,
             to,
             spendCents: cents(last.spend),
             impressions: parseInt(last.impressions || "0", 10),
