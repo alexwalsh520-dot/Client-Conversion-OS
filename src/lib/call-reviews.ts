@@ -18,8 +18,11 @@
 // fetched the call, tracker + DM + history context, Jeremy's structured JSON
 // footer (mm_call_reviews.fields), per-call Slack post, marketer digest,
 // weekly report. Design notes: docs/call-review-autopilot.md.
+// v2.1 (2026-09-20): reviews are a phase-by-phase breakdown against the closer
+// script (docs/sales-call-script.md, stored in mm_scripts role=closer); only
+// closer-key calls are reviewed (Matthew is not a closer).
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { SALES_MANAGER_PROMPT, mmSubmitCallReview } from "@/lib/micromanager";
+import { mmSubmitCallReview } from "@/lib/micromanager";
 import { jeremySend, jeremyPoll } from "@/lib/jeremy";
 import { postAsCso } from "@/lib/slack";
 import { markRun, runLabel, runReport, sendAndMaybeCollect, upsertRun, type RunRow } from "@/lib/call-review-runs";
@@ -31,7 +34,7 @@ import {
   trackerDayStats, type CloserHistory, type DmThread, type FathomKey, type TrackerRow,
 } from "@/lib/call-review-context";
 import {
-  APP_URL, CALL_FIELDS_SPEC, DIGEST_BODY_TEMPLATE, MARKETING_TEMPLATE, REVIEW_FLAG_RULES, WEEKLY_TEMPLATE,
+  APP_URL, CALL_BREAKDOWN_PROMPT, CALL_FIELDS_SPEC, DIGEST_BODY_TEMPLATE, MARKETING_TEMPLATE, REVIEW_FLAG_RULES, WEEKLY_TEMPLATE,
   clip, money, pct, renderCallPost, renderDigestHeader,
 } from "@/lib/call-review-format";
 
@@ -53,11 +56,10 @@ const INTERNAL_TITLE_PATTERNS = [
   "sales team huddle", "c suite", "management", "setter connect", "team connect", "closer huddle",
   "training", "interview", "1:1", "huddle", "fathom demo",
 ];
-const NON_CLOSER_EXTRA_PATTERNS = ["onboarding"];
-// A call from a non-closer account (Matthew's shared key) only counts when the
-// title is unmistakably a booked sales call. Everything else Matthew records is
-// a 1:1, a setter interview or a client call.
-const SALES_TITLE_RE = /strategy session|onboarding call|\((ts|ar)\)/i;
+// Matthew is not a closer (owner, 2026-09-20). A Fathom key only lists its own
+// user's recordings, so the shared TEAM key (Matthew's account) can only ever
+// surface Matthew's calls: 1:1s, interviews, client calls, huddles. None of
+// those are sales calls, whatever the title says. Only closer keys feed reviews.
 // Team domains: a call where every attendee is on one of these is internal.
 const TEAM_DOMAINS = ["@clientconversion.io", "@thefitnessprotocol.com"];
 
@@ -91,7 +93,7 @@ export const DEFAULT_GUARDRAILS = `You are coaching a rep inside an established 
 
 // Matt's rule: closers own every outcome. Lead quality, setter mistakes and ad
 // mismatch are real, but they are the MANAGER's information, never the rep's excuse.
-const CLOSER_FACING_RULE = `CLOSER-FACING RULE (hard): sections 1-12 are read by the rep. Never blame lead quality, the setter, the ads or the offer there — frame everything as what the closer could have done to close THIS person. Anything upstream of the closer (lead quality, setter misrepresentation, expectation gaps, ad-to-call mismatch, process breaks) goes ONLY into the JSON fields systemic_flags, setter_handoff and ad_to_call_mismatch, which the manager reads.`;
+const CLOSER_FACING_RULE = `CLOSER-FACING RULE (hard): the verdict, phase breakdown, objections, stop/start/keep and drill are read by the rep. Never blame lead quality, the setter, the ads or the offer there — frame everything as what the closer could have done to close THIS person. Anything upstream of the closer (lead quality, setter misrepresentation, expectation gaps, ad-to-call mismatch, process breaks) goes ONLY into the JSON fields systemic_flags, setter_handoff and ad_to_call_mismatch, which the manager reads.`;
 
 /* ------------------------------ Fathom sync ------------------------------ */
 
@@ -284,15 +286,13 @@ export interface CallLike {
 
 /** The one shared answer to "is this a prospect sales call worth reviewing?"
  *  Used by the review dispatcher and the Deal Analysis page so the two can
- *  never drift. Internal 1:1s, creator-client coaching calls, Fathom's demo
- *  call, too-short/too-thin calls, and anything a non-closer recorded that is
- *  not titled as a booked sales call are all out. */
+ *  never drift. Only calls fetched by a CLOSER's Fathom key qualify; internal
+ *  1:1s, creator-client coaching calls, Fathom's demo call and too-short or
+ *  too-thin calls are out. */
 export function looksLikeSalesCall(c: CallLike): boolean {
+  if (!c.closer_key) return false; // recorded by a non-closer (Matthew's account)
   const t = String(c.title || "").toLowerCase();
-  const closerRecorded = !!c.closer_key;
-  const patterns = closerRecorded ? INTERNAL_TITLE_PATTERNS : [...INTERNAL_TITLE_PATTERNS, ...NON_CLOSER_EXTRA_PATTERNS];
-  if (patterns.some((p) => t.includes(p))) return false;
-  if (!closerRecorded && !SALES_TITLE_RE.test(t)) return false;
+  if (INTERNAL_TITLE_PATTERNS.some((p) => t.includes(p))) return false;
   if (typeof c.duration_sec === "number" && c.duration_sec < MIN_DURATION_SEC) return false;
   if (!c.transcript || c.transcript.length < 1500) return false; // too thin to coach on
   const roster = getRoster();
@@ -323,12 +323,12 @@ function rawShareUrl(raw: unknown): string | null {
 
 /* --------------------------- prompt construction -------------------------- */
 
-interface Scripts { closerScript: string | null; guardrails: string | null }
+interface Scripts { closerScript: string | null; offerSheet: string | null; guardrails: string | null }
 
 export async function loadScripts(sb: Sb): Promise<Scripts> {
   const { data } = await sb.from("mm_scripts").select("role,content");
   const find = (role: string) => data?.find((s) => s.role === role)?.content?.trim() || null;
-  return { closerScript: find("closer"), guardrails: find("guardrails") };
+  return { closerScript: find("closer"), offerSheet: find("offer"), guardrails: find("guardrails") };
 }
 
 export interface PendingCall {
@@ -367,7 +367,7 @@ export async function buildCallContext(sb: Sb, call: PendingCall): Promise<CallC
       before: call.recorded_at ? new Date(Date.parse(call.recorded_at) + 3600e3).toISOString() : null,
     });
   } catch { /* keep null */ }
-  let history: CloserHistory = { count: 0, avg: null, last5: [], trend: "insufficient", flags: [] };
+  let history: CloserHistory = { count: 0, avg: null, last5: [], trend: "insufficient", flags: [], previous: null };
   try { history = await loadCloserHistory(sb, closerDisplay); } catch { /* keep empty */ }
   return {
     closerCode, closerDisplay, callType: callTypeFromTitle(call.title), callDateEt, prospect,
@@ -387,11 +387,20 @@ function trackerBlock(t: TrackerRow | null): string {
 }
 
 function historyBlock(h: CloserHistory): string {
-  if (h.count === 0) return "CLOSER 14-DAY HISTORY: no reviewed calls yet.";
+  if (h.count === 0) return "CLOSER 14-DAY HISTORY: no reviewed calls yet, so pattern = null and applied_last_fix = null.";
+  const p = h.previous;
   return [
     `CLOSER 14-DAY HISTORY: ${h.count} reviewed calls, average grade ${h.avg}/100, trend ${h.trend}.`,
     `Last grades (oldest→newest): ${h.last5.join(", ")}`,
     h.flags.length ? `Prior review flags: ${h.flags.map((f) => clip(f, 120)).join(" | ")}` : "",
+    p ? [
+      `PREVIOUS REVIEW (${p.date || "?"}, ${p.prospect || "?"}, grade ${p.grade ?? "n/a"}) — check whether the closer applied it:`,
+      p.stop ? `  Stop: ${clip(p.stop, 200)}` : "",
+      p.start ? `  Start: ${clip(p.start, 240)}` : "",
+      p.drill ? `  Drill: ${clip(p.drill, 200)}` : "",
+      p.pattern ? `  Pattern named then: ${clip(p.pattern, 160)}` : "",
+      ...p.phaseFixes.map((f) => `  Fix: ${clip(f, 200)}`),
+    ].filter(Boolean).join("\n") : "",
   ].filter(Boolean).join("\n");
 }
 
@@ -402,9 +411,9 @@ export function buildCallMessage(call: PendingCall, ctx: CallContext, scripts: S
         .map((a) => a?.name || a?.email || "").filter(Boolean).join(", ")
     : "";
   return [
-    "You are acting as our AI Sales Manager (Jeremy). Review the sales call below and write the full coaching review, then the JSON footer.",
+    "You are Jeremy, our head of sales. Break down the sales call below against our script, phase by phase, then end with the JSON footer.",
     "",
-    SALES_MANAGER_PROMPT,
+    CALL_BREAKDOWN_PROMPT,
     "",
     "COMPANY COACHING BOUNDARIES (hard rules, these override anything above):",
     guardrails,
@@ -412,8 +421,12 @@ export function buildCallMessage(call: PendingCall, ctx: CallContext, scripts: S
     CLOSER_FACING_RULE,
     "",
     scripts.closerScript
-      ? `OUR CLOSER SCRIPT (lines wrapped in **double asterisks** are word-for-word; everything else is a flexible guide). Also grade how closely the rep followed it:\n${scripts.closerScript}`
-      : "No closer script is on file, so skip script-adherence scoring (omit adherence_score).",
+      ? `OUR CLOSER SCRIPT (lines wrapped in **double asterisks** are word-for-word; everything else is a framework the rep runs in their own words):\n${scripts.closerScript}`
+      : "No closer script is on file: grade each phase against the phase descriptions in the scoring rules and omit adherence_score.",
+    "",
+    scripts.offerSheet
+      ? `OFFER & PRICE SHEET (what the closer is selling and at what numbers; judge the pitch and the price presentation against this):\n${scripts.offerSheet}`
+      : "OFFER & PRICE SHEET: not on file. Use the program and price in the script and the tracker row's program/cash; judge the value stack, not the number.",
     "",
     "CALL DETAILS",
     `Closer: ${ctx.closerDisplay || "unknown"}${ctx.closerCode ? ` (tracker code ${ctx.closerCode})` : ""}`,
@@ -436,7 +449,7 @@ export function buildCallMessage(call: PendingCall, ctx: CallContext, scripts: S
     call.transcript.slice(0, TRANSCRIPT_CAP),
     "",
     "FINAL OUTPUT REQUIREMENT",
-    "Write the full review in markdown following the OUTPUT FORMAT above (12 numbered sections). Then end your reply with exactly one fenced code block labeled json containing only this object (no comments, valid JSON):",
+    "Write the breakdown in the exact markdown shape above. Then end your reply with exactly one fenced code block labeled json containing only this object (no comments, valid JSON; phases in call order with the six keys shown):",
     "```json",
     CALL_FIELDS_SPEC,
     "```",
@@ -767,7 +780,7 @@ function reviewBlock(r: ReviewRow, i: number, mdCap: number): string {
   const f = r.fields || {};
   const structured = Object.keys(f).length
     ? `STRUCTURED FIELDS: ${JSON.stringify({
-        sub_scores: f.sub_scores, objections_raised: f.objections_raised, prospect_language: f.prospect_language,
+        verdict: f.verdict, phases: f.phases, objections_raised: f.objections_raised, prospect_language: f.prospect_language,
         ad_to_call_mismatch: f.ad_to_call_mismatch, setter_handoff: f.setter_handoff, systemic_flags: f.systemic_flags,
         review_flag: f.review_flag, stop: f.stop, start: f.start, keep: f.keep, drill: f.drill, red_flags: f.red_flags,
         setter: f.setter, cash_collected: f.cash_collected, call_type: f.call_type, tracker_matched: f.tracker_matched,

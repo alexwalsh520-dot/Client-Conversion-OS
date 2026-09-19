@@ -1,4 +1,5 @@
-// One full call review (markdown), fetched on row expand.
+// One full call review: Jeremy's structured fields (phases, objections,
+// stop/start/keep, drill) plus the markdown copy. Fetched when a call expands.
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getServiceSupabase } from "@/lib/supabase";
@@ -17,7 +18,7 @@ export async function GET(req: NextRequest) {
   const sb = getServiceSupabase();
   const { data, error } = await sb
     .from("mm_call_reviews")
-    .select("fathom_id,review_md,grade,adherence_score,adherence_notes,closer,outcome,model,created_at")
+    .select("fathom_id,review_md,grade,adherence_score,adherence_notes,closer,outcome,model,created_at,fields")
     .eq("fathom_id", fathomId)
     .maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
