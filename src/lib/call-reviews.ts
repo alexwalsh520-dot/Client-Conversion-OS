@@ -23,7 +23,6 @@ import { SALES_MANAGER_PROMPT, mmSubmitCallReview } from "@/lib/micromanager";
 import { jeremySend, jeremyPoll } from "@/lib/jeremy";
 import { postAsCso } from "@/lib/slack";
 import { markRun, runLabel, runReport, sendAndMaybeCollect, upsertRun, type RunRow } from "@/lib/call-review-runs";
-import { finalizeDmCombine, finalizeSetterRun } from "@/lib/dm-reviews";
 import { deliverReport } from "@/lib/report-delivery";
 import { getRoster } from "@/lib/fathom-team-calls";
 import {
@@ -534,13 +533,23 @@ async function finalizeCallReview(sb: Sb, run: RunRow, reply: string): Promise<s
   const recMs = call.recorded_at ? Date.parse(String(call.recorded_at)) : 0;
   let posted = false;
   if (recMs > Date.now() - FRESH_CALL_MS) {
-    posted = await postAsCso(renderCallPost({
+    // Per-call review ships as a PDF like every other report (owner, 9/19:
+    // "make all of it in PDFs"). The Slack comment keeps the two-line
+    // header so the feed still scans at a glance.
+    const post = renderCallPost({
       fathomId: String(run.fathom_id),
       closer, prospect, callType: ctx.callType, outcome,
       cashCents: ctx.tracker ? Number(ctx.tracker.collected_revenue_cents) || 0 : null,
       grade, trend: ctx.history.trend, avg14: ctx.history.avg, history: ctx.history.count,
       fields: merged, dmAvailable: !!ctx.dm, trackerMatched: !!ctx.tracker,
-    })).catch(() => false);
+    });
+    const how = await deliverReport({
+      title: `Call Review — ${closer || "Closer"} × ${prospect || "Prospect"}`,
+      filename: `call-review-${String(run.fathom_id).replace(/[^a-z0-9]/gi, "")}.pdf`,
+      summary: post.split("\n").slice(0, 2).join("\n"),
+      body: post,
+    }).catch(() => "failed" as const);
+    posted = how !== "failed";
   }
   return `review saved${fieldsErr ? " (fields column missing — paste migration)" : ""}${posted ? ", posted" : ""}`;
 }
@@ -589,8 +598,11 @@ async function finalizeRun(sb: Sb, run: RunRow, reply: string): Promise<string> 
     case "digest": return finalizeDigest(sb, run, reply);
     case "marketing": return finalizeMarketing(sb, run, reply);
     case "weekly": return finalizeWeekly(sb, run, reply);
-    case "setter": return finalizeSetterRun(sb, run, reply);
-    case "dm-combine": return finalizeDmCombine(sb, run, reply);
+    // DM reviews no longer run through Jeremy (src/lib/dm-reviews.ts calls the
+    // model directly); a leftover row from the old pipeline is failed by pollRuns.
+    case "setter":
+    case "dm-combine":
+      throw new Error("DM reviews moved off Jeremy; stale run ignored");
     default: return finalizeCallReview(sb, run, reply);
   }
 }

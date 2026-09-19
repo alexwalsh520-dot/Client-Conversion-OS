@@ -1,10 +1,12 @@
 // Shared run bookkeeping for every Jeremy job (call reviews, nightly briefs,
-// weekly report, setter DM reviews). One table, mm_review_runs:
+// weekly report). One table, mm_review_runs:
 //   kind "call"   -> fathom_id = the recording id
 //   kind "digest" -> the sales brief keys on digest_date; every other report
 //                    keys on fathom_id = "<report>:<period>" (marketing:,
-//                    weekly:, setter:, dm-combine:) because mm_review_runs_kind_check only
-//                    allows the two kinds and digest_date is unique.
+//                    weekly:) because mm_review_runs_kind_check only allows
+//                    the two kinds and digest_date is unique.
+// The setter DM reviews call the model directly (src/lib/dm-reviews-model.ts)
+// and never create runs.
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { jeremySend, jeremyPoll } from "@/lib/jeremy";
 
@@ -16,7 +18,7 @@ export interface RunRow {
   status: string; attempts: number; created_at: string;
 }
 
-/** "call" | "digest" | "marketing" | "weekly" | "setter" | "dm-combine" */
+/** "call" | "digest" | "marketing" | "weekly" */
 export function runReport(run: RunRow): string {
   if (run.kind === "call") return "call";
   const id = String(run.fathom_id || "");
