@@ -72,7 +72,18 @@ export async function sendAndMaybeCollect(
   opts: { force?: boolean; waitMs?: number } = {}
 ): Promise<string> {
   if (!opts.force && (await alreadyDone(sb, kind, key))) return `${kind} already completed for ${key} (pass force=1 to redo)`;
-  const res = await jeremySend(message);
+  // A send that comes back without ids is unpollable — the collector would
+  // fail it later with "jeremyPoll needs run_id or conversation_id" (this
+  // stranded the 2026-09-17 Unassigned batches). Retry once, then surface the
+  // failure NOW instead of writing a null-id row.
+  let res = await jeremySend(message);
+  if (!res.run_id && !res.conversation_id) {
+    await new Promise((r) => setTimeout(r, 3000));
+    res = await jeremySend(message);
+  }
+  if (!res.run_id && !res.conversation_id) {
+    return `${kind} send failed for ${key}: Jeremy returned no run/conversation id`;
+  }
   const k = runKey(kind, key);
   await upsertRun(sb, {
     kind: "digest",
