@@ -3,10 +3,11 @@
  *
  * Daily (13:10 UTC = 9:10am ET). Finds every tracker sale in the rolling
  * window with cash collected but NO recorded origin — no ad keyword, no
- * organic keyword, and no origin-stating call type (Miscellaneous Chat,
- * Follow up, Outbound Call, Closer Cold Call). Blank call types and the
- * defaults that state no origin (Strategy Session, Onboarding Call) count
- * as open. DMs the list to the recipient(s) with who owns each sale and
+ * organic keyword, no human resolution in the Ads V2 attribution workspace
+ * (a keyword, or "not an ad sale"), and no origin-stating call type
+ * (Miscellaneous Chat, Follow up, Outbound Call, Closer Cold Call). Blank
+ * call types and the defaults that state no origin (Strategy Session,
+ * Onboarding Call) count as open. DMs the list to the recipient(s) with who owns each sale and
  * exactly what to write to close it.
  *
  * Loop close: when the open list goes from something to nothing, one
@@ -113,7 +114,7 @@ function buildOpenBlocks(open: OpenSale[], closedCount: number, closedCents: num
       elements: [
         {
           type: "mrkdwn",
-          text: 'To close one: set its *Call Type* in the sales tracker (Miscellaneous Chat / Follow up / Outbound Call), or paste the ManyChat link so the keyword attaches. The Ads V2 coverage card hits 100% when this list is empty.',
+          text: 'To close one: set its *Call Type* in the sales tracker (Miscellaneous Chat / Follow up / Outbound Call), paste the ManyChat link so the keyword attaches, or resolve it in the Ads V2 attribution workspace (keyword, or not an ad sale). The Ads V2 coverage card hits 100% when this list is empty.',
         },
       ],
     },
@@ -156,7 +157,7 @@ async function GETimpl() {
   const { data, error } = await db
     .from("adsv2_sale_facts")
     .select(
-      "sale_key, prospect_name, closer, setter_name, call_type, sale_et_day, collected_usd_cents, subscriber_id, keyword_normalized, is_organic, awaiting_review",
+      "sale_key, prospect_name, closer, setter_name, call_type, sale_et_day, collected_usd_cents, subscriber_id, keyword_normalized, is_organic, awaiting_review, blank_reason, evidence_key",
     )
     .gte("sale_et_day", from)
     .lte("sale_et_day", today)
@@ -169,10 +170,19 @@ async function GETimpl() {
 
   const open: OpenSale[] = [];
   for (const r of data || []) {
-    const attributed =
-      Boolean(r.keyword_normalized) && String(r.keyword_normalized).trim() !== "" && !r.awaiting_review;
+    const hasKeyword = Boolean(r.keyword_normalized) && String(r.keyword_normalized).trim() !== "";
+    const attributed = hasKeyword && !r.awaiting_review;
+    // A person already looked at this sale and decided: a keyword, organic,
+    // or "not an ad sale" (blank_reason human_confirmed_non_ad). The labeler
+    // records that as evidence_key human_resolution and clears the review
+    // flag. That IS a recorded origin; the door's coverage read counts it as
+    // classified, so the ping must never chase it again (9/19: two organic
+    // $50-lane upsells were resolved and still got pinged).
+    const humanResolved =
+      !r.awaiting_review &&
+      (r.evidence_key === "human_resolution" || r.blank_reason === "human_confirmed_non_ad" || Boolean(r.is_organic));
     const originWritten = ORIGIN_CALL_TYPES.has((r.call_type || "").trim().toLowerCase());
-    if (!attributed && !originWritten) open.push(r as OpenSale);
+    if (!attributed && !humanResolved && !originWritten) open.push(r as OpenSale);
   }
   const openKeys = open.map((s) => s.sale_key).sort();
   const openCents = open.reduce((sum, s) => sum + s.collected_usd_cents, 0);
