@@ -37,9 +37,11 @@ const MIN_INBOUND = 2; // "engaged": the lead replied at least twice, not just t
 
 // Wall-clock budget. The route's maxDuration is 300s: collection takes a few
 // seconds, grading gets the bulk, the combine + PDF get what is left.
-const GRADE_CONCURRENCY = 4;
-const GRADE_DEADLINE_MS = 200_000; // from the start of grading
-const COMBINE_DEADLINE_MS = 75_000; // from the start of the combine
+// All batches at once: a night is ~10 batches and the wall-clock is the SLOWEST
+// batch, not the sum. At 4-wide the 2026-09-18 run timed out its second wave.
+const GRADE_CONCURRENCY = 12;
+const GRADE_DEADLINE_MS = 210_000; // from the start of grading
+const COMBINE_DEADLINE_MS = 60_000; // from the start of the combine
 
 /* --------------------------------- time ---------------------------------- */
 
@@ -468,8 +470,18 @@ export async function runDmReviews(sb: Sb, opts: { date?: string; force?: boolea
     const skipped = batches.filter((b) => failed[b.key]).map((b) => b.part.of > 1 ? `${b.setter} (part ${b.part.n}/${b.part.of})` : b.setter);
     let body: string;
     let how: string;
-    if (notes.length === 0) {
-      throw new DmModelError(`every batch failed — nothing to combine (${Object.values(failed)[0]})`, true);
+    // Never post a brief that graded almost nothing: require the successful
+    // batches to cover at least 60% of the day's engaged conversations.
+    // (2026-09-18: one tiny batch succeeded, ten failed, and a brief that
+    // said "skipped: everyone" went out. Not again.) No row is written, so a
+    // re-run is clean.
+    const totalConvs = batches.reduce((n, b) => n + b.convs.length, 0);
+    const gradedConvs = batches.filter((b) => !failed[b.key]).reduce((n, b) => n + b.convs.length, 0);
+    if (notes.length === 0 || totalConvs === 0 || gradedConvs / totalConvs < 0.6) {
+      throw new DmModelError(
+        `only ${gradedConvs}/${totalConvs} conversations graded — not posting a brief (${Object.values(failed)[0] ?? "no failures recorded"})`,
+        true,
+      );
     }
     try {
       body = await writeDmBrief(buildDmCombineMessage(date, header, setterStatLines(bySetter), notes, skipped), tCombine + COMBINE_DEADLINE_MS);

@@ -12,8 +12,9 @@ import Anthropic from "@anthropic-ai/sdk";
 
 export const DM_MODEL = "claude-opus-5";
 const ATTEMPTS = 3;
-const GRADE_MAX_TOKENS = 8000; // brief body (<3k chars) + one JSON entry per conversation
-const COMBINE_MAX_TOKENS = 6000; // the day's brief (<3.5k chars)
+const GRADE_MAX_TOKENS = 24000; // brief body + one JSON entry per conversation; a 30-conversation batch
+// ran past 8k on 2026-09-18 and the model stopped mid-object (every batch failed)
+const COMBINE_MAX_TOKENS = 8000; // the day's brief
 const MIN_ATTEMPT_MS = 20_000; // don't start an attempt that can't finish
 
 /* ------------------------------- schema ---------------------------------- */
@@ -59,9 +60,9 @@ export const SETTER_GRADING_SCHEMA: Record<string, unknown> = {
           lead: { type: "string", description: "Lead name exactly as in the conversation header." },
           grade: { type: "integer", description: "0-100." },
           stage: { type: "string", enum: ["cold", "engaged", "qualified", "link_sent", "booked", "dead"] },
-          biggest_miss: { ...nullableString, description: "One sentence, or null." },
-          best_line: { ...nullableString, description: "Verbatim setter line, or null." },
-          next_message: { ...nullableString, description: "The exact message the setter should send next, or null if closed." },
+          biggest_miss: { ...nullableString, description: "One short sentence (under 20 words), or null." },
+          best_line: { ...nullableString, description: "Verbatim setter line (under 120 characters), or null." },
+          next_message: { ...nullableString, description: "The exact next message the setter should send (under 200 characters), or null if closed." },
         },
         required: ["lead", "grade", "stage", "biggest_miss", "best_line", "next_message"],
         additionalProperties: false,
