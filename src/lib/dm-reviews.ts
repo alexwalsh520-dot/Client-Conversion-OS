@@ -1,18 +1,21 @@
-// Setter DM Review — Jeremy grades every engaged Instagram conversation, per
-// setter, once a night, and Matt gets exactly ONE "DM Brief — {date}" PDF in
-// #a-sales-manager (owner's rule: never per-setter posts, never part 1/2/3).
+// Setter DM Review — the model (in the "Jeremy" head-of-sales persona) grades
+// every engaged Instagram conversation, per setter, once a night, and Matt
+// gets exactly ONE "DM Brief — {date}" PDF in #a-sales-manager (owner's rule:
+// never per-setter posts, never part 1/2/3).
 //
-// Two stages:
-//   1. Per-setter-batch grading runs (silent). The day's conversations for one
-//      setter are sent to Jeremy raw (one message per setter, split only when
-//      a setter's day exceeds the size cap). Jeremy returns review notes plus
-//      a JSON footer with a grade per conversation, which lands in
-//      mm_dm_conversation_reviews for trends; the notes land in mm_reports
-//      (kind "setter") for the combiner. Nothing is posted to Slack.
-//   2. The combiner. When the LAST setter run of the date finalizes (inline or
-//      via the 30-min call-reviews tick), one final Jeremy run gets the day
-//      totals plus every stored setter note and writes THE DM BRIEF; its
-//      finalize is the pipeline's only deliverReport call.
+// The whole night runs synchronously inside ONE cron invocation, against the
+// Anthropic API directly (src/lib/dm-reviews-model.ts) — no chat-agent
+// middleman, no run rows, no collector tick, nothing that can strand:
+//   1. Grade. The day's conversations for one setter go out as one request
+//      (split only when a setter's day exceeds the size cap); up to 4 batches
+//      run concurrently. Each reply is a structured object: the brief body
+//      plus a grade per conversation, which lands in mm_dm_conversation_reviews
+//      for trends; the notes land in mm_reports (kind "setter"). Nothing is
+//      posted to Slack.
+//   2. Combine. One more request gets the day totals plus every setter note
+//      from step 1 and writes THE DM BRIEF — the pipeline's only deliverReport
+//      call. A batch that fails after retries is skipped and named in the
+//      brief; the day is never stranded.
 //
 // Attribution (measured Sep 2026: every two-way conversation links to its
 // ManyChat lead, and ~all carry a setter on the ManyChat tag events):
@@ -23,7 +26,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { addDays, etDate, flattenDmThread, normalizeName, type DmMessage } from "@/lib/call-review-context";
 import { clip } from "@/lib/call-review-format";
 import { deliverReport } from "@/lib/report-delivery";
-import { sendAndMaybeCollect, type RunRow } from "@/lib/call-review-runs";
+import { DM_MODEL, DmModelError, gradeSetterBatch, pool, writeDmBrief, type SetterGrading } from "@/lib/dm-reviews-model";
 
 type Sb = SupabaseClient;
 
@@ -31,6 +34,12 @@ const THREAD_LOOKBACK_DAYS = 14;
 const MAX_MSGS_PER_CONV = 40;
 const MAX_BATCH_CHARS = 80000;
 const MIN_INBOUND = 2; // "engaged": the lead replied at least twice, not just the keyword
+
+// Wall-clock budget. The route's maxDuration is 300s: collection takes a few
+// seconds, grading gets the bulk, the combine + PDF get what is left.
+const GRADE_CONCURRENCY = 4;
+const GRADE_DEADLINE_MS = 200_000; // from the start of grading
+const COMBINE_DEADLINE_MS = 75_000; // from the start of the combine
 
 /* --------------------------------- time ---------------------------------- */
 
@@ -193,7 +202,10 @@ export const SETTER_BRIEF_TEMPLATE = `*GRADE* {0-100 for the setter's day}
 {anything upstream of the setter: lead quality, automation replying badly, flow bugs, response-time problems outside their hours}
 {or "None"}`;
 
+/** Field-by-field meaning of the structured reply; the shape itself is
+ *  enforced by SETTER_GRADING_SCHEMA in dm-reviews-model.ts. */
 export const SETTER_FIELDS_SPEC = `{
+  "brief_md": "<the SETTER BRIEF body in the structure above>",
   "setter": "<name>",
   "grade": <0-100>,
   "conversations": [
@@ -224,14 +236,12 @@ export function buildSetterMessage(setter: string, date: string, convs: SetterCo
     scripts.guardrails ? `COMPANY BOUNDARIES: ${scripts.guardrails}` : "",
     scripts.setterScript ? `OUR SETTER SCRIPT (grade adherence loosely):\n${scripts.setterScript}` : "No setter script is on file.",
     "",
-    "WRITE EXACTLY THIS STRUCTURE (Slack mrkdwn: *bold* labels, short lines, no tables, no code blocks, no # headings). Do NOT repeat the header line — the system prepends it:",
+    "THE BRIEF BODY (brief_md) HAS EXACTLY THIS STRUCTURE (Slack mrkdwn: *bold* labels, short lines, no tables, no code blocks, no # headings). Do NOT repeat the header line — the system prepends it:",
     SETTER_BRIEF_TEMPLATE,
     "",
     "Rules: quote the actual messages. Name leads exactly as they appear in the conversation headers. Be blunt and specific; 'Do this', never 'consider'. Keep the body under 3,000 characters.",
-    "Then end your reply with exactly one fenced code block labeled json containing only this object (valid JSON, no comments), with one entry per conversation:",
-    "```json",
+    "Reply with one structured object — the brief body plus the grading fields, with one conversations entry per conversation (grades 0-100):",
     SETTER_FIELDS_SPEC,
-    "```",
     "",
     `CONVERSATIONS (${convs.length}):`,
     ...convs.map(conversationBlock),
@@ -250,15 +260,7 @@ function splitBatches(convs: SetterConversation[]): SetterConversation[][] {
   return out;
 }
 
-/* -------------------------------- finalize -------------------------------- */
-
-function parseReply(reply: string): { md: string; fields: Record<string, unknown> } {
-  const matches = [...reply.matchAll(/```json\s*([\s\S]*?)```/g)];
-  const last = matches[matches.length - 1];
-  let fields: Record<string, unknown> = {};
-  if (last) { try { const p = JSON.parse(last[1]); if (p && typeof p === "object") fields = p; } catch { /* keep md */ } }
-  return { md: (last ? reply.replace(last[0], "") : reply).trim(), fields };
-}
+/* --------------------------------- store ---------------------------------- */
 
 /** Header rendered by code, never by the model. */
 export function renderSetterHeader(setter: string, date: string, convs: SetterConversation[], totals: { active: number; engaged: number }, part: { n: number; of: number }): string {
@@ -272,35 +274,41 @@ export function renderSetterHeader(setter: string, date: string, convs: SetterCo
   ].join("\n");
 }
 
-export async function finalizeSetterRun(sb: Sb, run: RunRow, reply: string): Promise<string> {
-  // fathom_id = "setter:<date>:<setter>[:p<n>]"
-  const parts = String(run.fathom_id || "").split(":");
-  const date = parts[1] || etDate();
-  const setter = parts[2] || "Unassigned";
-  const partN = parts[3] ? Number(parts[3].replace("p", "")) : 1;
-  const { md, fields } = parseReply(reply);
-  if (!md || md.length < 120) throw new Error("reply too short to be a setter brief");
+/** mm_reports period_key for a setter batch: "{date}:{Setter}[:pN]". */
+export function setterNoteKey(date: string, setter: string, partN: number): string {
+  return `${date}:${setter}${partN > 1 ? `:p${partN}` : ""}`;
+}
 
-  const { bySetter, totals } = await collectSetterDay(sb, date);
-  const batches = splitBatches(bySetter[setter] || []);
-  const convs = batches[partN - 1] || [];
-  const header = renderSetterHeader(setter, date, convs, totals, { n: partN, of: Math.max(batches.length, 1) });
+export interface SetterBatch {
+  key: string;
+  setter: string;
+  part: { n: number; of: number };
+  convs: SetterConversation[];
+}
 
-  // Per-conversation grades -> mm_dm_conversation_reviews, matched back by lead name.
+/** Per-conversation grades -> mm_dm_conversation_reviews, matched back by lead name;
+ *  the brief body -> mm_reports (kind "setter"), for the combiner only. */
+async function storeSetterGrading(sb: Sb, date: string, batch: SetterBatch, totals: { active: number; engaged: number }, graded: SetterGrading): Promise<{ note: string; full: string }> {
+  const { setter, convs, part } = batch;
+  const { brief_md, ...fields } = graded;
+  const md = String(brief_md || "").trim();
+  if (md.length < 120) throw new DmModelError(`${batch.key}: brief body too short (${md.length} chars)`, false);
+  const header = renderSetterHeader(setter, date, convs, totals, part);
+
   const byName: Record<string, SetterConversation> = {};
   for (const c of convs) {
     if (c.leadName) byName[normalizeName(c.leadName)] = c;
     if (c.handle) byName[`@${c.handle.toLowerCase()}`] = c;
   }
-  const graded = Array.isArray(fields.conversations) ? (fields.conversations as Record<string, unknown>[]) : [];
-  const rows = graded.map((g) => {
+  const grades = Array.isArray(graded.conversations) ? graded.conversations : [];
+  const rows = grades.map((g) => {
     const key = String(g.lead || "");
     const c = byName[normalizeName(key)] || byName[key.toLowerCase()] || null;
     if (!c) return null;
     return {
       review_date: date, setter, ig_subscriber_id: c.igId, manychat_subscriber_id: c.manychatId,
       lead_name: c.leadName || c.handle, grade: typeof g.grade === "number" ? Math.round(g.grade) : null,
-      stage: typeof g.stage === "string" ? g.stage : null, fields: g, model: "jeremy",
+      stage: typeof g.stage === "string" ? g.stage : null, fields: g, model: DM_MODEL,
     };
   }).filter(Boolean);
   let stored = 0; let storeErr: string | null = null;
@@ -308,37 +316,18 @@ export async function finalizeSetterRun(sb: Sb, run: RunRow, reply: string): Pro
     const { error } = await sb.from("mm_dm_conversation_reviews").upsert(rows, { onConflict: "review_date,ig_subscriber_id" });
     if (error) storeErr = error.message; else stored = rows.length;
   }
-  // The setter notes are stored for the combiner, never posted on their own.
   const full = `${header}\n\n${md}`;
   const { error: repErr } = await sb.from("mm_reports").upsert({
-    kind: "setter", period_key: `${date}:${setter}${partN > 1 ? `:p${partN}` : ""}`, report_md: full,
-    fields: { ...fields, conversations_matched: stored, conversations_sent: convs.length }, model: "jeremy", created_at: new Date().toISOString(),
+    kind: "setter", period_key: batch.key, report_md: full,
+    fields: { ...fields, conversations_matched: stored, conversations_sent: convs.length }, model: DM_MODEL, created_at: new Date().toISOString(),
   }, { onConflict: "kind,period_key" });
-  // Was this the day's last setter run? Then dispatch the one combined brief.
-  let combine: string;
-  try {
-    combine = await maybeDispatchDmCombine(sb, date, { bySetter, totals }, run.id);
-  } catch (e) {
-    combine = `error: ${String(e).slice(0, 160)}`;
-  }
-  return `setter notes stored silently (${stored}/${graded.length} grades stored${storeErr ? `; grades not stored: ${clip(storeErr, 60)}` : ""}${repErr ? `; notes not stored: ${clip(repErr.message, 60)}` : ""}); combine: ${combine}`;
+  const note = `${stored}/${grades.length} grades stored${storeErr ? ` (grades not stored: ${clip(storeErr, 60)})` : ""}${repErr ? ` (notes not stored: ${clip(repErr.message, 60)})` : ""}`;
+  return { note, full };
 }
 
 /* ------------------------------- combiner ---------------------------------- */
 // Owner's rule (2026-09-18): the whole pipeline posts exactly ONE Slack
-// message per day — "DM Brief — {date}" as a PDF. The per-setter runs above
-// only grade and store; when the last of them finishes, one more Jeremy run
-// merges everything into the single brief.
-
-/** Every run key the day's dispatch loop creates, as mm_review_runs.fathom_id. */
-export function setterRunKeys(date: string, bySetter: Record<string, SetterConversation[]>): string[] {
-  const keys: string[] = [];
-  for (const setter of Object.keys(bySetter).sort()) {
-    const batches = splitBatches(bySetter[setter]);
-    for (let i = 0; i < batches.length; i++) keys.push(`setter:${date}:${setter}${i > 0 ? `:p${i + 1}` : ""}`);
-  }
-  return keys;
-}
+// message per day — "DM Brief — {date}" as a PDF.
 
 /** Two-line day header for the combined brief; rendered by code, never by the model. */
 export function renderDmBriefHeader(date: string, bySetter: Record<string, SetterConversation[]>, totals: { active: number; engaged: number }): string {
@@ -363,7 +352,7 @@ function setterStatLines(bySetter: Record<string, SetterConversation[]>): string
   });
 }
 
-export function buildDmCombineMessage(date: string, header: string, setterLines: string[], briefs: { key: string; md: string }[]): string {
+export function buildDmCombineMessage(date: string, header: string, setterLines: string[], briefs: { key: string; md: string }[], skipped: string[] = []): string {
   return [
     `You are our head of sales (Jeremy). Below are the day's Instagram DM numbers and your own per-setter review notes for ${date}. Write THE DM BRIEF for the sales manager (Matt) — one document for the whole day.`,
     "",
@@ -380,161 +369,137 @@ export function buildDmCombineMessage(date: string, header: string, setterLines:
     "PER SETTER:",
     ...(setterLines.length ? setterLines : ["- none"]),
     "",
+    skipped.length ? `NOT REVIEWED (grading failed tonight — say so in their section instead of guessing): ${skipped.join(", ")}` : "",
     briefs.length
       ? `YOUR PER-SETTER REVIEW NOTES (${briefs.length} — condense them, do not copy them):`
       : "PER-SETTER REVIEW NOTES: none stored — write from the day numbers alone and say the conversation detail is missing.",
     ...briefs.map((b) => `--- NOTES ${b.key} ---\n${b.md}`),
-  ].join("\n");
-}
-
-/**
- * If every setter-batch run expected for `date` is finished (the run calling
- * this counts as finished — its row is still "running" while we finalize it),
- * dispatch the single combined DM BRIEF run. sendAndMaybeCollect's alreadyDone
- * guard (run kind "dm-combine", keyed by date) makes the dispatch idempotent.
- */
-export async function maybeDispatchDmCombine(
-  sb: Sb,
-  date: string,
-  day: { bySetter: Record<string, SetterConversation[]>; totals: { active: number; engaged: number } },
-  currentRunId?: number
-): Promise<string> {
-  const expected = setterRunKeys(date, day.bySetter);
-  if (expected.length === 0) return "no setter runs expected for the day";
-  const { data, error } = await sb.from("mm_review_runs")
-    .select("id,fathom_id,status").eq("kind", "digest").in("fathom_id", expected);
-  if (error) return `run check failed: ${error.message}`;
-  const byKey: Record<string, { id: number; status: string }> = {};
-  for (const r of (data || []) as { id: number; fathom_id: string; status: string }[]) byKey[r.fathom_id] = r;
-  // A run is done when it completed, failed for good, or is the one being
-  // finalized right now. A key with no row was never dispatched (?setter=
-  // debug, or the nightly cron has not run) — the day is not complete.
-  const pending = expected.filter((k) => {
-    const r = byKey[k];
-    return !(r && (r.id === currentRunId || r.status === "completed" || r.status === "failed"));
-  });
-  if (pending.length > 0) return `waiting on ${pending.length}/${expected.length} setter runs`;
-
-  // Per-setter notes from mm_reports; tolerate the table not existing yet.
-  let briefs: { key: string; md: string }[] = [];
-  let briefsNote = "";
-  try {
-    const { data: reps, error: repErr } = await sb.from("mm_reports")
-      .select("period_key,report_md").eq("kind", "setter")
-      .like("period_key", `${date}:%`).order("period_key");
-    if (repErr) briefsNote = ` (notes unavailable: ${clip(repErr.message, 60)})`;
-    else briefs = (reps || []).map((r) => ({ key: String(r.period_key), md: String(r.report_md || "") }));
-  } catch (e) {
-    briefsNote = ` (notes unavailable: ${clip(String(e), 60)})`;
-  }
-  const header = renderDmBriefHeader(date, day.bySetter, day.totals);
-  const how = await sendAndMaybeCollect(
-    sb, "dm-combine", date,
-    buildDmCombineMessage(date, header, setterStatLines(day.bySetter), briefs),
-    (run, reply) => finalizeDmCombine(sb, run, reply),
-    { waitMs: 0 }
-  );
-  return `${how}${briefsNote}`;
-}
-
-/** The pipeline's ONLY Slack post: "DM Brief — {date}" as one PDF. */
-export async function finalizeDmCombine(sb: Sb, run: RunRow, reply: string): Promise<string> {
-  const date = String(run.fathom_id || "").replace(/^dm-combine:/, "") || etDate();
-  const md = reply.trim();
-  if (!md || md.length < 120) throw new Error("reply too short to be a DM brief");
-  let header = `*DM BRIEF* | ${date}`;
-  try {
-    const { bySetter, totals } = await collectSetterDay(sb, date);
-    header = renderDmBriefHeader(date, bySetter, totals);
-  } catch { /* header degrades to the title line */ }
-  const full = `${header}\n\n${md}`;
-  const { error: repErr } = await sb.from("mm_reports").upsert({
-    kind: "dm-brief", period_key: date, report_md: full, fields: null, model: "jeremy",
-    created_at: new Date().toISOString(),
-  }, { onConflict: "kind,period_key" });
-  const how = await deliverReport({
-    title: `DM Brief — ${date}`,
-    filename: `dm-brief-${date}.pdf`,
-    summary: header,
-    body: full,
-  });
-  return `DM brief delivered as ${how}${repErr ? ` (not stored: ${clip(repErr.message, 60)})` : ""}`;
+  ].filter((l) => l !== "").join("\n");
 }
 
 /* ---------------------------------- run ----------------------------------- */
 
-export async function runDmReviews(sb: Sb, opts: { date?: string; force?: boolean; setter?: string } = {}) {
-  const report: Record<string, unknown> = {};
+/** Every batch the day needs, in dispatch order. */
+export function planBatches(date: string, bySetter: Record<string, SetterConversation[]>, only?: string): SetterBatch[] {
+  const out: SetterBatch[] = [];
+  for (const setter of Object.keys(bySetter).sort()) {
+    if (only && setter.toLowerCase() !== only.toLowerCase()) continue;
+    const batches = splitBatches(bySetter[setter]);
+    batches.forEach((convs, i) => out.push({ key: setterNoteKey(date, setter, i + 1), setter, part: { n: i + 1, of: batches.length }, convs }));
+  }
+  return out;
+}
+
+export interface DmReviewReport {
+  date: string;
+  totals?: { active: number; engaged: number };
+  batches?: Record<string, string>;
+  failed?: Record<string, string>;
+  brief?: string;
+  note?: string;
+  error?: string;
+  timings_ms: Record<string, number>;
+}
+
+/**
+ * The whole night, synchronously: collect -> grade every batch (4 at a time)
+ * -> write the one combined brief -> deliver the PDF. `setter` grades one
+ * setter silently and never posts; `force` regrades and reposts the day.
+ */
+export async function runDmReviews(sb: Sb, opts: { date?: string; force?: boolean; setter?: string } = {}): Promise<DmReviewReport> {
+  const t0 = Date.now();
   const date = opts.date || etDate();
+  const report: DmReviewReport = { date, timings_ms: {} };
+  const lap = (name: string, since: number) => { report.timings_ms[name] = Date.now() - since; };
   try {
+    // Double-post guard: a day whose brief already went out is never redone
+    // without force. A ?setter= debug run grades regardless, but never posts.
+    if (!opts.force && !opts.setter) {
+      const { data: done } = await sb.from("mm_reports").select("period_key").eq("kind", "dm-brief").eq("period_key", date).limit(1);
+      if (done && done.length) {
+        report.brief = `already delivered for ${date} (pass force=1 to redo)`;
+        lap("total", t0);
+        return report;
+      }
+    }
+
+    const tCollect = Date.now();
     const { data: scriptsData } = await sb.from("mm_scripts").select("role,content");
     const find = (role: string) => scriptsData?.find((s) => s.role === role)?.content?.trim() || null;
     const scripts = { setterScript: find("setter"), guardrails: find("guardrails") };
     const { bySetter, totals } = await collectSetterDay(sb, date);
     report.totals = totals;
-    const setters = Object.keys(bySetter).filter((s) => !opts.setter || s.toLowerCase() === opts.setter.toLowerCase()).sort();
+    const batches = planBatches(date, bySetter, opts.setter);
+    lap("collect", tCollect);
+    if (batches.length === 0) {
+      report.note = opts.setter ? `no engaged conversations for ${opts.setter} on ${date}` : "no engaged conversations today";
+      lap("total", t0);
+      return report;
+    }
+
+    // Grade: every batch through the model directly, GRADE_CONCURRENCY at a
+    // time, all bounded by one deadline. A failure is recorded and skipped.
+    const tGrade = Date.now();
+    const deadline = tGrade + GRADE_DEADLINE_MS;
+    const settled = await pool(batches, GRADE_CONCURRENCY, async (b) => {
+      const graded = await gradeSetterBatch(buildSetterMessage(b.setter, date, b.convs, b.part, scripts), deadline, b.key);
+      return storeSetterGrading(sb, date, b, totals, graded);
+    });
     const results: Record<string, string> = {};
-    // force on a full-day run redoes the whole day, including the one Slack
-    // post: clear the combine run so the last re-collected setter run
-    // re-dispatches it. A ?setter= debug run never touches the combine.
-    if (opts.force && !opts.setter) {
-      await sb.from("mm_review_runs").delete().eq("kind", "digest").eq("fathom_id", `dm-combine:${date}`);
+    const failed: Record<string, string> = {};
+    const notes: { key: string; md: string }[] = [];
+    settled.forEach((r, i) => {
+      const b = batches[i];
+      if (r.status === "fulfilled") { results[b.key] = r.value.note; notes.push({ key: b.key, md: r.value.full }); }
+      else failed[b.key] = clip(r.reason instanceof Error ? r.reason.message : String(r.reason), 200);
+    });
+    report.batches = results;
+    if (Object.keys(failed).length) report.failed = failed;
+    lap("grade", tGrade);
+    if (opts.setter) {
+      report.brief = "not posted (?setter= grades silently)";
+      lap("total", t0);
+      return report;
     }
-    // Fire every batch without waiting (a night is 8-12 Jeremy turns of 2-5
-    // min each — far beyond one function invocation); the 30-minute
-    // call-reviews tick collects them silently, and the last one to finish
-    // dispatches the single combined DM BRIEF.
-    const waitEach = 0;
-    let fired = 0;
-    for (const setter of setters) {
-      const batches = splitBatches(bySetter[setter]);
-      for (let i = 0; i < batches.length; i++) {
-        const key = `${date}:${setter}${i > 0 ? `:p${i + 1}` : ""}`;
-        try {
-          // Space the dispatches out — 8+ back-to-back sends is what made
-          // Jeremy return id-less responses for the tail of the batch.
-          if (fired > 0) await new Promise((r) => setTimeout(r, 2000));
-          fired += 1;
-          results[key] = await sendAndMaybeCollect(
-            sb, "setter", key,
-            buildSetterMessage(setter, date, batches[i], { n: i + 1, of: batches.length }, scripts),
-            (run, reply) => finalizeSetterRun(sb, run, reply),
-            { force: opts.force, waitMs: waitEach }
-          );
-        } catch (e) {
-          results[key] = `error: ${String(e).slice(0, 200)}`;
-        }
-      }
+
+    // Combine: one document for the day from the notes that succeeded.
+    const tCombine = Date.now();
+    const header = renderDmBriefHeader(date, bySetter, totals);
+    const skipped = batches.filter((b) => failed[b.key]).map((b) => b.part.of > 1 ? `${b.setter} (part ${b.part.n}/${b.part.of})` : b.setter);
+    let body: string;
+    let how: string;
+    if (notes.length === 0) {
+      throw new DmModelError(`every batch failed — nothing to combine (${Object.values(failed)[0]})`, true);
     }
-    report.setters = results;
-    if (setters.length === 0) report.note = "no engaged conversations today";
-    // Safety net: if every setter run already finished (e.g. a re-run after a
-    // crash) the finalize path never fires again, so check the combine here
-    // too. Harmless mid-night — it just reports "waiting on n/m setter runs".
-    if (!opts.setter && setters.length > 0) {
-      try {
-        report.combine = await maybeDispatchDmCombine(sb, date, { bySetter, totals });
-      } catch (e) {
-        report.combine = `error: ${String(e).slice(0, 200)}`;
-      }
+    try {
+      body = await writeDmBrief(buildDmCombineMessage(date, header, setterStatLines(bySetter), notes, skipped), tCombine + COMBINE_DEADLINE_MS);
+      how = "combined";
+    } catch (e) {
+      // The notes are graded and stored; a dead combine must not strand the
+      // day, so the brief degrades to the notes stitched together.
+      report.note = `combine failed, delivered the stitched setter notes instead: ${clip(e instanceof Error ? e.message : String(e), 200)}`;
+      body = notes.map((n) => n.md).join("\n\n");
+      how = "stitched";
     }
-    // Sweep the previous 3 days: a day whose LAST setter run failed never
-    // re-enters the finalize path, so its combine would otherwise strand
-    // forever (this happened to 2026-09-17 when two id-less Jeremy sends
-    // failed). alreadyDone keeps this idempotent.
-    if (!opts.setter) {
-      for (let back = 1; back <= 3; back++) {
-        const prior = addDays(date, -back);
-        try {
-          const priorDay = await collectSetterDay(sb, prior);
-          if (Object.keys(priorDay.bySetter).length === 0) continue;
-          const r = await maybeDispatchDmCombine(sb, prior, priorDay);
-          if (!/already completed|waiting on/.test(r)) report[`combine_${prior}`] = r;
-        } catch { /* best-effort sweep */ }
-      }
-    }
+    const full = `${header}\n\n${body}`;
+    lap("combine", tCombine);
+
+    const tDeliver = Date.now();
+    const { error: repErr } = await sb.from("mm_reports").upsert({
+      kind: "dm-brief", period_key: date, report_md: full, fields: { how, skipped }, model: DM_MODEL,
+      created_at: new Date().toISOString(),
+    }, { onConflict: "kind,period_key" });
+    const delivered = await deliverReport({
+      title: `DM Brief — ${date}`,
+      filename: `dm-brief-${date}.pdf`,
+      summary: header,
+      body: full,
+    });
+    lap("deliver", tDeliver);
+    report.brief = `${how} brief delivered as ${delivered}${skipped.length ? ` (skipped: ${skipped.join(", ")})` : ""}${repErr ? ` (not stored: ${clip(repErr.message, 60)})` : ""}`;
   } catch (e) {
-    report.error = String(e).slice(0, 300);
+    report.error = clip(e instanceof Error ? e.message : String(e), 300);
   }
+  lap("total", t0);
   return report;
 }
