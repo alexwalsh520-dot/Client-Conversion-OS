@@ -485,11 +485,16 @@ export async function runDmReviews(sb: Sb, opts: { date?: string; force?: boolea
     // call-reviews tick collects them silently, and the last one to finish
     // dispatches the single combined DM BRIEF.
     const waitEach = 0;
+    let fired = 0;
     for (const setter of setters) {
       const batches = splitBatches(bySetter[setter]);
       for (let i = 0; i < batches.length; i++) {
         const key = `${date}:${setter}${i > 0 ? `:p${i + 1}` : ""}`;
         try {
+          // Space the dispatches out — 8+ back-to-back sends is what made
+          // Jeremy return id-less responses for the tail of the batch.
+          if (fired > 0) await new Promise((r) => setTimeout(r, 2000));
+          fired += 1;
           results[key] = await sendAndMaybeCollect(
             sb, "setter", key,
             buildSetterMessage(setter, date, batches[i], { n: i + 1, of: batches.length }, scripts),
@@ -511,6 +516,21 @@ export async function runDmReviews(sb: Sb, opts: { date?: string; force?: boolea
         report.combine = await maybeDispatchDmCombine(sb, date, { bySetter, totals });
       } catch (e) {
         report.combine = `error: ${String(e).slice(0, 200)}`;
+      }
+    }
+    // Sweep the previous 3 days: a day whose LAST setter run failed never
+    // re-enters the finalize path, so its combine would otherwise strand
+    // forever (this happened to 2026-09-17 when two id-less Jeremy sends
+    // failed). alreadyDone keeps this idempotent.
+    if (!opts.setter) {
+      for (let back = 1; back <= 3; back++) {
+        const prior = addDays(date, -back);
+        try {
+          const priorDay = await collectSetterDay(sb, prior);
+          if (Object.keys(priorDay.bySetter).length === 0) continue;
+          const r = await maybeDispatchDmCombine(sb, prior, priorDay);
+          if (!/already completed|waiting on/.test(r)) report[`combine_${prior}`] = r;
+        } catch { /* best-effort sweep */ }
       }
     }
   } catch (e) {
